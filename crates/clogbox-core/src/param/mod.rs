@@ -21,7 +21,7 @@ pub trait SetParameter {
     fn set_param<'a>(&mut self, param: Self::Param, value: impl Into<Value<'a>>) {
         self.set_param_raw(param, value.into())
     }
-    fn set_param_fallible<'a, V: TryInto<Value<'a>>>(&mut self, param: Self::Param, value: V) -> Result<(), V::Error> {
+    fn try_set_param<'a, V: TryInto<Value<'a>>>(&mut self, param: Self::Param, value: V) -> Result<(), V::Error> {
         value.try_into().map(|value| self.set_param_raw(param, value))
     }
 }

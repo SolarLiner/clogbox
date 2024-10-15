@@ -1,0 +1,16 @@
+[package]
+name = "clogbox-math"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-core = { path = "../clogbox-core" }
+
+az.workspace = true
+num-traits.workspace = true

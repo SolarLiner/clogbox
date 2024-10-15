@@ -1,6 +1,8 @@
 use crate::module::{Module, ModuleContext as BaseModuleContext, ProcessStatus, StreamData};
 use crate::r#enum::{Enum, EnumMapArray};
-use az::CastFrom;
+use num_traits::Zero;
+use numeric_array::generic_array::sequence::GenericSequence;
+use numeric_array::generic_array::GenericArray;
 use numeric_array::ArrayLength;
 
 pub type ModuleContext<M> = SampleCtxImpl<<M as SampleModule>::Sample, <M as SampleModule>::Inputs, <M as SampleModule>::Outputs>;
@@ -13,7 +15,7 @@ pub struct SampleCtxImpl<T, In: Enum, Out: Enum> where In::Count: ArrayLength, O
 
 #[allow(unused_variables)]
 pub trait SampleModule: 'static + Send {
-    type Sample: Copy + CastFrom<f32> + CastFrom<f64>;
+    type Sample;
     type Inputs: Enum;
     type Outputs: Enum;
 
@@ -24,15 +26,15 @@ pub trait SampleModule: 'static + Send {
     fn reset(&mut self) {}
 
     #[inline]
-    fn latency(&self) -> f64 {
-        0.0
+    fn latency(&self) -> GenericArray<f64, <Self::Outputs as Enum>::Count> where <Self::Outputs as Enum>::Count: ArrayLength {
+        GenericArray::generate(|_| 0.0)
     }
     
     fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus where <Self::Inputs as Enum>::Count: ArrayLength, <Self::Outputs as Enum>::Count: ArrayLength;
 }
 
 #[profiling::all_functions]
-impl<M: SampleModule> Module for M where <M::Inputs as Enum>::Count: ArrayLength, <M::Outputs as Enum>::Count: ArrayLength {
+impl<M: SampleModule<Sample: Copy + Zero>> Module for M where <M::Inputs as Enum>::Count: ArrayLength, <M::Outputs as Enum>::Count: ArrayLength {
     type Sample = M::Sample;
     type Inputs = M::Inputs;
     type Outputs = M::Outputs;
@@ -53,7 +55,7 @@ impl<M: SampleModule> Module for M where <M::Inputs as Enum>::Count: ArrayLength
     }
 
     #[inline]
-    fn latency(&self) -> f64 {
+    fn latency(&self) -> GenericArray<f64, <Self::Outputs as Enum>::Count> where <Self::Outputs as Enum>::Count: ArrayLength {
         M::latency(self)
     }
 
@@ -61,7 +63,7 @@ impl<M: SampleModule> Module for M where <M::Inputs as Enum>::Count: ArrayLength
         let mut status = ProcessStatus::Running;
         for i in 0..context.stream_data.block_size {
             let inputs = EnumMapArray::new(|inp| context.input(inp)[i]);
-            let outputs = EnumMapArray::new(|_| M::Sample::cast_from(0.));
+            let outputs = EnumMapArray::new(|_| M::Sample::zero());
             let mut sample_ctx = SampleCtxImpl {
                 stream_data: context.stream_data,
                 inputs,

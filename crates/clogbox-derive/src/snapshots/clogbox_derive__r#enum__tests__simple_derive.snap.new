@@ -1,0 +1,37 @@
+---
+source: crates/clogbox-derive/src/enum.rs
+assertion_line: 136
+expression: "prettyplease::unparse(&syn::parse_file(&output).unwrap())"
+---
+impl ::az::CastFrom<usize> for Params {
+    fn cast_from(idx: usize) -> Self {
+        match idx {
+            0 => Self::Cutoff,
+            1 => Self::Resonance,
+            2 => Self::Drive,
+            3 => Self::InputFM,
+            _ => unreachable!(),
+        }
+    }
+}
+impl ::az::Cast<usize> for Params {
+    fn cast(self) -> usize {
+        match self {
+            Self::Cutoff => 0,
+            Self::Resonance => 1,
+            Self::Drive => 2,
+            Self::InputFM => 3,
+        }
+    }
+}
+impl ::clogbox_core::param::r#enum::Enum for Params {
+    type Count = ::typenum::U4;
+    fn name(&self) -> Cow<str> {
+        match self {
+            Self::Cutoff => ::std::cow::Cow::Borrowed("Cutoff"),
+            Self::Resonance => ::std::cow::Cow::Borrowed("Resonance"),
+            Self::Drive => ::std::cow::Cow::Borrowed("Drive"),
+            Self::InputFM => ::std::cow::Cow::Borrowed("Input FM"),
+        }
+    }
+}

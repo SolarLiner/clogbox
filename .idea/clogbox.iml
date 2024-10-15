@@ -5,6 +5,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-core/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-math/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-clap/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-derive/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-filters/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

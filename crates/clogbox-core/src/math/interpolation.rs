@@ -1,5 +1,5 @@
 use az::Cast;
-use clogbox_core::r#enum::Collection;
+use crate::r#enum::Collection;
 use num_traits::Float;
 
 pub trait Interpolation<T> {

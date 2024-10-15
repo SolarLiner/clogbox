@@ -1,9 +1,14 @@
 pub mod sample;
+pub mod analysis;
+mod utilitarian;
 
 use crate::r#enum::{Enum, EnumMapMut, EnumMapRef};
 use az::CastFrom;
 use std::marker::PhantomData;
 use std::ops;
+use numeric_array::ArrayLength;
+use numeric_array::generic_array::GenericArray;
+use numeric_array::generic_array::sequence::GenericSequence;
 use typenum::Unsigned;
 
 #[derive(Debug, Copy, Clone)]
@@ -57,6 +62,10 @@ impl<'a, T> ModuleCtxRaw<'a, T> {
     pub fn output_raw(&mut self, i: usize) -> &mut [T] {
         self.outputs[i]
     }
+    
+    pub fn in_out_raw(&mut self, i: usize, j: usize) -> (&[T], &mut [T]) {
+        (&self.inputs[i], &mut self.outputs[j])
+    }
 }
 
 #[allow(unused_variables)]
@@ -71,10 +80,6 @@ pub trait RawModule: Send {
     fn reallocate(&mut self, stream_data: StreamData) {}
 
     fn reset(&mut self) {}
-
-    fn latency(&self) -> f64 {
-        0.0
-    }
 
     fn process(&mut self, context: &mut ModuleCtxRaw<Self::Sample>) -> ProcessStatus;
 }
@@ -127,6 +132,10 @@ impl<'a, T, In: Enum, Out: Enum> ModCtxImpl<'a, T, In, Out> {
         self.raw.output_raw(ix.cast())
     }
     
+    pub fn in_out(&mut self, inp: In, out: Out) -> (&[T], &mut [T]) {
+        self.raw.in_out_raw(inp.cast(), out.cast())
+    }
+    
     pub fn fork<U, I2, O2>(&self, inputs: EnumMapRef<'a, I2, &'a [U]>, outputs: EnumMapMut<'a, O2, &'a mut [U]>) -> ModCtxImpl<'a, U, I2, O2> {
         ModCtxImpl {
             raw: self.raw.fork(inputs.into_inner(), outputs.into_inner()),
@@ -143,7 +152,7 @@ pub enum ProcessStatus {
 
 #[allow(unused_variables)]
 pub trait Module: 'static + Send {
-    type Sample: Copy + CastFrom<f32> + CastFrom<f64>;
+    type Sample;
     type Inputs: Enum;
     type Outputs: Enum;
 
@@ -153,8 +162,9 @@ pub trait Module: 'static + Send {
 
     fn reset(&mut self) {}
 
-    fn latency(&self) -> f64 {
-        0.0
+    #[inline]
+    fn latency(&self) -> GenericArray<f64, <Self::Outputs as Enum>::Count> where <Self::Outputs as Enum>::Count: ArrayLength {
+        GenericArray::generate(|_| 0.0)
     }
 
     fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus;
@@ -186,11 +196,6 @@ impl<M: Module> RawModule for M {
     #[inline]
     fn reset(&mut self) {
         M::reset(self)
-    }
-
-    #[inline]
-    fn latency(&self) -> f64 {
-        M::latency(self)
     }
 
     #[inline]

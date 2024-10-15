@@ -1,5 +1,5 @@
 [package]
-name = "clogbox-math"
+name = "clogbox-filters"
 version.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -11,6 +11,13 @@ keywords.workspace = true
 
 [dependencies]
 clogbox-core = { path = "../clogbox-core" }
+clogbox-derive = { path = "../clogbox-derive" }
 
 az.workspace = true
+generic-array.workspace = true
+num-complex.workspace = true
 num-traits.workspace = true
+numeric_literals.workspace = true
+profiling.workspace = true
+serde_json.workspace = true
+typenum.workspace = true

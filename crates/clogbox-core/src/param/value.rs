@@ -1,19 +1,52 @@
+//! Module for handling various types of values in a hierarchical manner.
+//!
+//! This module provides an enumeration to represent different types of data values,
+//! including integers, floating-point numbers, strings, binary data, and arrays of values.
+//! It is inspired by the `serde_json::Value` enumeration, but with a focus on zero-copy
+//! operations suitable for real-time contexts. The module includes functionality for 
+//! conversion between these value types and common Rust types, with error handling for
+//! mismatched types.
+//!
+//! Example:
+//! ```
+//! use clogbox_core::param::Value;
+//!
+//! let int_value: Value = 42.into();
+//! let float_value: Value = 3.14.into();
+//! let str_value: Value = "hello".into();
+//!
+//! assert_eq!(int_value.variant_str(), "int");
+//! assert_eq!(float_value.variant_str(), "float");
+//! assert_eq!(str_value.variant_str(), "string");
+//! ```
 use duplicate::duplicate_item;
 use std::path::Path;
 use thiserror::Error;
 
+/// Represents various types of values.
+///
+/// This takes inspiration from `serde_json::Value`, but is zero-copy, allowing its use in real-time
+/// contexts.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Value<'a> {
+    /// An empty value.
     Empty,
+    /// An integer value.
     Int(i64),
+    /// A single-precision floating point value.
     Float(f32),
+    /// A double-precision floating point value.
     Double(f64),
+    /// A string slice value.
     String(&'a str),
+    /// A binary value.
     Binary(&'a [u8]),
+    /// An array of values.
     Array(&'a [Value<'a>]),
 }
 
 impl<'a> Value<'a> {
+    /// Returns a string representation of the variant.
     pub fn variant_str(&self) -> &'static str {
         match self {
             Value::Empty => "empty",
@@ -53,11 +86,15 @@ impl<'a> From<ty> for Value<'a> {
     }
 }
 
+/// Error type for failed conversions from a value.
 #[derive(Debug, Clone, Error)]
 pub enum TryFromValueError {
+    /// Error indicating a variant mismatch during a conversion.
     #[error("Variant mismatch: expected {expected:?}, got {found:?}")]
     VariantMismatch {
+        /// The expected variant name.
         expected: &'static str,
+        /// The found variant name.
         found: &'static str,
     },
 }
@@ -101,10 +138,10 @@ impl<'a> TryFrom<Value<'a>> for &'a Path {
     }
 }
 
-impl<'a> Into<Value<'a>> for &'a Path {
-    fn into(self) -> Value<'a> {
+impl<'a> From<&'a Path> for Value<'a> {
+    fn from(val: &'a Path) -> Self {
         // Put here as an `.expect()` instead of a TryInto because it is unlikely (Windows paths are
         // more restrictive, and Unix paths *are* UTF-8 strings)
-        Value::String(self.to_str().expect("Path is not a valid UTF-8 string"))
+        Value::String(val.to_str().expect("Path is not a valid UTF-8 string"))
     }
 }

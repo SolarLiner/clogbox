@@ -17,6 +17,7 @@ az.workspace = true
 generic-array.workspace = true
 num-complex.workspace = true
 num-traits.workspace = true
+numeric-array.workspace = true
 numeric_literals.workspace = true
 profiling.workspace = true
 serde_json.workspace = true

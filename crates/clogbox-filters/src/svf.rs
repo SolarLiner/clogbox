@@ -4,16 +4,19 @@
 //! All references in this module, unless specified otherwise, are taken from this book.
 
 use crate::{Linear, Saturator};
-use az::CastFrom;
+use az::{Cast, CastFrom};
 use clogbox_core::module::analysis::{FreqAnalysis, Matrix};
-use clogbox_core::module::sample::{ModuleContext, SampleModule};
+use clogbox_core::module::sample::{SampleContext, SampleModule};
 use clogbox_core::module::ProcessStatus;
+use clogbox_core::r#enum::enum_map::EnumMapArray;
 use clogbox_core::r#enum::Enum;
 use clogbox_derive::Enum;
-use generic_array::{ArrayLength, GenericArray};
+use generic_array::ArrayLength;
 use num_complex::Complex;
-use num_traits::{Float, FloatConst, Num, One};
+use num_traits::{Float, FloatConst, Num, Zero};
+use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
+use std::ops;
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
@@ -24,15 +27,21 @@ pub enum SvfParams {
     Resonance,
 }
 
+/// Represents the different inputs for the SVF (state variable filter).
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum SvfInput {
+    /// Audio input for the SVF.
     AudioInput,
 }
 
+/// Represents the output types of a State Variable Filter (SVF).
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum SvfOutput {
+    /// Lowpass filter output.
     Lowpass,
+    /// Bandpass filter output.
     Bandpass,
+    /// Highpass filter output.
     Highpass,
 }
 
@@ -46,7 +55,7 @@ pub struct Svf<T, Mode = Linear<T>> {
     g1: T,
     d: T,
     w_step: T,
-    samplerate: T,
+    sample_rate: T,
     saturator: Mode,
 }
 
@@ -66,7 +75,7 @@ impl<T, Mode> Svf<T, Mode> {
             g1,
             d,
             w_step,
-            samplerate,
+            sample_rate,
             ..
         } = self;
         Svf {
@@ -77,17 +86,17 @@ impl<T, Mode> Svf<T, Mode> {
             g1,
             d,
             w_step,
-            samplerate,
+            sample_rate,
             saturator,
         }
     }
 }
 
-impl<T: Copy + FloatConst + CastFrom<f64> + Num> Svf<T, Linear<T>> {
+impl<T: Copy + Float + FloatConst + CastFrom<f64> + Num> Svf<T, Linear<T>> {
     /// Create a new SVF filter with the provided sample rate, frequency cutoff (in Hz) and resonance amount
     /// (in 0..1 for stable filters, otherwise use bounded nonlinearities).
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn new(samplerate: T, cutoff: T, resonance: T) -> Self {
+    pub fn new(sample_rate: T, cutoff: T, resonance: T) -> Self {
         let mut this = Self {
             s: [0.; 2],
             r: 1. - resonance,
@@ -95,21 +104,22 @@ impl<T: Copy + FloatConst + CastFrom<f64> + Num> Svf<T, Linear<T>> {
             g: 0.,
             g1: 0.,
             d: 0.,
-            samplerate,
-            w_step: T::PI() / samplerate,
+            sample_rate,
+            w_step: T::PI() / sample_rate,
             saturator: Linear::default(),
         };
         this.update_coefficients();
         this
     }
 }
-impl<T: Copy + CastFrom<f64> + Num, C> Svf<T, C> {
+impl<T: Cast<f64> + CastFrom<f64> + Float, C> Svf<T, C> {
     /// Set the new filter cutoff frequency (in Hz).
     pub fn set_cutoff(&mut self, freq: T) {
         self.fc = freq;
         self.update_coefficients();
     }
-
+}
+impl<T: Copy + CastFrom<f64> + Cast<f64> + Float, C> Svf<T, C> {
     /// Set the resonance amount (in 0..1 for stable filters, otherwise use bounded nonlinearities).
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_r(&mut self, r: T) {
@@ -117,17 +127,24 @@ impl<T: Copy + CastFrom<f64> + Num, C> Svf<T, C> {
         self.r = 2. * r;
         self.update_coefficients();
     }
+}
+
+impl<T: Float + CastFrom<f64>, C> Svf<T, C> {
 
     #[profiling::function]
     #[replace_float_literals(T::cast_from(literal))]
     fn update_coefficients(&mut self) {
         self.g = self.w_step * self.fc;
         self.g1 = 2. * self.r + self.g;
-        self.d = (1. + 2. * self.r * self.g + self.g * self.g).simd_recip();
+        self.d = (1. + 2. * self.r * self.g + self.g * self.g).recip();
     }
 }
 
-impl<T: Copy + CastFrom<f64> + Num, Mode: Saturator<Sample = T>> SampleModule for Svf<T, Mode> {
+impl<
+        T: 'static + Send + Copy + Cast<f64> + CastFrom<f64> + Num,
+        Mode: 'static + Send + Saturator<Sample = T>,
+    > SampleModule for Svf<T, Mode>
+{
     type Sample = Mode::Sample;
     type Inputs = SvfInput;
     type Outputs = SvfOutput;
@@ -136,17 +153,17 @@ impl<T: Copy + CastFrom<f64> + Num, Mode: Saturator<Sample = T>> SampleModule fo
         self.s.fill(T::cast_from(0.));
     }
 
-    #[replace_float_literals(T::cast_from(literal))]
-    fn latency(&self) -> GenericArray<f64, SvfOutput::Count>
-    where
-        SvfOutput::Count: ArrayLength,
-    {
-        let k = self.fc / self.samplerate;
-        GenericArray::<T, SvfOutput::Count>::from_array([2. * (1. - k), 1., 2. * k])
+    fn latency(
+        &self,
+        input_latency: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64> {
+        let l = input_latency[SvfInput::AudioInput];
+        let k = f64::cast_from(self.fc / self.sample_rate);
+        EnumMapArray::from_array([2. * (1. - k), 1., 2. * k].map(|x| l + x).into())
     }
 
     #[replace_float_literals(T::cast_from(literal))]
-    fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus
+    fn process_sample(&mut self, context: &mut SampleContext<Self>) -> ProcessStatus
     where
         <Self::Inputs as Enum>::Count: ArrayLength,
         <Self::Outputs as Enum>::Count: ArrayLength,
@@ -158,7 +175,6 @@ impl<T: Copy + CastFrom<f64> + Num, Mode: Saturator<Sample = T>> SampleModule fo
         let bpl = (self.r - 1.) * s1;
         let bp1 = 2. * (bpp + bpl);
         let hp = (x - bp1 - s2) * self.d;
-        self.saturator.update_state(s1, bpp);
 
         let v1 = self.g * hp;
         let bp = v1 + s1;
@@ -176,48 +192,64 @@ impl<T: Copy + CastFrom<f64> + Num, Mode: Saturator<Sample = T>> SampleModule fo
     }
 }
 
-impl<T: Copy + CastFrom<f64> + Num, Mode: Saturator<Sample = T>> FreqAnalysis for Svf<T, Mode> {
+impl<T: 'static + Send + Copy + Zero + CastFrom<f64> + Cast<f64> + Float, Mode: 'static + Send + Saturator<Sample = T>> FreqAnalysis for Svf<T, Mode> {
     #[replace_float_literals(Complex::from(T::cast_from(literal)))]
     fn h_z(
         &self,
         z: Complex<Self::Sample>,
-    ) -> Matrix<Self::Sample, <Self::Outputs as Enum>::Count, <Self::Inputs as Enum>::Count> {
+    ) -> Matrix<Complex<Self::Sample>, <Self::Outputs as Enum>::Count, <Self::Inputs as Enum>::Count> {
         let omega_c = 2.0 * self.fc * self.w_step;
         let x0 = z + 1.0;
-        let x1 = x0.powi(2) * omega_c.simd_powi(2);
+        let x1 = x0.powi(2) * omega_c.powi(2);
         let x2 = z - 1.0;
         let x3 = x2.powi(2) * 4.0;
         let x4 = x0 * x2 * omega_c;
-        let x5 = (-x4 * 4.0 * self.r + x1 + x3).recip();
-        [[x1 * x5, -x4 * x5 * 2.0, x3 * x5]]
+        let x5 = (-x4 * 4.0 * self.r + x1 + x3).re.recip();
+        NumericArray::from([NumericArray::from([x1 * x5, -x4 * x5 * 2.0, x3 * x5])])
     }
 }
 
-#[derive(Debug, Copy, Clone, Enum, Eq, PartialEq)]
+/// Enum representing different types of audio filters.
+#[derive(Debug, Copy, Clone, Enum, Eq, PartialEq, Ord, PartialOrd)]
 pub enum FilterType {
+    /// No filtering, signal is passed unchanged.
     Bypass,
-    #[r#enum(display = "Low pass")]
+    /// Low pass filter.
+    #[display = "Low pass"]
     Lowpass,
-    #[r#enum(display = "Band pass")]
+    /// Band pass filter.
+    #[display = "Band pass"]
     Bandpass,
-    #[r#enum(display = "High pass")]
+    /// High pass filter.
+    #[display = "High pass"]
     Highpass,
-    #[r#enum(display = "Low shelf")]
+    /// Low shelf filter.
+    #[display = "Low shelf"]
     Lowshelf,
-    #[r#enum(display = "High shelf")]
+    /// High shelf filter.
+    #[display = "High shelf"]
     Highshelf,
-    #[r#enum(display = "Peak (Sharp)")]
+    /// Peak (Sharp) filter.
+    #[display = "Peak (Sharp)"]
     PeakSharp,
-    #[r#enum(display = "Peak (Shelf)")]
+    /// Peak (Shelf) filter.
+    #[display = "Peak (Shelf)"]
     PeakShelf,
+    /// Notch filter.
     Notch,
-    #[r#enum(display = "All-pass")]
+    /// All-pass filter.
+    #[display = "All-pass"]
     Allpass,
 }
 
 impl FilterType {
-    pub fn mix_coefficients<T: Float>(&self, amp: T) -> [T; 4] {
-        let g = amp - T::one();
+    /// Computes the mixing coefficients for the filter type based on the provided amplitude.
+    #[replace_float_literals(T::cast_from(literal))]
+    pub fn mix_coefficients<T: ops::Neg<Output = T> + ops::Sub<Output = T> + CastFrom<f64>>(
+        &self,
+        amp: T,
+    ) -> [T; 4] {
+        let g = amp - 1.0;
         match self {
             Self::Bypass => [1.0, 0.0, 0.0, 0.0],
             Self::Lowpass => [0.0, 1.0, 0.0, 0.0],

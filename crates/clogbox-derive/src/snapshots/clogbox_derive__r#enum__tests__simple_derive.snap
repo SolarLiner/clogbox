@@ -1,8 +1,8 @@
 ---
 source: crates/clogbox-derive/src/enum.rs
-assertion_line: 136
 expression: "prettyplease::unparse(&syn::parse_file(&output).unwrap())"
 ---
+#[automatically_derived]
 impl ::az::CastFrom<usize> for Params {
     fn cast_from(idx: usize) -> Self {
         match idx {
@@ -14,6 +14,7 @@ impl ::az::CastFrom<usize> for Params {
         }
     }
 }
+#[automatically_derived]
 impl ::az::Cast<usize> for Params {
     fn cast(self) -> usize {
         match self {
@@ -24,14 +25,15 @@ impl ::az::Cast<usize> for Params {
         }
     }
 }
-impl ::clogbox_core::param::r#enum::Enum for Params {
+#[automatically_derived]
+impl ::clogbox_core::r#enum::Enum for Params {
     type Count = ::typenum::U4;
-    fn name(&self) -> Cow<str> {
+    fn name(&self) -> ::std::borrow::Cow<str> {
         match self {
-            Self::Cutoff => ::std::cow::Cow::Borrowed("Cutoff"),
-            Self::Resonance => ::std::cow::Cow::Borrowed("Resonance"),
-            Self::Drive => ::std::cow::Cow::Borrowed("Drive"),
-            Self::InputFM => ::std::cow::Cow::Borrowed("Input FM"),
+            Self::Cutoff => ::std::borrow::Cow::Borrowed("Cutoff"),
+            Self::Resonance => ::std::borrow::Cow::Borrowed("Resonance"),
+            Self::Drive => ::std::borrow::Cow::Borrowed("Drive"),
+            Self::InputFM => ::std::borrow::Cow::Borrowed("InputFM"),
         }
     }
 }

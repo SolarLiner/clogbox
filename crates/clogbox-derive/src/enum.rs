@@ -11,7 +11,7 @@ struct EnumField {
 }
 
 #[derive(Debug, FromVariant)]
-#[darling(supports(unit), attributes(r#enum))]
+#[darling(supports(unit))]
 struct EnumVariant {
     ident: syn::Ident,
     #[darling(rename = "display")]
@@ -37,6 +37,7 @@ impl DeriveEnum {
                 quote! { #id => Self::#ident }
             });
         quote! {
+            #[automatically_derived]
             impl ::az::CastFrom<usize> for #ident {
                 fn cast_from(idx: usize) -> Self {
                     match idx {
@@ -57,6 +58,7 @@ impl DeriveEnum {
                 quote! { Self::#ident => #id }
             });
         quote! {
+            #[automatically_derived]
             impl ::az::Cast<usize> for #ident {
                 fn cast(self) -> usize {
                     match self {
@@ -82,6 +84,7 @@ impl DeriveEnum {
             }
         });
         quote! {
+            #[automatically_derived]
             impl ::clogbox_core::r#enum::Enum for #ident {
                 type Count = #count_ty;
 

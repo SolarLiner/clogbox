@@ -6,9 +6,10 @@ rust-version.workspace = true
 
 [dependencies]
 az.workspace = true
-numeric-array = "0.6.1"
 num-complex.workspace = true
 num-traits.workspace = true
+numeric-array.workspace = true
+numeric_literals.workspace = true
 profiling.workspace = true
 serde_json.workspace = true
 typenum.workspace = true
@@ -17,3 +18,10 @@ duplicate = "2.0.0"
 fortuples = "0.9.1"
 thiserror = "1.0.64"
 vtable = "0.2.0"
+
+[dev-dependencies]
+clogbox-derive = { path = "../clogbox-derive" }
+
+rstest.workspace = true
+
+approx = "0.5.1"

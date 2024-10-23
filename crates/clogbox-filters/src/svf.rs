@@ -7,7 +7,7 @@ use crate::{Linear, Saturator};
 use az::{Cast, CastFrom};
 use clogbox_core::module::analysis::{FreqAnalysis, Matrix};
 use clogbox_core::module::sample::{SampleContext, SampleModule};
-use clogbox_core::module::ProcessStatus;
+use clogbox_core::module::{ProcessStatus, StreamData};
 use clogbox_core::r#enum::enum_map::EnumMapArray;
 use clogbox_core::r#enum::Enum;
 use clogbox_derive::Enum;
@@ -163,12 +163,9 @@ impl<
     }
 
     #[replace_float_literals(T::cast_from(literal))]
-    fn process_sample(&mut self, context: &mut SampleContext<Self>) -> ProcessStatus
-    where
-        <Self::Inputs as Enum>::Count: ArrayLength,
-        <Self::Outputs as Enum>::Count: ArrayLength,
+    fn process_sample(&mut self, _: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>) -> (ProcessStatus,  EnumMapArray<Self::Outputs, Self::Sample>)
     {
-        let x = context.inputs[SvfInput::AudioInput];
+        let x = inputs[SvfInput::AudioInput];
         let [s1, s2] = self.s;
 
         let bpp = self.saturator.saturate(s1);
@@ -185,10 +182,8 @@ impl<
         let s2 = lp + v2;
 
         self.s = [s1, s2];
-        context.outputs[SvfOutput::Lowpass] = lp;
-        context.outputs[SvfOutput::Bandpass] = bp;
-        context.outputs[SvfOutput::Highpass] = hp;
-        ProcessStatus::Tail(2)
+        let outputs = EnumMapArray::from_array([lp, bp, hp].into());
+        (ProcessStatus::Tail(2), outputs)
     }
 }
 

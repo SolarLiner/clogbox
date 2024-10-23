@@ -15,24 +15,25 @@ use numeric_array::ArrayLength;
 use std::iter::{Enumerate, Map};
 use std::marker::PhantomData;
 use std::ops;
-use typenum::{Cmp, Equal};
+use std::ops::{Deref, DerefMut};
+use typenum::{Cmp, Equal, Unsigned};
 
 /// A trait that represents a collection of items.
-pub trait Collection: ops::Deref<Target = [Self::Item]> {
+pub trait Collection: Deref<Target = [Self::Item]> {
     /// The type of items in the collection.
     type Item;
 }
 
-impl<T, C: ops::Deref<Target = [T]>> Collection for C {
+impl<T, C: Deref<Target = [T]>> Collection for C {
     type Item = T;
 }
 
 /// A trait for collections that support mutable operations.
 ///
 /// This trait extends `Collection` and `DerefMut`, allowing mutable access to the collection's items.
-pub trait CollectionMut: Collection + ops::DerefMut<Target = [Self::Item]> {}
+pub trait CollectionMut: Collection + DerefMut<Target = [Self::Item]> {}
 
-impl<C: Collection + ops::DerefMut<Target = [C::Item]>> CollectionMut for C {}
+impl<C: Collection + DerefMut<Target = [C::Item]>> CollectionMut for C {}
 
 /// A type alias for an `EnumMap` where the underlying data is a `GenericArray`.
 ///
@@ -188,6 +189,17 @@ impl<E, D> EnumMap<E, D> {
     /// Consumes the `EnumMap` and returns the underlying data.
     pub fn into_inner(self) -> D {
         self.data
+    }
+}
+
+impl<E: Enum, D: Collection + FromIterator<D::Item>> FromIterator<D::Item> for EnumMap<E, D> {
+    fn from_iter<T: IntoIterator<Item = D::Item>>(iter: T) -> Self {
+        let data = D::from_iter(iter);
+        assert_eq!(E::Count::USIZE, data.len());
+        Self {
+            data,
+            __enum: PhantomData,
+        }
     }
 }
 
@@ -423,7 +435,7 @@ impl<E: Enum, D: Collection + FromIterator<D::Item>> EnumMap<E, D> {
     /// assert_eq!(color_map[Color::Green], 20);
     /// assert_eq!(color_map[Color::Blue], 30);
     /// ```
-    pub fn new(fill: impl Fn(E) -> D::Item) -> Self {
+    pub fn new(fill: impl FnMut(E) -> D::Item) -> Self {
         Self {
             data: crate::r#enum::enum_iter().map(fill).collect(),
             __enum: PhantomData,
@@ -538,6 +550,17 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
             .enumerate()
             .map(|(i, v)| (E::cast_from(i), v))
     }
+
+    pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T> where D::Item: AsRef<T> {
+        EnumMapArray::from_iter(self.data.iter().map(|v| v.as_ref()))
+    }
+    
+    pub fn items_as_deref(&self) -> EnumMapArray<E, &<D::Item as Deref>::Target>
+    where
+        D::Item: Deref,
+    {
+        EnumMapArray::from_iter(self.data.iter().map(|v| v.deref()))
+    }
 }
 
 impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
@@ -587,14 +610,25 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
             .enumerate()
             .map(|(i, v)| (E::cast_from(i), v))
     }
+
+    pub fn items_as_deref_mut(&mut self) -> EnumMapArray<E, &mut <D::Item as Deref>::Target>
+    where
+        D::Item: DerefMut,
+    {
+        EnumMapArray::from_iter(self.data.iter_mut().map(|v| v.deref_mut()))
+    }
+
+    pub fn items_as_mut<T: ?Sized>(&mut self) -> EnumMapArray<E, &mut T> where D::Item: AsMut<T> {
+        EnumMapArray::from_iter(self.data.iter_mut().map(|v| v.as_mut()))
+    }
 }
 
 impl<E: Enum, T> EnumMapArray<E, T> {
     /// Creates a new `EnumMapArray` from a given `GenericArray`.
     ///
-    /// This associated constant function allows for the creation of an `EnumMapArray` 
-    /// by taking an existing `GenericArray` of type `T` with a size determined by the 
-    /// number of enum variants (`E::Count`). It initializes the `EnumMapArray` with 
+    /// This associated constant function allows for the creation of an `EnumMapArray`
+    /// by taking an existing `GenericArray` of type `T` with a size determined by the
+    /// number of enum variants (`E::Count`). It initializes the `EnumMapArray` with
     /// the provided data and maintains the necessary type information using `PhantomData`.
     ///
     /// # Arguments
@@ -624,10 +658,27 @@ impl<E: Enum, T> EnumMapArray<E, T> {
     /// assert_eq!(map[Color::Green], 2);
     /// assert_eq!(map[Color::Blue], 3);
     /// ```
-    pub const fn from_array(array: GenericArray<T, E::Count>) -> Self
-    {
+    pub const fn from_array(array: GenericArray<T, E::Count>) -> Self {
         Self {
             data: array,
+            __enum: PhantomData,
+        }
+    }
+}
+
+impl<'a, E, T> EnumMapRef<'a, E, T> {
+    pub const fn from_slice(slice: &'a [T]) -> Self {
+        Self {
+            data: slice,
+            __enum: PhantomData,
+        }
+    }
+}
+
+impl<'a, E, T> EnumMapMut<'a, E, T> {
+    pub fn from_slice_mut(slice: &'a mut [T]) -> Self {
+        Self {
+            data: slice,
             __enum: PhantomData,
         }
     }

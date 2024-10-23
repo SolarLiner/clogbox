@@ -15,9 +15,9 @@
 //! use numeric_array::generic_array::arr;
 //! use typenum::U1;
 //!
-//! use clogbox_core::module::{StreamData, ProcessStatus, Module, ModuleContext, ModuleContextImpl, IoContext};
+//! use clogbox_core::module::{StreamData, ProcessStatus, Module};
 //! use clogbox_core::r#enum::{enum_iter, Enum, Sequential};
-//! use clogbox_core::r#enum::enum_map::EnumMapArray;
+//! use clogbox_core::r#enum::enum_map::{Collection, CollectionMut, EnumMap, EnumMapArray, EnumMapMut, EnumMapRef};
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
 //!
@@ -41,9 +41,11 @@
 //!         input_latency
 //!     }
 //!
-//!     fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus {
+//!     fn process(&mut self, stream_data: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
 //!         for inp in enum_iter::<In>() {
-//!             let (inp_buf, out_buf) = context.in_out(inp, inp);
+//!             let inp_buf = &*inputs[inp.cast()];
+//!             let out_buf = &mut *outputs[inp.cast()];
+//!
 //!             for (o, i) in out_buf.iter_mut().zip(inp_buf.iter()) {
 //!                 *o = -*i;
 //!             }   
@@ -57,14 +59,7 @@
 //! let stream_data = StreamData { sample_rate: 44100.0 ,bpm: 120. ,block_size };
 //! let inputs = (0..block_size).map(|i| i as f32).collect::<Vec<_>>();
 //! let mut outputs = vec![0.0; block_size];
-//! let mut context = ModuleContextImpl {
-//!     stream_data: &stream_data,
-//!     io: IoContext {
-//!         inputs: EnumMapArray::from_array(arr![&inputs]),
-//!         outputs: EnumMapArray::from_array(arr![&mut outputs]),
-//!     },
-//! };
-//! my_module.process(&mut context);
+//! my_module.process(&stream_data, &[&inputs], &mut [&mut outputs]);
 //! assert_eq!(-4., outputs[4]);
 //! ```
 pub mod analysis;
@@ -72,21 +67,11 @@ pub mod sample;
 pub mod utilitarian;
 
 use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::Enum;
+use crate::r#enum::{Enum, EnumIndex};
+use az::Cast;
+use std::marker::PhantomData;
 use std::ops;
 use typenum::Unsigned;
-
-/// A context that holds input and output buffers for processing I/O.
-///
-/// `IoContext` provides references to arrays of input and output data, which can be
-/// used in various processing tasks.
-#[derive(Debug)]
-pub struct IoContext<'a, T, In: Enum, Out: Enum> {
-    /// Represents the input data buffers.
-    pub inputs: EnumMapArray<In, &'a [T]>,
-    /// Represents the output data buffers.
-    pub outputs: EnumMapArray<Out, &'a mut [T]>,
-}
 
 /// Represents the metadata and configuration for a stream of audio data.
 #[derive(Debug, Copy, Clone)]
@@ -162,88 +147,6 @@ impl StreamData {
     }
 }
 
-/// Represents the raw context for a module, which includes stream data, inputs, and outputs.
-///
-/// This struct is used internally within the module to handle audio processing operations.
-///
-/// # Type Parameters
-///
-/// * `T` - The type of the samples being processed.
-#[derive(Debug)]
-pub struct ModuleContextRaw<'a, T> {
-    stream_data: &'a StreamData,
-    inputs: &'a [&'a [T]],
-    outputs: &'a mut [&'a mut [T]],
-}
-
-impl<'a, T> ModuleContextRaw<'a, T> {
-    /// Returns the time duration of one sample in seconds by delegating to the stream data.
-    pub fn dt(&self) -> f64 {
-        self.stream_data.dt()
-    }
-
-    /// Forks the current module context into a new one with provided inputs and outputs.
-    ///
-    /// # Parameters
-    ///
-    /// * `inputs` - A slice of immutable slices representing the new inputs.
-    /// * `outputs` - A slice of mutable slices representing the new outputs.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `ModuleContextRaw` with the new inputs and outputs.
-    pub fn fork<U>(
-        &self,
-        inputs: &'a [&'a [U]],
-        outputs: &'a mut [&'a mut [U]],
-    ) -> ModuleContextRaw<'a, U> {
-        ModuleContextRaw {
-            stream_data: self.stream_data,
-            inputs,
-            outputs,
-        }
-    }
-
-    /// Returns a reference to the input slice at the specified index.
-    ///
-    /// # Parameters
-    ///
-    /// * `i` - The index of the input slice to retrieve.
-    ///
-    /// # Returns
-    ///
-    /// A reference to the input slice at the specified index.
-    pub fn input_raw(&self, i: usize) -> &'a [T] {
-        self.inputs[i]
-    }
-
-    /// Returns a mutable reference to the output buffer at the specified index.
-    ///
-    /// # Arguments
-    ///
-    /// * `i` - Index of the output buffer to be accessed.
-    pub fn output_raw(&mut self, i: usize) -> &mut [T] {
-        self.outputs[i]
-    }
-
-    /// Returns raw input and mutable output buffers.
-    ///
-    /// This method provides direct access to the raw input and output buffers for a given pair of indices,
-    /// allowing low-level manipulation of the data. The input buffer is immutable while the output buffer is mutable.
-    ///
-    /// # Parameters
-    /// - `i`: The index of the input buffer.
-    /// - `j`: The index of the output buffer.
-    ///
-    /// # Returns
-    /// A tuple containing:
-    /// - A reference to the input buffer at index `i`.
-    /// - A mutable reference to the output buffer at index `j`.
-    pub fn in_out_raw(&mut self, i: usize, j: usize) -> (&[T], &mut [T]) {
-        (self.inputs[i], self.outputs[j])
-    }
-}
-
 /// A trait representing a raw module with audio processing capabilities.
 #[allow(unused_variables)]
 pub trait RawModule: Send {
@@ -282,138 +185,12 @@ pub trait RawModule: Send {
     /// # Returns
     ///
     /// The status of the processing.
-    fn process(&mut self, context: &mut ModuleContextRaw<Self::Sample>) -> ProcessStatus;
-}
-
-/// Type alias for `ModuleContextImpl`, making it simpler to use with modules by automatically
-/// filling in the associated types from the `Module` trait.
-pub type ModuleContext<'a, M> =
-    ModuleContextImpl<'a, <M as Module>::Sample, <M as Module>::Inputs, <M as Module>::Outputs>;
-
-/// Represents the context for a module, holding the stream data and I/O context.
-pub struct ModuleContextImpl<'a, T, In: Enum, Out: Enum> {
-    /// Reference to stream data.
-    pub stream_data: &'a StreamData,
-    /// The input and output context.
-    pub io: IoContext<'a, T, In, Out>,
-}
-
-impl<'a, T, In: Enum, Out: Enum> ops::Deref for ModuleContextImpl<'a, T, In, Out> {
-    type Target = IoContext<'a, T, In, Out>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.io
-    }
-}
-
-impl<'a, T, In: Enum, Out: Enum> ops::DerefMut for ModuleContextImpl<'a, T, In, Out> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.io
-    }
-}
-
-impl<'a, T, In: Enum, Out: Enum> ModuleContextImpl<'a, T, In, Out> {
-    /// Creates a `ModuleContextImpl` from a raw module context.
-    ///
-    /// This function ensures that the raw module context has the necessary
-    /// number of inputs and outputs, then converts it to a `ModuleContextImpl`.
-    ///
-    /// # Arguments
-    ///
-    /// * `raw` - The raw module context to be converted.
-    ///
-    /// # Returns
-    ///
-    /// A `ModuleContextImpl` instance with initialized stream data and I/O context.
-    ///
-    /// # Safety
-    ///
-    /// This function assumes that the raw module context has valid lifetimes.
-    /// The conversion process includes unsafe code to reborrow the mutable
-    /// references in the raw outputs.
-    pub fn from_raw(raw: ModuleContextRaw<'a, T>) -> Self {
-        assert!(
-            raw.inputs.len() >= In::Count::USIZE,
-            "Not enough inputs in context for module"
-        );
-        assert!(
-            raw.outputs.len() >= Out::Count::USIZE,
-            "Not enough outputs in context for module"
-        );
-        Self {
-            stream_data: raw.stream_data,
-            io: IoContext {
-                inputs: EnumMapArray::new(|k: In| raw.inputs[k.cast()]),
-                outputs: EnumMapArray::new(|k: Out| {
-                    let len = raw.outputs[k.cast()].len();
-                    // Safety: lifetimes are preserved, and no alias is created as the raw module
-                    // context is moved into this function.
-                    // This performs a "mutable reborrow" which detaches the lifetimes from the incoming
-                    // module context and attaches it to this one.
-                    unsafe {
-                        std::slice::from_raw_parts_mut(
-                            raw.outputs[k.cast()].as_ptr().cast_mut(),
-                            len,
-                        )
-                    }
-                }),
-            },
-        }
-    }
-
-    /// Converts the current `ModuleContextImpl` to a `ModuleContextRaw`.
-    ///
-    /// This method creates a raw representation of the module context, which includes the
-    /// stream data, inputs, and outputs.
-    ///
-    /// # Returns
-    /// A `ModuleContextRaw` struct containing the stream data and references to input and
-    /// mutable output slices.
-    pub fn as_raw(&'a mut self) -> ModuleContextRaw<'a, T> {
-        ModuleContextRaw {
-            stream_data: self.stream_data,
-            inputs: self.io.inputs.as_slice(),
-            outputs: self.io.outputs.as_slice_mut(),
-        }
-    }
-
-    /// Creates a new `ModuleContextImpl` by associating it with the provided I/O context.
-    pub fn with_io_context<U, I2: Enum, O2: Enum>(
-        &self,
-        io_context: IoContext<'a, U, I2, O2>,
-    ) -> ModuleContextImpl<'a, U, I2, O2> {
-        ModuleContextImpl {
-            stream_data: self.stream_data,
-            io: io_context,
-        }
-    }
-
-    /// Returns a reference to the input data corresponding to the given index.
-    pub fn input(&self, i: In) -> &[T] {
-        self.io.inputs[i]
-    }
-
-    /// Provides a mutable reference to the output buffer corresponding to the given index.
-    pub fn output(&mut self, i: Out) -> &mut [T] {
-        self.io.outputs[i]
-    }
-
-    /// Provides a mutable reference to the output buffer and an immutable reference to the input buffer
-    /// for the specified indices.
-    /// 
-    /// Use this method when you need both an input and an output at the same time.
-    ///
-    /// # Parameters
-    /// - `i`: The index of the input buffer.
-    /// - `j`: The index of the output buffer.
-    ///
-    /// # Returns
-    /// A tuple containing:
-    /// - An immutable reference to the input buffer at the specified index.
-    /// - A mutable reference to the output buffer at the specified index.
-    pub fn in_out(&mut self, i: In, j: Out) -> (&[T], &mut [T]) {
-        (self.inputs[i], self.outputs[j])
-    }
+    fn process(
+        &mut self,
+        stream_data: &StreamData,
+        inputs: &[&[Self::Sample]],
+        outputs: &mut [&mut [Self::Sample]],
+    ) -> ProcessStatus;
 }
 
 /// Represents the status of a process.
@@ -426,6 +203,45 @@ pub enum ProcessStatus {
     Tail(u64),
     /// The process is completed.
     Done,
+}
+
+impl ProcessStatus {
+    /// Merge two [`ProcessStatus`] instances, preserving as much information as possible.
+    /// 
+    /// # Arguments 
+    /// 
+    /// * `other`: A reference to another [`ProcessStatus`] instance that will be merged with `self`.
+    /// 
+    /// returns: ProcessStatus 
+    /// 
+    /// # Examples 
+    /// 
+    /// ```
+    /// use clogbox_core::module::ProcessStatus;
+    ///
+    /// let status1 = ProcessStatus::Running;
+    /// let status2 = ProcessStatus::Done;
+    /// let merged_status = status1.merge(&status2);
+    /// assert_eq!(merged_status, ProcessStatus::Done);
+    ///
+    /// let status3 = ProcessStatus::Tail(5);
+    /// let status4 = ProcessStatus::Tail(10);
+    /// let merged_tail_status = status3.merge(&status4);
+    /// assert_eq!(merged_tail_status, ProcessStatus::Tail(15));
+    ///
+    /// let status5 = ProcessStatus::Running;
+    /// let status6 = ProcessStatus::Running;
+    /// let merged_running_status = status5.merge(&status6);
+    /// assert_eq!(merged_running_status, ProcessStatus::Running);
+    /// ```
+    pub fn merge(&self, other: &Self) -> Self {
+        match (self, other) {
+            (ProcessStatus::Tail(a), ProcessStatus::Tail(b)) => ProcessStatus::Tail(a + b),
+            (&ProcessStatus::Tail(a), _) | (_, &ProcessStatus::Tail(a)) => ProcessStatus::Tail(a),
+            (ProcessStatus::Done, _) | (_, ProcessStatus::Done) => ProcessStatus::Done,
+            _ => ProcessStatus::Running,
+        }
+    }
 }
 
 /// A module trait defining the basic functionalities and requirements for audio modules.
@@ -484,11 +300,16 @@ pub trait Module: 'static + Send {
     /// # Returns
     ///
     /// The status of the process after execution.
-    fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus;
+    fn process(
+        &mut self,
+        stream_data: &StreamData,
+        inputs: &[&[Self::Sample]],
+        outputs: &mut [&mut [Self::Sample]],
+    ) -> ProcessStatus;
 }
 
 impl<M: Module> RawModule for M {
-    type Sample = ();
+    type Sample = M::Sample;
 
     #[inline]
     fn inputs(&self) -> usize {
@@ -515,20 +336,18 @@ impl<M: Module> RawModule for M {
         M::reset(self)
     }
 
-    #[inline]
-    fn process(&mut self, raw_context: &mut ModuleContextRaw<Self::Sample>) -> ProcessStatus {
-        // Safety: ModuleCtxImpl<'a, Self::Sample, ...> is #[repr(transparent)]
-        let context = unsafe {
-            std::mem::transmute::<&mut ModuleContextRaw<Self::Sample>, &mut ModuleContext<M>>(
-                raw_context,
-            )
-        };
-        M::process(self, context)
+    fn process(
+        &mut self,
+        stream_data: &StreamData,
+        inputs: &[&[Self::Sample]],
+        outputs: &mut [&mut [Self::Sample]],
+    ) -> ProcessStatus {
+        M::process(self, stream_data, inputs, outputs)
     }
 }
 
 /// Trait representing a constructor for a module.
-/// 
+///
 /// Module constructors are responsible for allocating a new module with the provided stream data,
 /// and return modules in a usable state.
 pub trait ModuleConstructor {

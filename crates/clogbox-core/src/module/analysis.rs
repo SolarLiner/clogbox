@@ -24,7 +24,7 @@
 //! use clogbox_core::math::dsp::freq_to_z;
 //! use clogbox_core::module::analysis::{FreqAnalysis, Matrix};
 //!
-//! use clogbox_core::module::{Module, ModuleContext, ProcessStatus, StreamData};
+//! use clogbox_core::module::{Module, ProcessStatus, StreamData};
 //! use clogbox_core::r#enum::{enum_iter, Enum, Sequential};
 //! use clogbox_core::r#enum::enum_map::EnumMapArray;
 //!
@@ -50,9 +50,10 @@
 //!         input_latency
 //!     }
 //!
-//!     fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus {
+//!     fn process(&mut self, stream_data: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
 //!         for inp in enum_iter::<In>() {
-//!             let (inp_buf, out_buf) = context.in_out(inp, inp);
+//!             let inp_buf = &*inputs[inp.cast()];
+//!             let out_buf = &mut *outputs[inp.cast()];
 //!             for (o, i) in out_buf.iter_mut().zip(inp_buf.iter()) {
 //!                 *o = -*i;
 //!             }

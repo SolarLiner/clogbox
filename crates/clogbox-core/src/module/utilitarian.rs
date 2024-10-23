@@ -1,21 +1,21 @@
-//! This module provides the core functionalities and structures for handling various 
-//! audio processing components. It includes definitions for processing statuses, 
-//! stream metadata, and configuration, as well as implementations of different 
+//! This module provides the core functionalities and structures for handling various
+//! audio processing components. It includes definitions for processing statuses,
+//! stream metadata, and configuration, as well as implementations of different
 //! processing units.
-use crate::module::{Module, ModuleContext, ProcessStatus, StreamData};
+use crate::module::{Module, ProcessStatus, StreamData};
 use crate::param::curve::ParamCurve;
+use crate::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapBox};
 use crate::r#enum::{enum_iter, CartesianProduct, Enum};
+use az::CastFrom;
 use num_traits::{Num, NumAssign, Zero};
 use numeric_array::ArrayLength;
 use std::marker::PhantomData;
 use std::ops;
-use az::CastFrom;
 use typenum::Unsigned;
-use crate::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapBox};
 
 /// A matrix that sums the inputs given a matrix of input:output coefficients.
 ///
-/// `SummingMatrix` uses an `EnumMapBox` to hold parameters of type `ParamCurve` 
+/// `SummingMatrix` uses an `EnumMapBox` to hold parameters of type `ParamCurve`
 /// for each combination of `In` and `Out` types represented by `CartesianProduct`.
 ///
 /// # Type Parameters
@@ -65,7 +65,7 @@ where
     /// * `out` - The output parameter.
     ///
     /// # Returns
-    /// 
+    ///
     /// A mutable reference to the `ParamCurve` corresponding to the input-output combination.
     pub fn param_block_mut(&mut self, inp: In, out: Out) -> &mut ParamCurve {
         &mut self.params[CartesianProduct(inp, out)]
@@ -89,24 +89,43 @@ where
     }
 
     fn reallocate(&mut self, stream_data: StreamData) {
-        self.params = EnumMap::new(|k| ParamCurve::new(stream_data.sample_rate as _, Self::PARAMS_MAX_TIMESTAMPS, self.params[k].last_value()));
+        self.params = EnumMap::new(|k| {
+            ParamCurve::new(
+                stream_data.sample_rate as _,
+                Self::PARAMS_MAX_TIMESTAMPS,
+                self.params[k].last_value(),
+            )
+        });
     }
 
-    fn latency(&self, input_latencies: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
-        EnumMapArray::new(|out| input_latencies.iter().map(|(k, &v)| v * self.params[CartesianProduct(k, out)].last_value() as f64).sum())
+    fn latency(
+        &self,
+        input_latencies: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64> {
+        EnumMapArray::new(|out| {
+            input_latencies
+                .iter()
+                .map(|(k, &v)| v * self.params[CartesianProduct(k, out)].last_value() as f64)
+                .sum()
+        })
     }
 
     #[inline]
     #[profiling::function]
-    fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus {
-        let block_size = context.stream_data.block_size;
-        for x in context.outputs.values_mut() {
+    fn process(
+        &mut self,
+        stream_data: &StreamData,
+        inputs: &[&[Self::Sample]],
+        outputs: &mut [&mut [Self::Sample]],
+    ) -> ProcessStatus {
+        let block_size = stream_data.block_size;
+        for x in &mut *outputs {
             x.fill(T::zero());
         }
 
         for param in enum_iter::<CartesianProduct<In, Out>>() {
-            let in_buf = context.inputs[param.0];
-            let out_buf = &mut *context.outputs[param.1];
+            let in_buf = inputs[param.0.cast()];
+            let out_buf = &mut *outputs[param.1.cast()];
             let parr = &self.params[param];
             // TODO: simd
             for i in 0..block_size {
@@ -136,7 +155,7 @@ pub struct Series<A: Module, B: Module<Sample = A::Sample>, SwitchFn> {
 impl<
         A: Module,
         B: Module<Sample = A::Sample, Inputs = A::Outputs>,
-        SwitchFn: Send + 'static + Fn(B::Inputs) -> A::Outputs,
+        SwitchFn: Send + 'static + Fn(A::Outputs) -> B::Inputs,
     > Module for Series<A, B, SwitchFn>
 where
     A::Sample: Send + Zero,
@@ -167,13 +186,136 @@ where
         }
     }
 
-    fn latency(&self, input_latencies: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
+    fn latency(
+        &self,
+        input_latencies: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64> {
         let first = self.first.latency(input_latencies);
-        let second_input = EnumMapArray::new(|in_b| first[(self.switch_fn)(in_b)]);
+        let second_input = EnumMapArray::new(|out_a| first[(self.switch_fn)(out_a)]);
         self.second.latency(second_input)
     }
 
-    fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus {
-        todo!()
+    fn process(
+        &mut self,
+        stream_data: &StreamData,
+        inputs: &[&[Self::Sample]],
+        outputs: &mut [&mut [Self::Sample]],
+    ) -> ProcessStatus {
+        let first_status = self.first.process(
+            stream_data,
+            inputs,
+            self.inner_buffer.items_as_mut().as_slice_mut(),
+        );
+        let new_inputs = EnumMapArray::new(|out_a| &*self.inner_buffer[(self.switch_fn)(out_a)]);
+        let second_status =
+            self.second
+                .process(stream_data, new_inputs.items_as_ref().as_slice(), outputs);
+        first_status.merge(&second_status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::module::utilitarian::SummingMatrix;
+    use crate::module::{Module, ProcessStatus, StreamData};
+    use crate::r#enum::enum_map::{EnumMap, EnumMapArray};
+    use crate::r#enum::{CartesianProduct, Enum};
+    use approx::assert_relative_eq;
+    use az::{Cast, CastFrom};
+    use rstest::rstest;
+    use std::borrow::Cow;
+    
+    use typenum::{Unsigned, U2};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
+    enum TestIn {
+        A,
+        B,
+    }
+
+    impl Cast<usize> for TestIn {
+        fn cast(self) -> usize {
+            match self {
+                Self::A => 0,
+                Self::B => 1,
+            }
+        }
+    }
+
+    impl CastFrom<usize> for TestIn {
+        fn cast_from(src: usize) -> Self {
+            match src {
+                0 => Self::A,
+                1 => Self::B,
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    impl Enum for TestIn {
+        type Count = U2;
+
+        fn name(&self) -> Cow<str> {
+            match self {
+                Self::A => Cow::from("A"),
+                Self::B => Cow::from("B"),
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
+    enum TestOut {
+        X,
+        Y,
+    }
+
+    impl Cast<usize> for TestOut {
+        fn cast(self) -> usize {
+            match self {
+                Self::X => 0,
+                Self::Y => 1,
+            }
+        }
+    }
+
+    impl CastFrom<usize> for TestOut {
+        fn cast_from(src: usize) -> Self {
+            match src {
+                0 => Self::X,
+                1 => Self::Y,
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    impl Enum for TestOut {
+        type Count = U2;
+
+        fn name(&self) -> Cow<str> {
+            match self {
+                Self::X => Cow::from("X"),
+                Self::Y => Cow::from("Y"),
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_param_count() {
+        type Params = CartesianProduct<TestIn, TestOut>;
+        assert_eq!(<Params as Enum>::Count::USIZE, 4); // TestIn and TestOut have 2 variants each, so 2x2=4
+    }
+
+    #[rstest]
+    fn test_param_block_mut() {
+        let sample_rate = 44100.0;
+        let max_timestamps = 64;
+        let initial_values = EnumMap::new(|_| 0.0);
+        let mut summing_matrix: SummingMatrix<f32, _, _> =
+            SummingMatrix::new(sample_rate, max_timestamps, initial_values);
+
+        let param_block = summing_matrix.param_block_mut(TestIn::A, TestOut::X);
+        param_block.add_value_seconds(0.1, 10.);
+
+        assert_relative_eq!(param_block.last_value(), 10.0);
     }
 }

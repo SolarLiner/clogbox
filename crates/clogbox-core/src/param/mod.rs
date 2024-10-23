@@ -10,7 +10,7 @@
 /// # Example
 ///
 /// ```
-/// use clogbox_core::param::Value;
+/// use clogbox_core::param::value::Value;
 ///
 /// let int_value = Value::from(42);
 /// if let Value::Int(i) = int_value {

@@ -28,7 +28,9 @@ use az::{Cast, CastFrom};
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::marker::PhantomData;
 use std::ops;
+use std::ops::{Deref, DerefMut};
 use typenum::{Prod, Unsigned, U0};
 
 pub mod enum_map;
@@ -80,6 +82,50 @@ pub trait Enum: Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize> {
     /// assert_eq!(color.name(), "Red");
     /// ```
     fn name(&self) -> Cow<str>;
+}
+
+#[derive(Debug, Copy, Clone)]
+#[repr(transparent)]
+pub struct EnumIndex<C, E>(C, PhantomData<E>);
+
+impl<C, E> Deref for EnumIndex<C, E> {
+    type Target = C;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<C, E> DerefMut for EnumIndex<C, E> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<C, E> From<C> for EnumIndex<C, E> {
+    fn from(value: C) -> Self {
+        Self(value, PhantomData)
+    }
+}
+
+impl<E: Cast<usize>, C: ops::Index<usize>> ops::Index<E> for EnumIndex<C, E> {
+    type Output = C::Output;
+
+    fn index(&self, index: E) -> &Self::Output {
+        self.0.index(index.cast())
+    }
+}
+
+impl<E: Cast<usize>, C: ops::IndexMut<usize>> ops::IndexMut<E> for EnumIndex<C, E> {
+    fn index_mut(&mut self, index: E) -> &mut Self::Output {
+        self.0.index_mut(index.cast())
+    }
+}
+
+impl<C, E> EnumIndex<C, E> {
+    pub fn into_inner(self) -> C {
+        self.0
+    }
 }
 
 /// An empty, never instantiable enum.

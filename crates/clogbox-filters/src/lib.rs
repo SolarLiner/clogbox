@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 use generic_array::ArrayLength;
 use num_traits::Float;
 use typenum::U1;
-use clogbox_core::module::{Module, ModuleContext, ProcessStatus, RawModule, StreamData};
+use clogbox_core::module::{Module, ProcessStatus, RawModule, StreamData};
 use clogbox_core::module::sample::{SampleContext, SampleModule};
 use clogbox_core::r#enum::{seq, Sequential, Enum};
 use clogbox_core::r#enum::enum_map::EnumMapArray;
@@ -72,8 +72,8 @@ impl<S:'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S> {
 
     #[inline]
     #[profiling::function]
-    fn process(&mut self, context: &mut ModuleContext<Self>) -> ProcessStatus {
-        self.0.saturate_buffer(context.inputs[seq(0)], context.outputs[seq(0)]);
+    fn process(&mut self, _: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
+        self.0.saturate_buffer(inputs[0], outputs[0]);
         ProcessStatus::Running
     }
 }
@@ -91,13 +91,9 @@ impl<S: 'static + Send + Saturator<Sample: Copy>> SampleModule for SaturatorSamp
         input_latency
     }
 
-    fn process_sample(&mut self, context: &mut SampleContext<Self>) -> ProcessStatus
-    where
-        <Self::Inputs as Enum>::Count: ArrayLength,
-        <Self::Outputs as Enum>::Count: ArrayLength
+    fn process_sample(&mut self, _: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>)
     {
-        context.outputs[seq(0)] = self.0.saturate(context.inputs[seq(1)]);
-        ProcessStatus::Running
+        (ProcessStatus::Running, EnumMapArray::new(|_| self.0.saturate(inputs[seq(0)])))
     }
 }
 

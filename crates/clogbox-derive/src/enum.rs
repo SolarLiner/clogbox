@@ -1,6 +1,6 @@
 use darling::{ast, FromDeriveInput, FromField, FromVariant};
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{quote, ToTokens};
 
 #[derive(Debug, FromField)]
 #[darling(attributes(r#enum))]
@@ -31,27 +31,28 @@ impl DeriveEnum {
     fn impl_cast_from(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
-            .map(|EnumVariant { ident, fields, .. }| {
-                match fields.len() {
-                    0 => quote! { if i == 0 { return Self::#ident; } else { i -= 1; } },
-                    1 => {
-                        let EnumField { ty, .. } = &fields.fields[0];
-                        quote! {
-                            if i < #ty::Count::USIZE {
-                                return Self::#ident(#ty::cast_from(i));
-                            } else {
-                                i -= #ty::Count::USIZE;
-                            }
+            .map(|EnumVariant { ident, fields, .. }| match fields.len() {
+                0 => quote! { if i == 0 { return Self::#ident; } else { i -= 1; } },
+                1 => {
+                    let EnumField { ty, .. } = &fields.fields[0];
+                    quote! {
+                        if i < <<#ty as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE {
+                            return Self::#ident(#ty::cast_from(i));
+                        } else {
+                            i -= <<#ty as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE;
                         }
                     }
-                    _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
                 }
+                _ => syn::Error::new(
+                    ident.span(),
+                    "Cannot derive Enum for enum with variants having more than 1 field",
+                )
+                .into_compile_error(),
             });
         quote! {
             #[automatically_derived]
-            impl ::az::CastFrom<usize> for #ident {
-                fn cast_from(idx: usize) -> Self {
-                    let mut i = 0;
+            impl ::clogbox_core::r#enum::az::CastFrom<usize> for #ident {
+                fn cast_from(mut i: usize) -> Self {
                     #(#arms)*
                     unreachable!();
                 }
@@ -62,25 +63,27 @@ impl DeriveEnum {
     fn impl_cast(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
-            .map(|EnumVariant { ident, fields, .. }| {
-                match fields.len() {
-                    0 => quote! { if let Self::#ident = self { return i; } else { i += 1;} },
-                    1 => {
-                        let EnumField { ty, .. } = &fields.fields[0];
-                        quote! {
-                            if let Self::#ident(value) = self {
-                                return i + value.cast();
-                            } else {
-                                i += #ty::Count::USIZE;
-                            }
+            .map(|EnumVariant { ident, fields, .. }| match fields.len() {
+                0 => quote! { if let Self::#ident = self { return i; } else { i += 1;} },
+                1 => {
+                    let EnumField { ty, .. } = &fields.fields[0];
+                    quote! {
+                        if let Self::#ident(value) = self {
+                            return i + value.cast();
+                        } else {
+                            i += <#ty as ::clogbox_core::r#enum::Enum>::Count::USIZE;
                         }
                     }
-                    _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
                 }
+                _ => syn::Error::new(
+                    ident.span(),
+                    "Cannot derive Enum for enum with variants having more than 1 field",
+                )
+                .into_compile_error(),
             });
         quote! {
             #[automatically_derived]
-            impl ::az::Cast<usize> for #ident {
+            impl ::clogbox_core::r#enum::az::Cast<usize> for #ident {
                 fn cast(self) -> usize {
                     let mut i = 0;
                     #(#arms)*
@@ -91,8 +94,25 @@ impl DeriveEnum {
     }
 
     fn impl_enum(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
-        let count = fields.len();
-        let count_ty = syn::parse_str::<syn::Type>(&format!("::typenum::U{count}")).unwrap();
+        let (unit, variant) = fields
+            .iter()
+            .partition::<Vec<_>, _>(|field| field.fields.is_empty());
+        let unit_count_ty = syn::parse_str::<syn::Type>(&format!("::typenum::U{}", unit.len()))
+            .unwrap()
+            .to_token_stream();
+        let count_ty = if variant.is_empty() {
+            unit_count_ty
+        } else {
+            let variant_count_ty = variant
+                .into_iter()
+                .map(|EnumVariant { fields, .. }| {
+                    let EnumField { ty, .. } = &fields.fields[0];
+                    quote! { <#ty as ::clogbox_core::r#enum::Enum>::Count }
+                })
+                .reduce(|a, b| quote! { ::typenum::operator_aliases::Sum<#a, #b> })
+                .unwrap();
+            quote! { ::typenum::operator_aliases::Sum<#unit_count_ty, #variant_count_ty> }
+        };
         let arms = fields.iter().map(|EnumVariant { ident, name, fields, prefix }| {
             let name = name
                 .clone()
@@ -100,7 +120,6 @@ impl DeriveEnum {
             match fields.len() {
                 0 => quote! { Self::#ident => ::std::borrow::Cow::from(#name) },
                 1 => {
-                    let EnumField { ty, .. } = &fields.fields[0];
                     let borrow = if let Some(prefix) = prefix {
                         let format_string = format!("{prefix} {{}}");
                         quote! { ::std::borrow::Cow::Owned(format!(#format_string, inner.name())) }
@@ -165,14 +184,13 @@ mod tests {
                 InputFM,
             }"#,
         )
-            .expect("Parsing valid code");
-        let from_derive_input =
-            DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
+        .expect("Parsing valid code");
+        let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         eprintln!("{from_derive_input:#?}");
         let output = from_derive_input.into_token_stream().to_string();
         insta::assert_snapshot!(prettyplease::unparse(&syn::parse_file(&output).unwrap()));
     }
-    
+
     #[test]
     fn test_derive_nested() {
         let input = syn::parse_str(
@@ -182,8 +200,9 @@ mod tests {
                 #[r#enum(prefix = "B")]
                 B(Inner),
                 C(Inner),
-            }"#
-        ).expect("Parsing valid code");
+            }"#,
+        )
+        .expect("Parsing valid code");
         let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         eprintln!("{from_derive_input:#?}");
         let output = from_derive_input.into_token_stream().to_string();

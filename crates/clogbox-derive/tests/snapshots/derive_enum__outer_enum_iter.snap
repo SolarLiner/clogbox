@@ -1,0 +1,12 @@
+---
+source: crates/clogbox-derive/tests/derive_enum.rs
+expression: expected
+---
+First
+1
+2
+3
+A
+B
+C
+D

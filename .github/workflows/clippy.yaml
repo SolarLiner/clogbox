@@ -1,0 +1,29 @@
+name: Clippy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ matrix.name }}-${{ matrix.cross-target }}
+      - name: Set up Rust toolchain
+        uses: actions-rs/toolchain@v1
+      - name: Run clippy
+        uses: clechasseur/rs-clippy-check@v3
+        with:
+          args: --workspace --all-targets --all-features

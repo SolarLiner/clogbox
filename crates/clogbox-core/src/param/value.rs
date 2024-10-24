@@ -9,10 +9,11 @@
 //!
 //! Example:
 //! ```
-//! use clogbox_core::param::Value;
+//! use clogbox_core::param::value::Value;
 //!
 //! let int_value: Value = 42.into();
-//! let float_value: Value = 3.14.into();
+//! let float_value: Value = 3.14f32.into();
+//! let double_value: Value = 3.14f64.into();
 //! let str_value: Value = "hello".into();
 //!
 //! assert_eq!(int_value.variant_str(), "int");

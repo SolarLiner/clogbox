@@ -11,17 +11,17 @@ struct EnumField {
 }
 
 #[derive(Debug, FromVariant)]
-#[darling(supports(unit))]
+#[darling(attributes(r#enum), supports(unit, newtype))]
 struct EnumVariant {
     ident: syn::Ident,
     #[darling(rename = "display")]
     name: Option<String>,
-    #[allow(unused)]
+    prefix: Option<String>,
     fields: ast::Fields<EnumField>,
 }
 
 #[derive(Debug, FromDeriveInput)]
-#[darling(supports(enum_unit))]
+#[darling(supports(enum_unit, enum_newtype))]
 pub(crate) struct DeriveEnum {
     ident: syn::Ident,
     data: ast::Data<EnumVariant, ()>,
@@ -31,19 +31,29 @@ impl DeriveEnum {
     fn impl_cast_from(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
-            .enumerate()
-            .map(|(i, EnumVariant { ident, .. })| {
-                let id = syn::Index::from(i);
-                quote! { #id => Self::#ident }
+            .map(|EnumVariant { ident, fields, .. }| {
+                match fields.len() {
+                    0 => quote! { if i == 0 { return Self::#ident; } else { i -= 1; } },
+                    1 => {
+                        let EnumField { ty, .. } = &fields.fields[0];
+                        quote! {
+                            if i < #ty::Count::USIZE {
+                                return Self::#ident(#ty::cast_from(i));
+                            } else {
+                                i -= #ty::Count::USIZE;
+                            }
+                        }
+                    }
+                    _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
+                }
             });
         quote! {
             #[automatically_derived]
             impl ::az::CastFrom<usize> for #ident {
                 fn cast_from(idx: usize) -> Self {
-                    match idx {
-                        #(#arms,)*
-                        _ => unreachable!(),
-                    }
+                    let mut i = 0;
+                    #(#arms)*
+                    unreachable!();
                 }
             }
         }
@@ -52,18 +62,29 @@ impl DeriveEnum {
     fn impl_cast(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
-            .enumerate()
-            .map(|(i, EnumVariant { ident, .. })| {
-                let id = syn::Index::from(i);
-                quote! { Self::#ident => #id }
+            .map(|EnumVariant { ident, fields, .. }| {
+                match fields.len() {
+                    0 => quote! { if let Self::#ident = self { return i; } else { i += 1;} },
+                    1 => {
+                        let EnumField { ty, .. } = &fields.fields[0];
+                        quote! {
+                            if let Self::#ident(value) = self {
+                                return i + value.cast();
+                            } else {
+                                i += #ty::Count::USIZE;
+                            }
+                        }
+                    }
+                    _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
+                }
             });
         quote! {
             #[automatically_derived]
             impl ::az::Cast<usize> for #ident {
                 fn cast(self) -> usize {
-                    match self {
-                        #(#arms),*
-                    }
+                    let mut i = 0;
+                    #(#arms)*
+                    unreachable!()
                 }
             }
         }
@@ -72,15 +93,27 @@ impl DeriveEnum {
     fn impl_enum(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let count = fields.len();
         let count_ty = syn::parse_str::<syn::Type>(&format!("::typenum::U{count}")).unwrap();
-        let arms = fields.iter().map(|field| {
-            let ident = &field.ident;
-            let name = field
-                .name
+        let arms = fields.iter().map(|EnumVariant { ident, name, fields, prefix }| {
+            let name = name
                 .clone()
-                .unwrap_or_else(|| field.ident.to_string());
-            eprintln!("Name: {name:?}");
-            quote! {
-                Self::#ident => ::std::borrow::Cow::Borrowed(#name)
+                .unwrap_or_else(|| ident.to_string());
+            match fields.len() {
+                0 => quote! { Self::#ident => ::std::borrow::Cow::from(#name) },
+                1 => {
+                    let EnumField { ty, .. } = &fields.fields[0];
+                    let borrow = if let Some(prefix) = prefix {
+                        let format_string = format!("{prefix} {{}}");
+                        quote! { ::std::borrow::Cow::Owned(format!(#format_string, inner.name())) }
+                    } else {
+                        quote! { inner.name() }
+                    };
+                    quote! {
+                        Self::#ident(inner) => {
+                            #borrow
+                        }
+                    }
+                }
+                _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
             }
         });
         quote! {
@@ -135,6 +168,23 @@ mod tests {
             .expect("Parsing valid code");
         let from_derive_input =
             DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
+        eprintln!("{from_derive_input:#?}");
+        let output = from_derive_input.into_token_stream().to_string();
+        insta::assert_snapshot!(prettyplease::unparse(&syn::parse_file(&output).unwrap()));
+    }
+    
+    #[test]
+    fn test_derive_nested() {
+        let input = syn::parse_str(
+            r#"
+            enum Outer {
+                A,
+                #[r#enum(prefix = "B")]
+                B(Inner),
+                C(Inner),
+            }"#
+        ).expect("Parsing valid code");
+        let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         eprintln!("{from_derive_input:#?}");
         let output = from_derive_input.into_token_stream().to_string();
         insta::assert_snapshot!(prettyplease::unparse(&syn::parse_file(&output).unwrap()));

@@ -1,0 +1,59 @@
+---
+source: crates/clogbox-derive/src/enum.rs
+expression: "prettyplease::unparse(&syn::parse_file(&output).unwrap())"
+---
+#[automatically_derived]
+impl ::az::CastFrom<usize> for Outer {
+    fn cast_from(idx: usize) -> Self {
+        let mut i = 0;
+        if i == 0 {
+            return Self::A;
+        } else {
+            i -= 1;
+        }
+        if i < Inner::Count::USIZE {
+            return Self::B(Inner::cast_from(i));
+        } else {
+            i -= Inner::Count::USIZE;
+        }
+        if i < Inner::Count::USIZE {
+            return Self::C(Inner::cast_from(i));
+        } else {
+            i -= Inner::Count::USIZE;
+        }
+        unreachable!();
+    }
+}
+#[automatically_derived]
+impl ::az::Cast<usize> for Outer {
+    fn cast(self) -> usize {
+        let mut i = 0;
+        if let Self::A = self {
+            return i;
+        } else {
+            i += 1;
+        }
+        if let Self::B(value) = self {
+            return i + value.cast();
+        } else {
+            i += Inner::Count::USIZE;
+        }
+        if let Self::C(value) = self {
+            return i + value.cast();
+        } else {
+            i += Inner::Count::USIZE;
+        }
+        unreachable!()
+    }
+}
+#[automatically_derived]
+impl ::clogbox_core::r#enum::Enum for Outer {
+    type Count = ::typenum::U3;
+    fn name(&self) -> ::std::borrow::Cow<str> {
+        match self {
+            Self::A => ::std::borrow::Cow::from("A"),
+            Self::B(inner) => ::std::borrow::Cow::Owned(format!("B {}", inner.name())),
+            Self::C(inner) => inner.name(),
+        }
+    }
+}

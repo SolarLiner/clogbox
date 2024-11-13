@@ -48,11 +48,12 @@
 //! assert_eq!(-42.0, outputs[seq(0)]);
 //! ```
 
-use crate::module::{Module, ProcessStatus, StreamData};
+use crate::module::{Module, ModuleContext, ProcessStatus, StreamData};
 use crate::r#enum::enum_map::EnumMapArray;
 use crate::r#enum::Enum;
-use az::Cast;
 use numeric_array::ArrayLength;
+
+use super::BufferStorage;
 
 /// Type alias for the sample context implementation,
 /// making it easier to use with [`SampleModule`] implementations.
@@ -139,18 +140,17 @@ impl<M: SampleModule<Sample: Copy>> Module for M {
         M::latency(self, input_latency)
     }
 
-    fn process(
+    fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(
         &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
+        context: &mut ModuleContext<S>,
     ) -> ProcessStatus {
         let mut status = ProcessStatus::Running;
-        for i in 0..stream_data.block_size {
-            let sample_in = EnumMapArray::new(|inp: Self::Inputs| inputs[inp.cast()][i]);
-            let (new_status, sample_out) = M::process_sample(self, stream_data, sample_in);
+        let block_size = context.stream_data().block_size;
+        for i in 0..block_size {
+            let sample_in = EnumMapArray::new(|inp: Self::Inputs| context.buffers.get_input_buffer(inp)[i]);
+            let (new_status, sample_out) = M::process_sample(self, context.stream_data(), sample_in);
             for (out, val) in sample_out {
-                outputs[out.cast()][i] = val;
+                context.buffers.get_output_buffer(out)[i] = val;
             }
 
             status = status.merge(&new_status);

@@ -24,6 +24,7 @@
 //!     println!("{:?}", variant);
 //! }
 //! ```
+pub use az;
 use az::{Cast, CastFrom};
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
@@ -31,8 +32,7 @@ use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::ops;
 use std::ops::{Deref, DerefMut};
-use typenum::{Prod, Unsigned, U0};
-pub use az;
+use typenum::{Prod, Sum, Unsigned, U0};
 
 pub mod enum_map;
 
@@ -268,8 +268,8 @@ impl<N: Send + Unsigned + ArrayLength> Enum for Sequential<N> {
 /// trait, allowing it to be used for strongly-typed indexing while maintaining
 /// type safety.
 ///
-/// The total number of variants in `CartesianProduct` is the product of the 
-/// variants from both enums, making it useful for handling combinations of 
+/// The total number of variants in `CartesianProduct` is the product of the
+/// variants from both enums, making it useful for handling combinations of
 /// states.
 ///
 /// ## Example
@@ -312,8 +312,7 @@ impl<A: Enum, B: Enum> Cast<usize> for CartesianProduct<A, B> {
 
 impl<A: Enum, B: Enum> Enum for CartesianProduct<A, B>
 where
-    A::Count: ops::Mul<B::Count, Output: Unsigned>,
-    <A::Count as ops::Mul<B::Count>>::Output: Unsigned + ArrayLength,
+    A::Count: ops::Mul<B::Count, Output: Unsigned + ArrayLength>,
 {
     type Count = Prod<A::Count, B::Count>;
 
@@ -322,3 +321,47 @@ where
     }
 }
 
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+impl<A: Enum, B: Enum> Cast<usize> for Either<A, B>
+where
+    A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
+{
+    fn cast(self) -> usize {
+        match self {
+            Self::Left(a) => a.cast(),
+            Self::Right(b) => A::Count::USIZE + b.cast(),
+        }
+    }
+}
+
+impl<A: Enum, B: Enum> CastFrom<usize> for Either<A, B>
+where
+    A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
+{
+    fn cast_from(src: usize) -> Self {
+        if src < A::Count::USIZE {
+            Self::Left(A::cast_from(src))
+        } else {
+            Self::Right(B::cast_from(src - A::Count::USIZE))
+        }
+    }
+}
+
+impl<A: Enum, B: Enum> Enum for Either<A, B>
+where
+    A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
+{
+    type Count = Sum<A::Count, B::Count>;
+
+    fn name(&self) -> Cow<str> {
+        match self {
+            Either::Left(a) => a.name(),
+            Either::Right(b) => b.name(),
+        }
+    }
+}

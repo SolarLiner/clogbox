@@ -3,14 +3,15 @@
 //!
 //! This module provides a number of non-linear filters that can be used to modify the
 //! amplitude of audio signals.
-use std::marker::PhantomData;
-use generic_array::ArrayLength;
-use num_traits::Float;
-use typenum::U1;
-use clogbox_core::module::{Module, ProcessStatus, RawModule, StreamData};
-use clogbox_core::module::sample::{SampleContext, SampleModule};
-use clogbox_core::r#enum::{seq, Sequential, Enum};
+use clogbox_core::module::sample::SampleModule;
+use clogbox_core::module::{
+    BufferStorage, Module, ModuleContext, ProcessStatus, StreamData,
+};
 use clogbox_core::r#enum::enum_map::EnumMapArray;
+use clogbox_core::r#enum::{seq, Sequential};
+use num_traits::Float;
+use std::marker::PhantomData;
+use typenum::U1;
 
 pub mod svf;
 
@@ -34,7 +35,10 @@ pub trait Saturator {
     /// - `buffer`: The buffer containing the values to be saturated.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample]) where Self::Sample: Copy {
+    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample])
+    where
+        Self::Sample: Copy,
+    {
         for value in buffer {
             *value = self.saturate(*value);
         }
@@ -47,7 +51,10 @@ pub trait Saturator {
     /// - `output`: The output buffer where the saturated values will be stored.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer(&mut self, input: &[Self::Sample], output: &mut [Self::Sample]) where Self::Sample: Copy {
+    fn saturate_buffer(&mut self, input: &[Self::Sample], output: &mut [Self::Sample])
+    where
+        Self::Sample: Copy,
+    {
         output.copy_from_slice(input);
         self.saturate_buffer_in_place(output);
     }
@@ -57,8 +64,8 @@ pub trait Saturator {
 #[derive(Debug, Copy, Clone)]
 pub struct SaturatorModule<S: Saturator>(pub S);
 
-impl<S:'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S> {
-    type Sample = S::Sample;
+impl<Sat: 'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<Sat> {
+    type Sample = Sat::Sample;
     type Inputs = Sequential<U1>;
     type Outputs = Sequential<U1>;
 
@@ -66,14 +73,23 @@ impl<S:'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S> {
         true
     }
 
-    fn latency(&self, input_latencies: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
+    fn latency(
+        &self,
+        input_latencies: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64> {
         input_latencies
     }
 
     #[inline]
     #[profiling::function]
-    fn process(&mut self, _: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
-        self.0.saturate_buffer(inputs[0], outputs[0]);
+    fn process<
+        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+    >(
+        &mut self,
+        context: &mut ModuleContext<S>,
+    ) -> ProcessStatus {
+        let (inp, out) = context.get_input_output_pair(seq(0), seq(0));
+        self.0.saturate_buffer(inp, out);
         ProcessStatus::Running
     }
 }
@@ -87,13 +103,22 @@ impl<S: 'static + Send + Saturator<Sample: Copy>> SampleModule for SaturatorSamp
     type Inputs = Sequential<U1>;
     type Outputs = Sequential<U1>;
 
-    fn latency(&self, input_latency: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
+    fn latency(
+        &self,
+        input_latency: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64> {
         input_latency
     }
 
-    fn process_sample(&mut self, _: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>)
-    {
-        (ProcessStatus::Running, EnumMapArray::new(|_| self.0.saturate(inputs[seq(0)])))
+    fn process_sample(
+        &mut self,
+        _: &StreamData,
+        inputs: EnumMapArray<Self::Inputs, Self::Sample>,
+    ) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>) {
+        (
+            ProcessStatus::Running,
+            EnumMapArray::new(|_| self.0.saturate(inputs[seq(0)])),
+        )
     }
 }
 
@@ -124,11 +149,11 @@ impl<T, F> Memoryless<T, F> {
     /// Creates a new [`Memoryless`] instance with the provided function.
     ///
     /// # Parameters
-    /// 
+    ///
     /// - `f`: The function to be used by the [`Memoryless`] instance.
     ///
     /// # Returns
-    /// 
+    ///
     /// A new [`Memoryless`] instance.
     pub const fn new(f: F) -> Memoryless<T, F> {
         Self(PhantomData, f)

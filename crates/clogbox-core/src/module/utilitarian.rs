@@ -2,7 +2,7 @@
 //! audio processing components. It includes definitions for processing statuses,
 //! stream metadata, and configuration, as well as implementations of different
 //! processing units.
-use crate::module::{Module, ProcessStatus, StreamData};
+use crate::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
 use crate::param::curve::ParamCurve;
 use crate::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapBox};
 use crate::r#enum::{enum_iter, CartesianProduct, Enum};
@@ -112,20 +112,17 @@ where
 
     #[inline]
     #[profiling::function]
-    fn process(
+    fn process<S: BufferStorage<Sample = Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(
         &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
+        context: &mut ModuleContext<S>,
     ) -> ProcessStatus {
-        let block_size = stream_data.block_size;
-        for x in &mut *outputs {
-            x.fill(T::zero());
+        let block_size = context.stream_data.block_size;
+        for out in enum_iter::<Self::Outputs>() {
+            context.get_output(out).fill_with(T::zero);
         }
 
         for param in enum_iter::<CartesianProduct<In, Out>>() {
-            let in_buf = inputs[param.0.cast()];
-            let out_buf = &mut *outputs[param.1.cast()];
+            let (in_buf, out_buf) = context.get_input_output_pair(param.0, param.1);
             let parr = &self.params[param];
             // TODO: simd
             for i in 0..block_size {
@@ -135,82 +132,6 @@ where
         }
 
         ProcessStatus::Running
-    }
-}
-
-/// A struct for running two modules in series.
-///
-/// This struct contains two audio modules (`first` and `second`) and a switch function
-/// that defines the inputs of the second module from the outputs of the first.
-#[derive(Debug, Clone)]
-pub struct Series<A: Module, B: Module<Sample = A::Sample>, SwitchFn> {
-    /// The first audio module in the series.
-    pub first: A,
-    /// The second audio module in the series.
-    pub second: B,
-    inner_buffer: EnumMapArray<A::Outputs, Box<[A::Sample]>>,
-    switch_fn: SwitchFn,
-}
-
-impl<
-        A: Module,
-        B: Module<Sample = A::Sample, Inputs = A::Outputs>,
-        SwitchFn: Send + 'static + Fn(A::Outputs) -> B::Inputs,
-    > Module for Series<A, B, SwitchFn>
-where
-    A::Sample: Send + Zero,
-{
-    type Sample = A::Sample;
-    type Inputs = A::Inputs;
-    type Outputs = B::Outputs;
-
-    fn supports_stream(&self, data: StreamData) -> bool {
-        self.inner_buffer
-            .iter()
-            .all(|(_, arr)| data.block_size <= arr.len())
-            && self.first.supports_stream(data)
-            && self.second.supports_stream(data)
-    }
-
-    fn reallocate(&mut self, stream_data: StreamData) {
-        self.inner_buffer = EnumMapArray::new(|_| {
-            std::iter::repeat_with(A::Sample::zero)
-                .take(stream_data.block_size)
-                .collect()
-        });
-    }
-
-    fn reset(&mut self) {
-        for x in self.inner_buffer.values_mut() {
-            x.fill_with(A::Sample::zero);
-        }
-    }
-
-    fn latency(
-        &self,
-        input_latencies: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64> {
-        let first = self.first.latency(input_latencies);
-        let second_input = EnumMapArray::new(|out_a| first[(self.switch_fn)(out_a)]);
-        self.second.latency(second_input)
-    }
-
-    fn process(
-        &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
-    ) -> ProcessStatus {
-        let first_status = self.first.process(
-            stream_data,
-            inputs,
-            self.inner_buffer.items_as_mut().as_slice_mut(),
-        );
-        let new_inputs = EnumMapArray::new(|out_a| &*self.inner_buffer[(self.switch_fn)(out_a)]);
-        let second_status =
-            self.second
-                .process(stream_data, new_inputs.items_as_ref().as_slice(), outputs);
-        first_status.merge(&second_status)
     }
 }
 

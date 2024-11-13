@@ -11,13 +11,12 @@
 //! use std::marker::PhantomData;
 //! use std::ops;
 //! use az::CastFrom;
-//! use num_traits::Zero;
-//! use numeric_array::generic_array::arr;
 //! use typenum::U1;
+//! //! //! use typenum::U1;
 //!
-//! use clogbox_core::module::{StreamData, ProcessStatus, Module};
-//! use clogbox_core::r#enum::{enum_iter, Enum, Sequential};
-//! use clogbox_core::r#enum::enum_map::{Collection, CollectionMut, EnumMap, EnumMapArray, EnumMapMut, EnumMapRef};
+//! use clogbox_core::module::{BufferStorage , Module, ModuleContext, OwnedBufferStorage, ProcessStatus, StreamData};
+//! use clogbox_core::r#enum::{enum_iter , Enum, Sequential};
+//! use clogbox_core::r#enum::enum_map::EnumMapArray;
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
 //!
@@ -41,10 +40,9 @@
 //!         input_latency
 //!     }
 //!
-//!     fn process(&mut self, stream_data: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
+//!     fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>> (&mut self, context: &mut ModuleContext<S>) -> ProcessStatus {
 //!         for inp in enum_iter::<In>() {
-//!             let inp_buf = &*inputs[inp.cast()];
-//!             let out_buf = &mut *outputs[inp.cast()];
+//!             let (inp_buf, out_buf) = context.get_input_output_pair(inp, inp);
 //!
 //!             for (o, i) in out_buf.iter_mut().zip(inp_buf.iter()) {
 //!                 *o = -*i;
@@ -57,18 +55,22 @@
 //! let mut my_module = Inverter::<f32, Sequential<U1>>::default();
 //! let block_size = 128;
 //! let stream_data = StreamData { sample_rate: 44100.0 ,bpm: 120. ,block_size };
-//! let inputs = (0..block_size).map(|i| i as f32).collect::<Vec<_>>();
-//! let mut outputs = vec![0.0; block_size];
-//! my_module.process(&stream_data, &[&inputs], &mut [&mut outputs]);
-//! assert_eq!(-4., outputs[4]);
+//! let mut context = ModuleContext {
+//!     stream_data,
+//!     buffers: OwnedBufferStorage::new(1, 1, block_size),
+//! };
+//! my_module.process(&mut context);
+//! assert_eq!(-4., context.get_output(0)[4]);
 //! ```
 pub mod analysis;
 pub mod sample;
 pub mod utilitarian;
 
 use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::{Enum, EnumIndex};
+use crate::r#enum::{Either, Enum};
 use az::Cast;
+use num_traits::Zero;
+use numeric_array::generic_array::sequence::GenericSequence;
 use std::marker::PhantomData;
 use std::ops;
 use typenum::Unsigned;
@@ -185,11 +187,9 @@ pub trait RawModule: Send {
     /// # Returns
     ///
     /// The status of the processing.
-    fn process(
+    fn process<'o, 'i>(
         &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
+        context: &mut ModuleContext<RawModuleStorage<'o, 'i, Self::Sample>>
     ) -> ProcessStatus;
 }
 
@@ -207,15 +207,15 @@ pub enum ProcessStatus {
 
 impl ProcessStatus {
     /// Merge two [`ProcessStatus`] instances, preserving as much information as possible.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `other`: A reference to another [`ProcessStatus`] instance that will be merged with `self`.
-    /// 
-    /// returns: ProcessStatus 
-    /// 
-    /// # Examples 
-    /// 
+    ///
+    /// returns: ProcessStatus
+    ///
+    /// # Examples
+    ///
     /// ```
     /// use clogbox_core::module::ProcessStatus;
     ///
@@ -241,6 +241,273 @@ impl ProcessStatus {
             (ProcessStatus::Done, _) | (_, ProcessStatus::Done) => ProcessStatus::Done,
             _ => ProcessStatus::Running,
         }
+    }
+}
+
+pub trait BufferStorage {
+    type Sample;
+    type Input;
+    type Output;
+
+    fn get_input_buffer(&self, input: Self::Input) -> &[Self::Sample];
+    fn get_output_buffer(&mut self, output: Self::Output) -> &mut [Self::Sample];
+    fn get_inout_pair(
+        &mut self,
+        input: Self::Input,
+        output: Self::Output,
+    ) -> (&[Self::Sample], &mut [Self::Sample]);
+    
+    fn reset(&mut self);
+    fn clear_input(&mut self, input: Self::Input);
+    fn clear_output(&mut self, output: Self::Output);
+}
+
+impl<T: Zero, S: ops::DerefMut<Target = [T]>> BufferStorage for [S] {
+    type Sample = T;
+    type Input = usize;
+    type Output = usize;
+
+    fn get_input_buffer(&self, input: usize) -> &[T] {
+        &*self[input]
+    }
+
+    fn get_output_buffer(&mut self, output: usize) -> &mut [T] {
+        &mut *self[output]
+    }
+
+    fn get_inout_pair(&mut self, input: usize, output: usize) -> (&[T], &mut [T]) {
+        assert_ne!(input, output, "Cannot alias same buffer");
+        let inp = &*self[input];
+        // Safety: No aliasing created with assert above, and self[output] is already exclusive
+        // because self is exclusive at this point
+        let out = unsafe {
+            let len = self[output].len();
+            std::slice::from_raw_parts_mut(self[output].as_ptr().cast_mut(), len)
+        };
+        (inp, out)
+    }
+
+    fn clear_input(&mut self, input: Self::Input) {
+        self[input].fill_with(T::zero);
+    }
+
+    fn clear_output(&mut self, output: Self::Output) {
+        self[output].fill_with(T::zero);
+    }
+
+    fn reset(&mut self) {
+        for slice in self.iter_mut() {
+            slice.fill_with(T::zero);
+        }
+    }
+}
+
+pub struct RawModuleStorage<'outer, 'inner, T> {
+    inputs: &'outer [&'inner [T]],
+    outputs: &'outer mut [&'inner mut [T]],
+}
+
+impl<'outer, 'inner, T: Zero> BufferStorage for RawModuleStorage<'outer, 'inner, T> {
+    type Sample = T;
+    type Input = usize;
+    type Output = usize;
+
+    fn get_input_buffer(&self, input: usize) -> &[T] {
+        &*self.inputs[input]
+    }
+
+    fn get_output_buffer(&mut self, output: usize) -> &mut [T] {
+        &mut *self.outputs[output]
+    }
+
+    fn get_inout_pair(&mut self, input: usize, output: usize) -> (&[T], &mut [T]) {
+        (&*self.inputs[input], &mut *self.outputs[output])
+    }
+
+    fn reset(&mut self) {
+        for slice in self.outputs.iter_mut() {
+            slice.fill_with(T::zero);
+        }
+    }
+
+    fn clear_input(&mut self, _input: Self::Input) {
+        // Not supported
+    }
+
+    fn clear_output(&mut self, output: Self::Output) {
+        self.outputs[output].fill_with(T::zero);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OwnedBufferStorage<T> {
+    inputs: Vec<Box<[T]>>,
+    outputs: Vec<Box<[T]>>,
+}
+
+impl<T: Zero> OwnedBufferStorage<T> {
+    pub fn new(num_inputs: usize, num_outputs: usize, block_size: usize) -> Self {
+        Self {
+            inputs: Vec::from_iter(
+                std::iter::repeat_with(|| std::iter::repeat_with(T::zero).take(block_size).collect())
+                    .take(num_inputs),
+            ),
+            outputs: Vec::from_iter(
+                std::iter::repeat_with(|| std::iter::repeat_with(T::zero).take(block_size).collect())
+                    .take(num_outputs),
+            ),
+        }
+    }
+}
+
+impl<T: Zero> BufferStorage for OwnedBufferStorage<T> {
+    type Sample = T;
+    type Input = usize;
+    type Output = usize;
+
+    fn get_input_buffer(&self, input: Self::Input) -> &[Self::Sample] {
+        &self.inputs[input]
+    }
+
+    fn get_output_buffer(&mut self, output: Self::Output) -> &mut [Self::Sample] {
+        &mut self.outputs[output]
+    }
+
+    fn get_inout_pair(
+        &mut self,
+        input: Self::Input,
+        output: Self::Output,
+    ) -> (&[Self::Sample], &mut [Self::Sample]) {
+        (
+            &*self.inputs[input],
+            &mut *self.outputs[output],
+        )
+    }
+
+    fn clear_input(&mut self, input: Self::Input) {
+        self.inputs[input].fill_with(T::zero);
+    }
+    
+    fn clear_output(&mut self, output: Self::Output) {
+        self.outputs[output].fill_with(T::zero);
+    }
+
+    fn reset(&mut self) {
+        for slice in self.inputs.iter_mut().chain(self.outputs.iter_mut()) {
+            slice.fill_with(T::zero);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MappedBufferStorage<S, In, Out, F> {
+    pub storage: S,
+    pub mapper: F,
+    pub __io_types: PhantomData<(In, Out)>,
+}
+
+impl<In, Out, S: BufferStorage<Input = usize, Output = usize>, F: Fn(Either<In, Out>) -> usize>
+    BufferStorage for MappedBufferStorage<S, In, Out, F>
+{
+    type Sample = S::Sample;
+    type Input = In;
+    type Output = Out;
+    fn get_input_buffer(&self, input: In) -> &[Self::Sample] {
+        let ix = (self.mapper)(Either::Left(input));
+        self.storage.get_input_buffer(ix)
+    }
+
+    fn get_output_buffer(&mut self, output: Out) -> &mut [Self::Sample] {
+        let ix = (self.mapper)(Either::Right(output));
+        self.storage.get_output_buffer(ix)
+    }
+
+    fn get_inout_pair(&mut self, input: In, output: Out) -> (&[Self::Sample], &mut [Self::Sample]) {
+        let input = (self.mapper)(Either::Left(input));
+        let output = (self.mapper)(Either::Right(output));
+        self.storage.get_inout_pair(input, output)
+    }
+
+    fn clear_input(&mut self, input: Self::Input) {
+        self.storage.clear_input((self.mapper)(Either::Left(input)))
+    }
+
+    fn clear_output(&mut self, output: Self::Output) {
+        self.storage.clear_output((self.mapper)(Either::Right(output)))
+    }
+    
+    fn reset(&mut self) {
+        self.storage.reset()
+    }
+}
+
+impl<'a, S: BufferStorage> BufferStorage for &'a mut S {
+    type Sample = S::Sample;
+    type Input = S::Input;
+    type Output = S::Output;
+
+    fn get_input_buffer(&self, input: Self::Input) -> &[Self::Sample] {
+        S::get_input_buffer(self, input)
+    }
+
+    fn get_output_buffer(&mut self, output: Self::Output) -> &mut [Self::Sample] {
+        S::get_output_buffer(self, output)
+    }
+
+    fn get_inout_pair(
+        &mut self,
+        input: Self::Input,
+        output: Self::Output,
+    ) -> (&[Self::Sample], &mut [Self::Sample]) {
+        S::get_inout_pair(self, input, output)
+    }
+    
+    fn clear_input(&mut self, input: Self::Input) {
+        S::clear_input(self, input)
+    }
+
+    fn clear_output(&mut self, output: Self::Output) {
+        S::clear_output(self, output)
+    }
+
+    fn reset(&mut self) {
+        S::reset(self)
+    }
+}
+
+pub struct ModuleContext<S> {
+    pub stream_data: StreamData,
+    pub buffers: S,
+}
+
+impl<S> ModuleContext<S> {
+    pub fn with_io<S2>(&mut self, buffer_storage: S2) -> ModuleContext<S2> {
+        ModuleContext {
+            stream_data: self.stream_data,
+            buffers: buffer_storage,
+        }
+    }
+
+    pub fn stream_data(&self) -> &StreamData {
+        &self.stream_data
+    }
+}
+
+impl<S: BufferStorage> ModuleContext<S> {
+    pub fn get_input(&self, input: S::Input) -> &[S::Sample] {
+        self.buffers.get_input_buffer(input)
+    }
+
+    pub fn get_output(&mut self, output: S::Output) -> &mut [S::Sample] {
+        self.buffers.get_output_buffer(output)
+    }
+
+    pub fn get_input_output_pair(
+        &mut self,
+        input: S::Input,
+        output: S::Output,
+    ) -> (&[S::Sample], &mut [S::Sample]) {
+        self.buffers.get_inout_pair(input, output)
     }
 }
 
@@ -300,15 +567,15 @@ pub trait Module: 'static + Send {
     /// # Returns
     ///
     /// The status of the process after execution.
-    fn process(
+    fn process<
+        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+    >(
         &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
+        context: &mut ModuleContext<S>,
     ) -> ProcessStatus;
 }
 
-impl<M: Module> RawModule for M {
+impl<M: Module<Sample: Zero>> RawModule for M {
     type Sample = M::Sample;
 
     #[inline]
@@ -336,13 +603,25 @@ impl<M: Module> RawModule for M {
         M::reset(self)
     }
 
-    fn process(
+    fn process<'o, 'i>(
         &mut self,
-        stream_data: &StreamData,
-        inputs: &[&[Self::Sample]],
-        outputs: &mut [&mut [Self::Sample]],
+        context: &mut ModuleContext<RawModuleStorage<'o, 'i, Self::Sample>>,
     ) -> ProcessStatus {
-        M::process(self, stream_data, inputs, outputs)
+        let storage = MappedBufferStorage {
+            storage: &mut context.buffers,
+            mapper: |x: Either<M::Inputs, M::Outputs>| match x {
+                Either::Left(a) => a.cast(),
+                Either::Right(b) => b.cast(),
+            },
+            __io_types: PhantomData,
+        };
+        M::process(
+            self,
+            &mut ModuleContext {
+                stream_data: context.stream_data,
+                buffers: storage,
+            },
+        )
     }
 }
 

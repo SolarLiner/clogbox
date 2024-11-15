@@ -12,7 +12,7 @@
 //! use clogbox_core::module::{Module, StreamData, ProcessStatus};
 //! use clogbox_core::module::sample::{SampleContext, SampleContextImpl, SampleModule};
 //! use clogbox_core::r#enum::{enum_iter, seq, Enum, Sequential};
-//! use clogbox_core::r#enum::enum_map::EnumMapArray;
+//! use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
 //!
@@ -31,8 +31,11 @@
 //!         input_latency
 //!     }
 //!
-//!     fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>) {
-//!         (ProcessStatus::Running, EnumMapArray::new(|k| -inputs[k]))
+//!     fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>, mut outputs: EnumMapMut<Self::Outputs, Self::Sample>) -> ProcessStatus {
+//!         for k in enum_iter() {
+//!             outputs[k] = -inputs[k];
+//!         }
+//!         ProcessStatus::Running
 //!     }
 //! }
 //!
@@ -43,13 +46,15 @@
 //!     sample_rate: 44100.,
 //! };
 //! let inputs = EnumMapArray::new(|_| 42.0);
-//! let (status, outputs) = module.process_sample(stream_data, inputs);
+//! let mut outputs = EnumMapArray::new(|_| 0.0);
+//! let status = module.process_sample(stream_data, inputs, outputs.as_mut());
 //! assert_eq!(ProcessStatus::Running, status);
 //! assert_eq!(-42.0, outputs[seq(0)]);
 //! ```
 
+use num_traits::Zero;
 use crate::module::{Module, ModuleContext, ProcessStatus, StreamData};
-use crate::r#enum::enum_map::EnumMapArray;
+use crate::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 use crate::r#enum::Enum;
 use numeric_array::ArrayLength;
 
@@ -105,11 +110,23 @@ pub trait SampleModule: 'static + Send {
     ) -> EnumMapArray<Self::Outputs, f64>;
 
     /// Process the given context and update the status.
-    fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>);
+    fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>, outputs: EnumMapMut<Self::Outputs, Self::Sample>) -> ProcessStatus;
+    
+    /// This method is run at the beginning of each block. This is provided to [SampleModule]s in
+    /// order to allow per-block processing (e.g. updating coefficients, etc.).
+    /// 
+    /// # Arguments 
+    /// 
+    /// * `stream_data`: [StreamData] for this block.
+    /// 
+    /// returns: ProcessStatus 
+    fn on_begin_block(&mut self, stream_data: &StreamData) -> ProcessStatus {
+        ProcessStatus::Running
+    }
 }
 
 #[profiling::all_functions]
-impl<M: SampleModule<Sample: Copy>> Module for M {
+impl<M: SampleModule<Sample: Copy + Zero>> Module for M {
     type Sample = M::Sample;
     type Inputs = M::Inputs;
     type Outputs = M::Outputs;
@@ -148,7 +165,8 @@ impl<M: SampleModule<Sample: Copy>> Module for M {
         let block_size = context.stream_data().block_size;
         for i in 0..block_size {
             let sample_in = EnumMapArray::new(|inp: Self::Inputs| context.buffers.get_input_buffer(inp)[i]);
-            let (new_status, sample_out) = M::process_sample(self, context.stream_data(), sample_in);
+            let mut sample_out = EnumMapArray::new(|_| Self::Sample::zero());
+            let new_status = M::process_sample(self, context.stream_data(), sample_in, sample_out.as_mut());
             for (out, val) in sample_out {
                 context.buffers.get_output_buffer(out)[i] = val;
             }

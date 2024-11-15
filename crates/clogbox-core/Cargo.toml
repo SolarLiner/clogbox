@@ -16,7 +16,8 @@ typenum.workspace = true
 
 duplicate = "2.0.0"
 fortuples = "0.9.1"
-thiserror = "1.0.64"
+serde = { version = "1.0.215", optional = true }
+thiserror.workspace = true
 vtable = "0.2.0"
 
 [dev-dependencies]
@@ -25,3 +26,6 @@ clogbox-derive = { path = "../clogbox-derive" }
 rstest.workspace = true
 
 approx = "0.5.1"
+
+[features]
+serialize = ["dep:serde", "numeric-array/serde", "serde/derive"]

@@ -56,7 +56,7 @@ pub mod enum_map;
 ///     Blue,
 /// }
 /// ```
-pub trait Enum: Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize> {
+pub trait Enum: 'static + Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize> {
     /// An associated constant representing the total number of enum variants.
     ///
     /// This is used to define the length of arrays or other collections
@@ -83,6 +83,12 @@ pub trait Enum: Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize> {
     /// assert_eq!(color.name(), "Red");
     /// ```
     fn name(&self) -> Cow<str>;
+}
+
+pub type Count<E> = <E as Enum>::Count;
+
+pub const fn count<E: Enum>() -> usize {
+    E::Count::USIZE
 }
 
 #[derive(Debug, Copy, Clone)]

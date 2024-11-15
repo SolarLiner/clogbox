@@ -187,9 +187,9 @@ pub trait RawModule: Send {
     /// # Returns
     ///
     /// The status of the processing.
-    fn process<'o, 'i>(
+    fn process(
         &mut self,
-        context: &mut ModuleContext<RawModuleStorage<'o, 'i, Self::Sample>>
+        context: &mut ModuleContext<&mut dyn BufferStorage<Sample=Self::Sample, Input=usize, Output=usize>>
     ) -> ProcessStatus;
 }
 
@@ -287,18 +287,18 @@ impl<T: Zero, S: ops::DerefMut<Target = [T]>> BufferStorage for [S] {
         (inp, out)
     }
 
+    fn reset(&mut self) {
+        for slice in self.iter_mut() {
+            slice.fill_with(T::zero);
+        }
+    }
+
     fn clear_input(&mut self, input: Self::Input) {
         self[input].fill_with(T::zero);
     }
 
     fn clear_output(&mut self, output: Self::Output) {
         self[output].fill_with(T::zero);
-    }
-
-    fn reset(&mut self) {
-        for slice in self.iter_mut() {
-            slice.fill_with(T::zero);
-        }
     }
 }
 
@@ -384,18 +384,18 @@ impl<T: Zero> BufferStorage for OwnedBufferStorage<T> {
         )
     }
 
-    fn clear_input(&mut self, input: Self::Input) {
-        self.inputs[input].fill_with(T::zero);
-    }
-    
-    fn clear_output(&mut self, output: Self::Output) {
-        self.outputs[output].fill_with(T::zero);
-    }
-
     fn reset(&mut self) {
         for slice in self.inputs.iter_mut().chain(self.outputs.iter_mut()) {
             slice.fill_with(T::zero);
         }
+    }
+
+    fn clear_input(&mut self, input: Self::Input) {
+        self.inputs[input].fill_with(T::zero);
+    }
+
+    fn clear_output(&mut self, output: Self::Output) {
+        self.outputs[output].fill_with(T::zero);
     }
 }
 
@@ -428,6 +428,10 @@ impl<In, Out, S: BufferStorage<Input = usize, Output = usize>, F: Fn(Either<In, 
         self.storage.get_inout_pair(input, output)
     }
 
+    fn reset(&mut self) {
+        self.storage.reset()
+    }
+
     fn clear_input(&mut self, input: Self::Input) {
         self.storage.clear_input((self.mapper)(Either::Left(input)))
     }
@@ -435,13 +439,9 @@ impl<In, Out, S: BufferStorage<Input = usize, Output = usize>, F: Fn(Either<In, 
     fn clear_output(&mut self, output: Self::Output) {
         self.storage.clear_output((self.mapper)(Either::Right(output)))
     }
-    
-    fn reset(&mut self) {
-        self.storage.reset()
-    }
 }
 
-impl<'a, S: BufferStorage> BufferStorage for &'a mut S {
+impl<'a, S: ?Sized + BufferStorage> BufferStorage for &'a mut S {
     type Sample = S::Sample;
     type Input = S::Input;
     type Output = S::Output;
@@ -461,17 +461,17 @@ impl<'a, S: BufferStorage> BufferStorage for &'a mut S {
     ) -> (&[Self::Sample], &mut [Self::Sample]) {
         S::get_inout_pair(self, input, output)
     }
-    
+
+    fn reset(&mut self) {
+        S::reset(self)
+    }
+
     fn clear_input(&mut self, input: Self::Input) {
         S::clear_input(self, input)
     }
 
     fn clear_output(&mut self, output: Self::Output) {
         S::clear_output(self, output)
-    }
-
-    fn reset(&mut self) {
-        S::reset(self)
     }
 }
 
@@ -605,10 +605,10 @@ impl<M: Module<Sample: Zero>> RawModule for M {
 
     fn process<'o, 'i>(
         &mut self,
-        context: &mut ModuleContext<RawModuleStorage<'o, 'i, Self::Sample>>,
+        context: &mut ModuleContext<&mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>>,
     ) -> ProcessStatus {
         let storage = MappedBufferStorage {
-            storage: &mut context.buffers,
+            storage: &mut *context.buffers,
             mapper: |x: Either<M::Inputs, M::Outputs>| match x {
                 Either::Left(a) => a.cast(),
                 Either::Right(b) => b.cast(),

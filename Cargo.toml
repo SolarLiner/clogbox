@@ -23,6 +23,7 @@ numeric-array = "0.6.1"
 numeric_literals = "0.2.0"
 nalgebra = "0.33.0"
 profiling = "1.0.15"
+thiserror = "2.0.3"
 typenum = "1.17.0"
 typenum-consts = "0.1.5"
 # Dev dependencies

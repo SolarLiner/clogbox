@@ -9,7 +9,7 @@
 //! values of type `V` indexed by enum keys of type `K`. This module also
 //! includes iterators and utility methods for working with such maps.
 
-use crate::r#enum::Enum;
+use crate::r#enum::{count, Enum};
 use numeric_array::generic_array::GenericArray;
 use numeric_array::ArrayLength;
 use std::iter::{Enumerate, Map};
@@ -173,6 +173,30 @@ pub struct EnumMap<E, D> {
     __enum: PhantomData<E>,
 }
 
+#[cfg(feature = "serialize")]
+impl<'de, E, Data: serde::Deserialize<'de>> serde::Deserialize<'de> for EnumMap<E, Data> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>
+    {
+        let data = Data::deserialize(deserializer)?;
+        Ok(Self {
+            data,
+            __enum: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "serialize")]
+impl<E, D: serde::Serialize> serde::Serialize for EnumMap<E, D> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer
+    {
+        self.data.serialize(serializer)
+    }
+}
+
 impl<E: Enum, D: IntoIterator> IntoIterator for EnumMap<E, D> {
     type Item = (E, D::Item);
     type IntoIter = Map<Enumerate<D::IntoIter>, fn((usize, D::Item)) -> (E, D::Item)>;
@@ -192,14 +216,23 @@ impl<E, D> EnumMap<E, D> {
     }
 }
 
-impl<E: Enum, D: Collection + FromIterator<D::Item>> FromIterator<D::Item> for EnumMap<E, D> {
-    fn from_iter<T: IntoIterator<Item = D::Item>>(iter: T) -> Self {
-        let data = D::from_iter(iter);
-        assert_eq!(E::Count::USIZE, data.len());
-        Self {
-            data,
-            __enum: PhantomData,
-        }
+impl<E: Enum, D> EnumMap<E, D> {
+    /// Returns the number of elements in the `EnumMap`.
+    ///
+    /// # Returns
+    /// 
+    /// The number of elements in the `EnumMap`, which is equal to the number of variants in the enum `E`.
+    pub const fn len(&self) -> usize {
+        count::<E>()
+    }
+    
+    /// Checks if the `EnumMap` is empty.
+    ///
+    /// # Returns
+    /// 
+    /// `true` if the `EnumMap` is empty, `false` otherwise.
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
@@ -396,6 +429,14 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
     /// ```
     pub fn as_slice_mut(&mut self) -> &mut [D::Item] {
         &mut self.data
+    }
+}
+
+impl<E: Enum, D: Collection + FromIterator<D::Item>> FromIterator<D::Item> for EnumMap<E, D> {
+    fn from_iter<T: IntoIterator<Item=D::Item>>(iter: T) -> Self {
+        let data = D::from_iter(iter);
+        assert_eq!(data.len(), count::<E>(), "Invalid number of elements for EnumMap");
+        Self { data, __enum: PhantomData }
     }
 }
 

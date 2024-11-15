@@ -7,7 +7,7 @@ use clogbox_core::module::sample::SampleModule;
 use clogbox_core::module::{
     BufferStorage, Module, ModuleContext, ProcessStatus, StreamData,
 };
-use clogbox_core::r#enum::enum_map::EnumMapArray;
+use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 use clogbox_core::r#enum::{seq, Sequential};
 use num_traits::Float;
 use std::marker::PhantomData;
@@ -112,13 +112,12 @@ impl<S: 'static + Send + Saturator<Sample: Copy>> SampleModule for SaturatorSamp
 
     fn process_sample(
         &mut self,
-        _: &StreamData,
+        _stream_data: &StreamData,
         inputs: EnumMapArray<Self::Inputs, Self::Sample>,
-    ) -> (ProcessStatus, EnumMapArray<Self::Outputs, Self::Sample>) {
-        (
-            ProcessStatus::Running,
-            EnumMapArray::new(|_| self.0.saturate(inputs[seq(0)])),
-        )
+        mut outputs: EnumMapMut<Self::Outputs, Self::Sample>,
+    ) -> ProcessStatus {
+        outputs[seq(0)] = self.0.saturate(inputs[seq(0)]);
+        ProcessStatus::Running
     }
 }
 

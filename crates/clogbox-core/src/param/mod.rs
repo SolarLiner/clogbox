@@ -89,24 +89,19 @@ pub trait SetParameter: GetParameter {
     }
 }
 
-/// Trait for normalizing and unnormalizing parameters.
-pub trait NormalizeParameter {
-    /// Associated enum type for parameters.
-    type Param: Enum;
-
+/// Trait for normalizing and unnormalizing parameter values.
+pub trait NormalizeParameter: Enum {
     /// Normalizes a parameter value into an `Option<f32>`.
     ///
     /// # Parameters
     /// 
-    /// - `param`: The parameter to normalize.
     /// - `value`: The value to normalize, convertible into `Value`.
-    fn normalize_param<'a>(&self, param: Self::Param, value: impl Into<Value<'a>>) -> Option<f32>;
+    fn normalize_param<'a>(self, value: impl Into<Value<'a>>) -> Option<f32>;
 
     /// Unnormalizes a parameter value into an `Option<Value>`.
     ///
     /// # Parameters
     /// 
-    /// - `param`: The parameter to unnormalize.
     /// - `value`: The value to unnormalize.
-    fn unnormalize_param<'a>(&self, param: Self::Param, value: f32) -> Option<Value<'a>>;
+    fn unnormalize_param<'a>(self, value: f32) -> Option<Value<'a>>;
 }

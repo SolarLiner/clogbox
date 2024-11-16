@@ -1,0 +1,16 @@
+[package]
+name = "clogbox-clap"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-core = { path = "../clogbox-core" }
+
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["audio-ports", "params", "clack-plugin", "state"] }
+clack-plugin = { git = "https://github.com/prokopyl/clack.git" }

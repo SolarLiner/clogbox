@@ -2,16 +2,19 @@
 //! audio processing components. It includes definitions for processing statuses,
 //! stream metadata, and configuration, as well as implementations of different
 //! processing units.
+use crate::math::recip::Recip;
 use crate::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
-use crate::param::curve::ParamCurve;
+use crate::param::{Value, Params};
 use crate::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapBox};
 use crate::r#enum::{enum_iter, CartesianProduct, Enum};
-use az::CastFrom;
+use az::{Cast, CastFrom};
 use num_traits::{Num, NumAssign, Zero};
 use numeric_array::ArrayLength;
 use std::marker::PhantomData;
 use std::ops;
+use std::sync::Arc;
 use typenum::Unsigned;
+use crate::param::smoother::{LinearSmoother, Smoother};
 
 /// A matrix that sums the inputs given a matrix of input:output coefficients.
 ///
@@ -24,7 +27,8 @@ use typenum::Unsigned;
 /// * `Out` - The type representing the output parameters.
 #[derive(Debug, Clone)]
 pub struct SummingMatrix<T, In, Out> {
-    params: EnumMapBox<CartesianProduct<In, Out>, ParamCurve>,
+    params: Arc<EnumMapBox<CartesianProduct<In, Out>, Value>>,
+    smoothers: Option<EnumMapBox<CartesianProduct<In, Out>, LinearSmoother>>,
     __sample: PhantomData<fn(T) -> T>,
 }
 
@@ -46,36 +50,25 @@ where
     /// * `max_timestamps` - The maximum number of timestamps each `ParamCurve` can store.
     /// * `initial_values` - An `EnumMapBox` providing the initial values for the `ParamCurve` for each combination of `In` and `Out`.
     pub fn new(
-        sample_rate: f32,
-        max_timestamps: usize,
+        sample_rate: impl Into<Recip<f32>>,
         initial_values: EnumMapBox<CartesianProduct<In, Out>, f32>,
+        smoothing_time: impl Into<Option<f32>>,
     ) -> Self {
+        let sample_rate = sample_rate.into();
         Self {
-            params: EnumMap::new(|k| {
-                ParamCurve::new(sample_rate, max_timestamps, initial_values[k])
-            }),
+            params: Arc::new(EnumMap::new(|k| Value::new(initial_values[k]))),
+            smoothers: smoothing_time
+                .into()
+                .map(|time| EnumMap::new(|k| LinearSmoother::new(0., 0., time, sample_rate))),
             __sample: PhantomData,
         }
-    }
-
-    /// Mutably borrows the `ParamCurve` associated with the given input-output pair.
-    ///
-    /// # Parameters
-    /// * `inp` - The input parameter.
-    /// * `out` - The output parameter.
-    ///
-    /// # Returns
-    ///
-    /// A mutable reference to the `ParamCurve` corresponding to the input-output combination.
-    pub fn param_block_mut(&mut self, inp: In, out: Out) -> &mut ParamCurve {
-        &mut self.params[CartesianProduct(inp, out)]
     }
 }
 
 impl<
         T: 'static + Copy + Send + NumAssign + Num + Zero + CastFrom<f32>,
-        In: 'static + Enum,
-        Out: 'static + Enum,
+        In: 'static + Send + Sync + Enum,
+        Out: 'static + Send + Sync + Enum,
     > Module for SummingMatrix<T, In, Out>
 where
     In::Count: ops::Mul<Out::Count, Output: Unsigned + ArrayLength>,
@@ -83,19 +76,14 @@ where
     type Sample = T;
     type Inputs = In;
     type Outputs = Out;
+    type Params = CartesianProduct<In, Out>;
+
+    fn get_params(&self) -> Arc<impl Params<Params= Self::Params>> {
+        self.params.clone()
+    }
 
     fn supports_stream(&self, _: StreamData) -> bool {
         true
-    }
-
-    fn reallocate(&mut self, stream_data: StreamData) {
-        self.params = EnumMap::new(|k| {
-            ParamCurve::new(
-                stream_data.sample_rate as _,
-                Self::PARAMS_MAX_TIMESTAMPS,
-                self.params[k].last_value(),
-            )
-        });
     }
 
     fn latency(
@@ -105,14 +93,16 @@ where
         EnumMapArray::new(|out| {
             input_latencies
                 .iter()
-                .map(|(k, &v)| v * self.params[CartesianProduct(k, out)].last_value() as f64)
+                .map(|(k, &v)| v * self.params[CartesianProduct(k, out)].get_value_normalized() as f64)
                 .sum()
         })
     }
 
     #[inline]
     #[profiling::function]
-    fn process<S: BufferStorage<Sample = Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(
+    fn process<
+        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+    >(
         &mut self,
         context: &mut ModuleContext<S>,
     ) -> ProcessStatus {
@@ -121,13 +111,18 @@ where
             context.get_output(out).fill_with(T::zero);
         }
 
-        for param in enum_iter::<CartesianProduct<In, Out>>() {
-            let (in_buf, out_buf) = context.get_input_output_pair(param.0, param.1);
-            let parr = &self.params[param];
-            // TODO: simd
-            for i in 0..block_size {
-                let k = T::cast_from(parr.get_value_sample(i));
-                out_buf[i] += k * in_buf[i];
+        if let Some(smoothers) = &mut self.smoothers {
+            for param in enum_iter::<CartesianProduct<In, Out>>() {
+                let smoother = &mut smoothers[param];
+                let (in_buf, out_buf) = context.get_input_output_pair(param.0, param.1);
+                if self.params[param].has_changed() {
+                    smoother.set_target(self.params[param].get_value_normalized());
+                }
+                // TODO: simd
+                for i in 0..block_size {
+                    let k = T::cast_from(smoother.next_value());
+                    out_buf[i] += k * in_buf[i];
+                }
             }
         }
 
@@ -137,15 +132,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::module::utilitarian::SummingMatrix;
-    use crate::module::{Module, ProcessStatus, StreamData};
-    use crate::r#enum::enum_map::{EnumMap, EnumMapArray};
     use crate::r#enum::{CartesianProduct, Enum};
-    use approx::assert_relative_eq;
     use az::{Cast, CastFrom};
     use rstest::rstest;
     use std::borrow::Cow;
-    
+
     use typenum::{Unsigned, U2};
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Hash)]
@@ -224,19 +215,5 @@ mod tests {
     fn test_param_count() {
         type Params = CartesianProduct<TestIn, TestOut>;
         assert_eq!(<Params as Enum>::Count::USIZE, 4); // TestIn and TestOut have 2 variants each, so 2x2=4
-    }
-
-    #[rstest]
-    fn test_param_block_mut() {
-        let sample_rate = 44100.0;
-        let max_timestamps = 64;
-        let initial_values = EnumMap::new(|_| 0.0);
-        let mut summing_matrix: SummingMatrix<f32, _, _> =
-            SummingMatrix::new(sample_rate, max_timestamps, initial_values);
-
-        let param_block = summing_matrix.param_block_mut(TestIn::A, TestOut::X);
-        param_block.add_value_seconds(0.1, 10.);
-
-        assert_relative_eq!(param_block.last_value(), 10.0);
     }
 }

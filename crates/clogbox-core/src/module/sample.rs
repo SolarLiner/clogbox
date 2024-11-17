@@ -7,11 +7,13 @@
 //! ```rust
 //! use std::marker::PhantomData;
 //! use std::ops;
+//! use std::sync::Arc;
 //! use num_traits::Num;
 //! use typenum::U1;
 //! use clogbox_core::module::{Module, StreamData, ProcessStatus};
 //! use clogbox_core::module::sample::{SampleContext, SampleContextImpl, SampleModule};
-//! use clogbox_core::r#enum::{enum_iter, seq, Enum, Sequential};
+//! use clogbox_core::param::{Params, EMPTY_PARAMS};
+//! use clogbox_core::r#enum::{enum_iter, seq, Empty, Enum, Sequential};
 //! use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
@@ -26,6 +28,11 @@
 //!     type Sample = T;
 //!     type Inputs = In;
 //!     type Outputs = In;
+//!     type Params = Empty;
+//!
+//!     fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
+//!         Arc::new(EMPTY_PARAMS)
+//!     }
 //!
 //!     fn latency(&self, input_latency: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
 //!         input_latency
@@ -47,17 +54,18 @@
 //! };
 //! let inputs = EnumMapArray::new(|_| 42.0);
 //! let mut outputs = EnumMapArray::new(|_| 0.0);
-//! let status = module.process_sample(stream_data, inputs, outputs.as_mut());
+//! let status = module.process_sample(stream_data, inputs, outputs.to_mut());
 //! assert_eq!(ProcessStatus::Running, status);
 //! assert_eq!(-42.0, outputs[seq(0)]);
 //! ```
 
+use std::sync::Arc;
 use num_traits::Zero;
 use crate::module::{Module, ModuleContext, ProcessStatus, StreamData};
-use crate::r#enum::enum_map::{EnumMapArray, EnumMapMut};
+use crate::r#enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
 use crate::r#enum::Enum;
 use numeric_array::ArrayLength;
-
+use crate::param::Params;
 use super::BufferStorage;
 
 /// Type alias for the sample context implementation,
@@ -95,6 +103,10 @@ pub trait SampleModule: 'static + Send {
     /// Enum type representing outputs of the module.
     type Outputs: Enum;
 
+    type Params: Enum;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>>;
+
     /// Reallocate resources based on the provided stream data.
     #[inline]
     fn reallocate(&mut self, stream_data: StreamData) {}
@@ -130,6 +142,11 @@ impl<M: SampleModule<Sample: Copy + Zero>> Module for M {
     type Sample = M::Sample;
     type Inputs = M::Inputs;
     type Outputs = M::Outputs;
+    type Params = M::Params;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
+        M::get_params(self)
+    }
 
     #[inline]
     fn supports_stream(&self, _: StreamData) -> bool {
@@ -166,7 +183,7 @@ impl<M: SampleModule<Sample: Copy + Zero>> Module for M {
         for i in 0..block_size {
             let sample_in = EnumMapArray::new(|inp: Self::Inputs| context.buffers.get_input_buffer(inp)[i]);
             let mut sample_out = EnumMapArray::new(|_| Self::Sample::zero());
-            let new_status = M::process_sample(self, context.stream_data(), sample_in, sample_out.as_mut());
+            let new_status = M::process_sample(self, context.stream_data(), sample_in, sample_out.to_mut());
             for (out, val) in sample_out {
                 context.buffers.get_output_buffer(out)[i] = val;
             }

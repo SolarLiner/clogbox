@@ -16,6 +16,7 @@
 //! ```rust
 //! use std::marker::PhantomData;
 //! use std::ops;
+//! use std::sync::Arc;
 //! use az::CastFrom;
 //! use num_complex::Complex;
 //! use num_traits::Num;
@@ -24,8 +25,9 @@
 //! use clogbox_core::math::dsp::freq_to_z;
 //! use clogbox_core::module::analysis::{FreqAnalysis, Matrix};
 //!
-//! use clogbox_core::module::{Module, ProcessStatus, StreamData};
-//! use clogbox_core::r#enum::{enum_iter, Enum, Sequential};
+//! use clogbox_core::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
+//! use clogbox_core::param::{Params, EMPTY_PARAMS};
+//! use clogbox_core::r#enum::{enum_iter, Empty, Enum, Sequential};
 //! use clogbox_core::r#enum::enum_map::EnumMapArray;
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
@@ -41,6 +43,11 @@
 //!     type Sample = T;
 //!     type Inputs = In;
 //!     type Outputs = In;
+//!     type Params = Empty;
+//!
+//!     fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
+//!         Arc::new(EMPTY_PARAMS)
+//!     }
 //!
 //!     fn supports_stream(&self, data: StreamData) -> bool {
 //!         true
@@ -50,10 +57,9 @@
 //!         input_latency
 //!     }
 //!
-//!     fn process(&mut self, stream_data: &StreamData, inputs: &[&[Self::Sample]], outputs: &mut [&mut [Self::Sample]]) -> ProcessStatus {
+//!     fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(&mut self, context: &mut ModuleContext<S>) -> ProcessStatus {
 //!         for inp in enum_iter::<In>() {
-//!             let inp_buf = &*inputs[inp.cast()];
-//!             let out_buf = &mut *outputs[inp.cast()];
+//!             let (inp_buf, out_buf) = context.get_input_output_pair(inp, inp);
 //!             for (o, i) in out_buf.iter_mut().zip(inp_buf.iter()) {
 //!                 *o = -*i;
 //!             }

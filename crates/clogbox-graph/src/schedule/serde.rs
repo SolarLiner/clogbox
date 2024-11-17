@@ -107,12 +107,14 @@ impl SerializedSchedule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clogbox_core::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
+    use clogbox_core::param::{Params, EMPTY_PARAMS};
+    use clogbox_core::r#enum::enum_map::EnumMapArray;
+    use clogbox_core::r#enum::{seq, Empty, Sequential};
     use serde_json::json;
     use std::io::Cursor;
+    use std::sync::Arc;
     use typenum::U1;
-    use clogbox_core::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
-    use clogbox_core::r#enum::enum_map::EnumMapArray;
-    use clogbox_core::r#enum::{seq, Sequential};
 
     struct MockRawModule;
 
@@ -120,16 +122,29 @@ mod tests {
         type Sample = f32;
         type Inputs = Sequential<U1>;
         type Outputs = Sequential<U1>;
+        type Params = Empty;
+
+        fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+            Arc::new(EMPTY_PARAMS)
+        }
 
         fn supports_stream(&self, data: StreamData) -> bool {
             true
         }
 
-        fn latency(&self, input_latencies: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
+        fn latency(
+            &self,
+            input_latencies: EnumMapArray<Self::Inputs, f64>,
+        ) -> EnumMapArray<Self::Outputs, f64> {
             input_latencies
         }
 
-        fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(&mut self, context: &mut ModuleContext<S>) -> ProcessStatus {
+        fn process<
+            S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+        >(
+            &mut self,
+            context: &mut ModuleContext<S>,
+        ) -> ProcessStatus {
             ProcessStatus::Running
         }
     }
@@ -141,7 +156,7 @@ mod tests {
     fn mock_realize_module(_data: serde_json::Value) -> Box<dyn RawModule<Sample = f32>> {
         Box::new(MockRawModule)
     }
-    
+
     fn generate_schedule() -> crate::Schedule<f32> {
         let mut graph = crate::ScheduleBuilder::new();
         let node = graph.add_node(MockRawModule).unwrap();
@@ -158,9 +173,13 @@ mod tests {
         let mut buffer = Vec::new();
 
         serialize(&mut buffer, &schedule, mock_serialize_module).unwrap();
-        let deserialized_schedule = deserialize(Cursor::new(buffer), 1024, mock_realize_module).unwrap();
+        let deserialized_schedule =
+            deserialize(Cursor::new(buffer), 1024, mock_realize_module).unwrap();
 
-        assert!(schedule == deserialized_schedule, "Schedule round-trip serialization failed");
+        assert!(
+            schedule == deserialized_schedule,
+            "Schedule round-trip serialization failed"
+        );
     }
 
     #[test]
@@ -169,7 +188,8 @@ mod tests {
         let mut buffer = Vec::new();
 
         serialize(&mut buffer, &schedule, mock_serialize_module).unwrap();
-        let deserialized_schedule = deserialize(Cursor::new(buffer), 1024, mock_realize_module).unwrap();
+        let deserialized_schedule =
+            deserialize(Cursor::new(buffer), 1024, mock_realize_module).unwrap();
 
         assert_eq!(schedule.modules.len(), deserialized_schedule.modules.len());
     }

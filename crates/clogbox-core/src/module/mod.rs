@@ -10,12 +10,13 @@
 //! ```rust
 //! use std::marker::PhantomData;
 //! use std::ops;
+//! use std::sync::Arc;
 //! use az::CastFrom;
 //! use typenum::U1;
-//! //! //! use typenum::U1;
 //!
-//! use clogbox_core::module::{BufferStorage , Module, ModuleContext, OwnedBufferStorage, ProcessStatus, StreamData};
-//! use clogbox_core::r#enum::{enum_iter , Enum, Sequential};
+//! use clogbox_core::module::{enum_mapped_storage, BufferStorage, Module, ModuleContext, OwnedBufferStorage, ProcessStatus, StreamData};
+//! use clogbox_core::param::{Params, EMPTY_PARAMS};
+//! use clogbox_core::r#enum::{enum_iter, seq, Empty, Enum, Sequential};
 //! use clogbox_core::r#enum::enum_map::EnumMapArray;
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
@@ -31,6 +32,11 @@
 //!     type Sample = T;
 //!     type Inputs = In;
 //!     type Outputs = In;
+//!     type Params = Empty;
+//!
+//!     fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
+//!         Arc::new(EMPTY_PARAMS)
+//!     }
 //!
 //!     fn supports_stream(&self, data: StreamData) -> bool {
 //!         true
@@ -54,25 +60,29 @@
 //!
 //! let mut my_module = Inverter::<f32, Sequential<U1>>::default();
 //! let block_size = 128;
-//! let stream_data = StreamData { sample_rate: 44100.0 ,bpm: 120. ,block_size };
+//! let stream_data = StreamData { sample_rate: 44100.0 ,bpm: 120., block_size };
+//! let mut storage = OwnedBufferStorage::new(1, 1, block_size);
+//! storage.inputs[0].iter_mut().enumerate().for_each(|(i, x)| *x = i as f32);
 //! let mut context = ModuleContext {
 //!     stream_data,
-//!     buffers: OwnedBufferStorage::new(1, 1, block_size),
+//!     buffers: enum_mapped_storage(&mut storage),
 //! };
 //! my_module.process(&mut context);
-//! assert_eq!(-4., context.get_output(0)[4]);
+//! drop(context);
+//! assert_eq!(-4., storage.outputs[0][4]);
 //! ```
 pub mod analysis;
 pub mod sample;
 pub mod utilitarian;
 
+use crate::param::{Params, RawParams};
 use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::{Either, Enum};
+use crate::r#enum::{count, Either, Enum};
 use az::Cast;
 use num_traits::Zero;
-use numeric_array::generic_array::sequence::GenericSequence;
 use std::marker::PhantomData;
 use std::ops;
+use std::sync::Arc;
 use typenum::Unsigned;
 
 /// Represents the metadata and configuration for a stream of audio data.
@@ -161,6 +171,9 @@ pub trait RawModule: Send {
     /// Returns the number of outputs of the module.
     fn outputs(&self) -> usize;
 
+    /// Returns the number of params of the module.
+    fn get_params(&self) -> Arc<dyn '_ + RawParams>;
+
     /// Checks if the module supports the given stream data.
     ///
     /// # Arguments
@@ -189,8 +202,134 @@ pub trait RawModule: Send {
     /// The status of the processing.
     fn process(
         &mut self,
-        context: &mut ModuleContext<&mut dyn BufferStorage<Sample=Self::Sample, Input=usize, Output=usize>>
+        context: &mut ModuleContext<
+            &mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>,
+        >,
     ) -> ProcessStatus;
+}
+
+/// A module trait defining the basic functionalities and requirements for audio modules.
+#[allow(unused_variables)]
+pub trait Module: 'static + Send {
+    /// The type representing a sample in the module.
+    type Sample;
+
+    /// The type representing the inputs of the module.
+    type Inputs: Enum;
+
+    /// The type representing the outputs of the module.
+    type Outputs: Enum;
+
+    type Params: Enum;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>>;
+
+    /// Checks if the module supports the provided stream data.
+    ///
+    /// # Arguments
+    ///
+    /// - `data`: The stream data to be checked.
+    ///
+    /// # Returns
+    ///
+    /// A boolean indicating whether the stream data is supported.
+    fn supports_stream(&self, data: StreamData) -> bool;
+
+    /// Reallocates resources based on the given stream data.
+    ///
+    /// # Arguments
+    ///
+    /// - `stream_data`: The new stream data for reallocation.
+    fn reallocate(&mut self, stream_data: StreamData) {}
+
+    /// Resets the module to its initial state.
+    fn reset(&mut self) {}
+
+    /// Calculates the latency for the module.
+    ///
+    /// # Arguments
+    ///
+    /// - `input_latencies`: An array representing latencies for each input.
+    ///
+    /// # Returns
+    ///
+    /// An array representing latencies for each output.
+    fn latency(
+        &self,
+        input_latencies: EnumMapArray<Self::Inputs, f64>,
+    ) -> EnumMapArray<Self::Outputs, f64>;
+
+    /// Processes the module with the given context.
+    ///
+    /// # Arguments
+    ///
+    /// - `context`: The processing context for the module.
+    ///
+    /// # Returns
+    ///
+    /// The status of the process after execution.
+    fn process<
+        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+    >(
+        &mut self,
+        context: &mut ModuleContext<S>,
+    ) -> ProcessStatus;
+}
+
+impl<M: Module<Sample: Zero>> RawModule for M {
+    type Sample = M::Sample;
+
+    #[inline]
+    fn inputs(&self) -> usize {
+        <M::Inputs as Enum>::Count::USIZE
+    }
+
+    #[inline]
+    fn outputs(&self) -> usize {
+        <M::Outputs as Enum>::Count::USIZE
+    }
+
+    fn get_params(&self) -> Arc<dyn '_ + RawParams> {
+        M::get_params(self)
+    }
+
+    #[inline]
+    fn supports_stream(&self, data: StreamData) -> bool {
+        M::supports_stream(self, data)
+    }
+
+    #[inline]
+    fn reallocate(&mut self, stream_data: StreamData) {
+        M::reallocate(self, stream_data)
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        M::reset(self)
+    }
+
+    fn process<'o, 'i>(
+        &mut self,
+        context: &mut ModuleContext<
+            &mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>,
+        >,
+    ) -> ProcessStatus {
+        let storage = MappedBufferStorage {
+            storage: &mut *context.buffers,
+            mapper: |x: Either<M::Inputs, M::Outputs>| match x {
+                Either::Left(a) => a.cast(),
+                Either::Right(b) => b.cast(),
+            },
+            __io_types: PhantomData,
+        };
+        M::process(
+            self,
+            &mut ModuleContext {
+                stream_data: context.stream_data,
+                buffers: storage,
+            },
+        )
+    }
 }
 
 /// Represents the status of a process.
@@ -256,7 +395,7 @@ pub trait BufferStorage {
         input: Self::Input,
         output: Self::Output,
     ) -> (&[Self::Sample], &mut [Self::Sample]);
-    
+
     fn reset(&mut self);
     fn clear_input(&mut self, input: Self::Input);
     fn clear_output(&mut self, output: Self::Output);
@@ -341,20 +480,24 @@ impl<'outer, 'inner, T: Zero> BufferStorage for RawModuleStorage<'outer, 'inner,
 
 #[derive(Debug, Clone)]
 pub struct OwnedBufferStorage<T> {
-    inputs: Vec<Box<[T]>>,
-    outputs: Vec<Box<[T]>>,
+    pub inputs: Vec<Box<[T]>>,
+    pub outputs: Vec<Box<[T]>>,
 }
 
 impl<T: Zero> OwnedBufferStorage<T> {
     pub fn new(num_inputs: usize, num_outputs: usize, block_size: usize) -> Self {
         Self {
             inputs: Vec::from_iter(
-                std::iter::repeat_with(|| std::iter::repeat_with(T::zero).take(block_size).collect())
-                    .take(num_inputs),
+                std::iter::repeat_with(|| {
+                    std::iter::repeat_with(T::zero).take(block_size).collect()
+                })
+                .take(num_inputs),
             ),
             outputs: Vec::from_iter(
-                std::iter::repeat_with(|| std::iter::repeat_with(T::zero).take(block_size).collect())
-                    .take(num_outputs),
+                std::iter::repeat_with(|| {
+                    std::iter::repeat_with(T::zero).take(block_size).collect()
+                })
+                .take(num_outputs),
             ),
         }
     }
@@ -378,10 +521,7 @@ impl<T: Zero> BufferStorage for OwnedBufferStorage<T> {
         input: Self::Input,
         output: Self::Output,
     ) -> (&[Self::Sample], &mut [Self::Sample]) {
-        (
-            &*self.inputs[input],
-            &mut *self.outputs[output],
-        )
+        (&*self.inputs[input], &mut *self.outputs[output])
     }
 
     fn reset(&mut self) {
@@ -437,7 +577,8 @@ impl<In, Out, S: BufferStorage<Input = usize, Output = usize>, F: Fn(Either<In, 
     }
 
     fn clear_output(&mut self, output: Self::Output) {
-        self.storage.clear_output((self.mapper)(Either::Right(output)))
+        self.storage
+            .clear_output((self.mapper)(Either::Right(output)))
     }
 }
 
@@ -475,6 +616,17 @@ impl<'a, S: ?Sized + BufferStorage> BufferStorage for &'a mut S {
     }
 }
 
+pub const fn enum_mapped_storage<S: BufferStorage<Input=usize, Output=usize>, In: Enum, Out: Enum>(storage: S) -> impl BufferStorage<Sample=S::Sample, Input=In, Output=Out> {
+    MappedBufferStorage {
+        storage,
+        mapper: |x: Either<In, Out>| match x {
+            Either::Left(input) => input.cast(),
+            Either::Right(output) => output.cast(),
+        },
+        __io_types: PhantomData,
+    }
+}
+
 pub struct ModuleContext<S> {
     pub stream_data: StreamData,
     pub buffers: S,
@@ -508,120 +660,6 @@ impl<S: BufferStorage> ModuleContext<S> {
         output: S::Output,
     ) -> (&[S::Sample], &mut [S::Sample]) {
         self.buffers.get_inout_pair(input, output)
-    }
-}
-
-/// A module trait defining the basic functionalities and requirements for audio modules.
-#[allow(unused_variables)]
-pub trait Module: 'static + Send {
-    /// The type representing a sample in the module.
-    type Sample;
-
-    /// The type representing the inputs of the module.
-    type Inputs: Enum;
-
-    /// The type representing the outputs of the module.
-    type Outputs: Enum;
-
-    /// Checks if the module supports the provided stream data.
-    ///
-    /// # Arguments
-    ///
-    /// - `data`: The stream data to be checked.
-    ///
-    /// # Returns
-    ///
-    /// A boolean indicating whether the stream data is supported.
-    fn supports_stream(&self, data: StreamData) -> bool;
-
-    /// Reallocates resources based on the given stream data.
-    ///
-    /// # Arguments
-    ///
-    /// - `stream_data`: The new stream data for reallocation.
-    fn reallocate(&mut self, stream_data: StreamData) {}
-
-    /// Resets the module to its initial state.
-    fn reset(&mut self) {}
-
-    /// Calculates the latency for the module.
-    ///
-    /// # Arguments
-    ///
-    /// - `input_latencies`: An array representing latencies for each input.
-    ///
-    /// # Returns
-    ///
-    /// An array representing latencies for each output.
-    fn latency(
-        &self,
-        input_latencies: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64>;
-
-    /// Processes the module with the given context.
-    ///
-    /// # Arguments
-    ///
-    /// - `context`: The processing context for the module.
-    ///
-    /// # Returns
-    ///
-    /// The status of the process after execution.
-    fn process<
-        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
-    >(
-        &mut self,
-        context: &mut ModuleContext<S>,
-    ) -> ProcessStatus;
-}
-
-impl<M: Module<Sample: Zero>> RawModule for M {
-    type Sample = M::Sample;
-
-    #[inline]
-    fn inputs(&self) -> usize {
-        <M::Inputs as Enum>::Count::USIZE
-    }
-
-    #[inline]
-    fn outputs(&self) -> usize {
-        <M::Outputs as Enum>::Count::USIZE
-    }
-
-    #[inline]
-    fn supports_stream(&self, data: StreamData) -> bool {
-        M::supports_stream(self, data)
-    }
-
-    #[inline]
-    fn reallocate(&mut self, stream_data: StreamData) {
-        M::reallocate(self, stream_data)
-    }
-
-    #[inline]
-    fn reset(&mut self) {
-        M::reset(self)
-    }
-
-    fn process<'o, 'i>(
-        &mut self,
-        context: &mut ModuleContext<&mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>>,
-    ) -> ProcessStatus {
-        let storage = MappedBufferStorage {
-            storage: &mut *context.buffers,
-            mapper: |x: Either<M::Inputs, M::Outputs>| match x {
-                Either::Left(a) => a.cast(),
-                Either::Right(b) => b.cast(),
-            },
-            __io_types: PhantomData,
-        };
-        M::process(
-            self,
-            &mut ModuleContext {
-                stream_data: context.stream_data,
-                buffers: storage,
-            },
-        )
     }
 }
 

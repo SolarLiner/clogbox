@@ -5,6 +5,8 @@ use clogbox_core::r#enum::Either;
 use num_traits::Zero;
 use std::collections::HashSet;
 use std::marker::PhantomData;
+use std::sync::Arc;
+use clogbox_core::param::{RawParams, EMPTY_PARAMS};
 
 #[cfg(feature = "serialize")]
 pub mod serde;
@@ -38,6 +40,10 @@ impl<T: Send + Zero> RawModule for Schedule<T> {
 
     fn outputs(&self) -> usize {
         self.output_nodes.len()
+    }
+
+    fn get_params(&self) -> Arc<dyn '_ + RawParams> {
+        Arc::new(EMPTY_PARAMS)
     }
 
     fn supports_stream(&self, data: StreamData) -> bool {

@@ -4,13 +4,14 @@ use clack_plugin::prelude::*;
 use clogbox_core::module::{
     BufferStorage, Module, ModuleConstructor, ModuleContext, RawModule, StreamData,
 };
-use clogbox_core::param::{GetParameter, NormalizeParameter, SetParameter};
 use std::marker::PhantomData;
+use std::sync::Weak;
 use clack_extensions::{audio_ports, params};
 use clack_extensions::params::{ParamDisplayWriter, ParamInfo, ParamInfoFlags, ParamInfoWriter};
 use clack_plugin::events::spaces::CoreEventSpace;
 pub use clack_plugin::{clack_export_entry, plugin::PluginDescriptor};
 use clack_plugin::utils::Cookie;
+use clogbox_core::param::{IValue, Params, RawParams};
 use clogbox_core::r#enum::{count, Enum};
 use clogbox_core::r#enum::az::CastFrom;
 
@@ -86,7 +87,7 @@ pub trait ClapModule:
     + Sized
     + Send
     + Sync
-    + ModuleConstructor<Module: RawModule<Sample = f32> + SetParameter<Param: NormalizeParameter>>
+    + ModuleConstructor<Module: RawModule<Sample = f32>> + Params
 {
     fn descriptor() -> PluginDescriptor;
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
@@ -99,7 +100,7 @@ pub struct WrapperProcessor<M> {
 
 impl<
         'a,
-        M: 'static + RawModule<Sample = f32> + SetParameter<Param: NormalizeParameter>,
+        M: 'static + RawModule<Sample = f32> + Params,
         Ctor: 'static + Send + Sync + ModuleConstructor<Module = M>,
     > PluginAudioProcessor<'a, WrapperShared<Ctor>, ()> for WrapperProcessor<M>
 {
@@ -144,31 +145,40 @@ impl<
 
 pub struct WrapperShared<Ctor> {
     constructor: Ctor,
+    params: Weak<dyn RawParams>,
 }
 
 impl<Ctor: 'static + Send + Sync> PluginShared<'_> for WrapperShared<Ctor> {}
 
-pub struct ClapWrapperMainThread<M>(PhantomData<M>);
+pub struct ClapWrapperMainThread {
+    params: Weak<dyn RawParams>,
+}
 
-impl<M: GetParameter> params::PluginMainThreadParams for ClapWrapperMainThread<M> {
+impl params::PluginMainThreadParams for ClapWrapperMainThread {
     fn count(&mut self) -> u32 {
-        count::<M::Param>() as _
+        if let Some(params) = self.params.upgrade() {
+            params.num_params() as _
+        } else {
+            0
+        }
     }
 
     fn get_info(&mut self, param_index: u32, info: &mut ParamInfoWriter) {
-        if param_index < count::<M::Param>() as u32 {
-            let param = M::Param::cast_from(param_index as usize);
-            let name = param.name();
-            info.set(&ParamInfo {
-                id: ClapId::new(param_index),
-                default_value: 0.,
-                min_value: 0.,
-                max_value: 1.,
-                flags: ParamInfoFlags::IS_AUTOMATABLE,
-                name: name.as_bytes(),                
-                module: b"Module",
-                cookie: Cookie::empty(),
-            });
+        let Some(params) = self.params.upgrade() else { return; };
+        if param_index < params.num_params() as u32 {
+            let param = params.get_param(param_index as _);
+            if let IValue::Float(float_param) = param {
+                info.set(&ParamInfo {
+                    id: ClapId::new(param_index),
+                    name: float_param.name(),
+                    module: &[],
+                    min_value: float_param.range().start,
+                    max_value: float_param.range().end,
+                    flags: ParamInfoFlags::empty(),
+                    cookie: Default::default(),
+                    default_value: 0.0,
+                });
+            }
         }
     }
 

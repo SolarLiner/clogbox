@@ -4,13 +4,13 @@
 //! This module provides a number of non-linear filters that can be used to modify the
 //! amplitude of audio signals.
 use clogbox_core::module::sample::SampleModule;
-use clogbox_core::module::{
-    BufferStorage, Module, ModuleContext, ProcessStatus, StreamData,
-};
+use clogbox_core::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
+use clogbox_core::param::{Value, Params, EMPTY_PARAMS};
 use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
-use clogbox_core::r#enum::{seq, Sequential};
+use clogbox_core::r#enum::{seq, Empty, Enum, Sequential};
 use num_traits::Float;
 use std::marker::PhantomData;
+use std::sync::Arc;
 use typenum::U1;
 
 pub mod svf;
@@ -19,6 +19,9 @@ pub mod svf;
 pub trait Saturator {
     /// The type of sample that the saturator works with.
     type Sample;
+    type Params: Enum;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>>;
 
     /// Saturates a single value.
     ///
@@ -68,6 +71,11 @@ impl<Sat: 'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S
     type Sample = Sat::Sample;
     type Inputs = Sequential<U1>;
     type Outputs = Sequential<U1>;
+    type Params = Empty;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        Arc::new(EnumMapArray::<Self::Params, Value>::CONST_DEFAULT)
+    }
 
     fn supports_stream(&self, _: StreamData) -> bool {
         true
@@ -102,6 +110,11 @@ impl<S: 'static + Send + Saturator<Sample: Copy>> SampleModule for SaturatorSamp
     type Sample = S::Sample;
     type Inputs = Sequential<U1>;
     type Outputs = Sequential<U1>;
+    type Params = S::Params;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        S::get_params(&self.0)
+    }
 
     fn latency(
         &self,
@@ -133,6 +146,12 @@ impl<T> Default for Linear<T> {
 
 impl<T> Saturator for Linear<T> {
     type Sample = T;
+    type Params = Empty;
+
+    #[inline]
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        Arc::new(EMPTY_PARAMS)
+    }
 
     #[inline]
     fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
@@ -161,10 +180,16 @@ impl<T, F> Memoryless<T, F> {
 
 impl<T: Copy + Send, F: Send + Fn(T) -> T> Saturator for Memoryless<T, F> {
     type Sample = T;
+    type Params = Empty;
 
     #[inline]
     fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
         self.1(value)
+    }
+
+    #[inline]
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        Arc::new(EMPTY_PARAMS)
     }
 }
 

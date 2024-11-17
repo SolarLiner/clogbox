@@ -10,13 +10,13 @@
 //! includes iterators and utility methods for working with such maps.
 
 use crate::r#enum::{count, Enum};
-use numeric_array::generic_array::GenericArray;
+use numeric_array::generic_array::{GenericArray, IntoArrayLength};
 use numeric_array::ArrayLength;
 use std::iter::{Enumerate, Map};
 use std::marker::PhantomData;
 use std::ops;
 use std::ops::{Deref, DerefMut};
-use typenum::{Cmp, Equal, Unsigned};
+use typenum::{Cmp, Equal, IsEqual};
 
 /// A trait that represents a collection of items.
 pub trait Collection: Deref<Target = [Self::Item]> {
@@ -60,6 +60,25 @@ impl<C: Collection + DerefMut<Target = [C::Item]>> CollectionMut for C {}
 /// });
 /// ```
 pub type EnumMapArray<E, T> = EnumMap<E, GenericArray<T, <E as Enum>::Count>>;
+
+impl<E: Enum, T> EnumMapArray<E, T>
+where
+    typenum::Const<0>: IntoArrayLength<ArrayLength = E::Count>,
+{
+    pub const CONST_DEFAULT: Self = Self {
+        data: GenericArray::from_array([]),
+        __enum: PhantomData,
+    };
+}
+
+impl<E: Enum, T> Default for EnumMapArray<E, T>
+where
+    typenum::Const<0>: IntoArrayLength<ArrayLength = E::Count>,
+{
+    fn default() -> Self {
+        Self::CONST_DEFAULT
+    }
+}
 
 /// A type alias for an `EnumMap` where the underlying data is stored in a heap-allocated array (`Box<[T]>`).
 ///
@@ -110,7 +129,7 @@ pub type EnumMapBox<E, T> = EnumMap<E, Box<[T]>>;
 ///     Color::Green => 20,
 ///     Color::Blue => 30,
 /// });
-/// let ref_map: EnumMapRef<_, _> = map.as_ref();
+/// let ref_map: EnumMapRef<_, _> = map.to_ref();
 /// ```
 pub type EnumMapRef<'a, E, T> = EnumMap<E, &'a [T]>;
 
@@ -136,7 +155,7 @@ pub type EnumMapRef<'a, E, T> = EnumMap<E, &'a [T]>;
 ///     Color::Green => 20,
 ///     Color::Blue => 30,
 /// });
-/// let mut map_mut: EnumMapMut<_, _> = map.as_mut();
+/// let mut map_mut: EnumMapMut<_, _> = map.to_mut();
 /// map_mut[Color::Red] += 5;
 /// assert_eq!(15, map[Color::Red]);
 /// ```
@@ -167,17 +186,33 @@ pub type EnumMapMut<'a, E, T> = EnumMap<E, &'a mut [T]>;
 /// });
 /// assert_eq!(map[Color::Red], 10);
 /// ```
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+#[derive(Debug, Copy, Ord, PartialOrd, Eq, PartialEq)]
 pub struct EnumMap<E, D> {
-    data: D,
-    __enum: PhantomData<E>,
+    pub(crate) data: D,
+    pub(crate) __enum: PhantomData<E>, // <!> This needs to stay PhantomData for the unsafe blocks below!
+}
+
+impl<E, D: Clone> Clone for EnumMap<E, D> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data.clone(),
+            __enum: PhantomData,
+        }
+    }
+}
+
+impl<E, D> AsRef<EnumMap<usize, D>> for EnumMap<E, D> {
+    fn as_ref(&self) -> &EnumMap<usize, D> {
+        // Safety: This is safe because we are only changing the type of the enum, which is behind a PhantomData
+        unsafe { &*(self as *const EnumMap<E, D> as *const EnumMap<usize, D>) }
+    }
 }
 
 #[cfg(feature = "serialize")]
 impl<'de, E, Data: serde::Deserialize<'de>> serde::Deserialize<'de> for EnumMap<E, Data> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de>
+        D: serde::Deserializer<'de>,
     {
         let data = Data::deserialize(deserializer)?;
         Ok(Self {
@@ -191,7 +226,7 @@ impl<'de, E, Data: serde::Deserialize<'de>> serde::Deserialize<'de> for EnumMap<
 impl<E, D: serde::Serialize> serde::Serialize for EnumMap<E, D> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer
+        S: serde::Serializer,
     {
         self.data.serialize(serializer)
     }
@@ -216,20 +251,30 @@ impl<E, D> EnumMap<E, D> {
     }
 }
 
+impl<E, D: Collection> EnumMap<E, D> {
+    pub fn runtime_len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn dyn_get(&self, index: usize) -> Option<&D::Item> {
+        self.data.get(index)
+    }
+}
+
 impl<E: Enum, D> EnumMap<E, D> {
     /// Returns the number of elements in the `EnumMap`.
     ///
     /// # Returns
-    /// 
+    ///
     /// The number of elements in the `EnumMap`, which is equal to the number of variants in the enum `E`.
     pub const fn len(&self) -> usize {
         count::<E>()
     }
-    
+
     /// Checks if the `EnumMap` is empty.
     ///
     /// # Returns
-    /// 
+    ///
     /// `true` if the `EnumMap` is empty, `false` otherwise.
     pub const fn is_empty(&self) -> bool {
         self.len() == 0
@@ -324,10 +369,10 @@ impl<E, D: Collection> EnumMap<E, D> {
     /// use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapRef};
     /// use clogbox_core::r#enum::Sequential;
     /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
-    /// let map_ref: EnumMapRef<_, _> = map.as_ref();
+    /// let map_ref: EnumMapRef<_, _> = map.to_ref();
     /// let values: Vec<(Sequential<U3>, &usize)> = Vec::from_iter(map_ref.into_iter());
     /// ```
-    pub fn as_ref(&self) -> EnumMapRef<E, D::Item> {
+    pub fn to_ref(&self) -> EnumMapRef<E, D::Item> {
         EnumMapRef {
             data: &*self.data,
             __enum: PhantomData,
@@ -398,10 +443,10 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
     /// use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
     /// use clogbox_core::r#enum::Sequential;
     /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
-    /// let map_mut: EnumMapMut<_, _> = map.as_mut();
+    /// let map_mut: EnumMapMut<_, _> = map.to_mut();
     /// let values: Vec<(Sequential<U3>, &mut usize)> = Vec::from_iter(map_mut.into_iter());
     /// ```
-    pub fn as_mut(&mut self) -> EnumMapMut<E, D::Item> {
+    pub fn to_mut(&mut self) -> EnumMapMut<E, D::Item> {
         EnumMapMut {
             data: &mut *self.data,
             __enum: PhantomData,
@@ -433,10 +478,17 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
 }
 
 impl<E: Enum, D: Collection + FromIterator<D::Item>> FromIterator<D::Item> for EnumMap<E, D> {
-    fn from_iter<T: IntoIterator<Item=D::Item>>(iter: T) -> Self {
+    fn from_iter<T: IntoIterator<Item = D::Item>>(iter: T) -> Self {
         let data = D::from_iter(iter);
-        assert_eq!(data.len(), count::<E>(), "Invalid number of elements for EnumMap");
-        Self { data, __enum: PhantomData }
+        assert_eq!(
+            data.len(),
+            count::<E>(),
+            "Invalid number of elements for EnumMap"
+        );
+        Self {
+            data,
+            __enum: PhantomData,
+        }
     }
 }
 
@@ -592,10 +644,13 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
             .map(|(i, v)| (E::cast_from(i), v))
     }
 
-    pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T> where D::Item: AsRef<T> {
+    pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T>
+    where
+        D::Item: AsRef<T>,
+    {
         EnumMapArray::from_iter(self.data.iter().map(|v| v.as_ref()))
     }
-    
+
     pub fn items_as_deref(&self) -> EnumMapArray<E, &<D::Item as Deref>::Target>
     where
         D::Item: Deref,
@@ -659,7 +714,10 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
         EnumMapArray::from_iter(self.data.iter_mut().map(|v| v.deref_mut()))
     }
 
-    pub fn items_as_mut<T: ?Sized>(&mut self) -> EnumMapArray<E, &mut T> where D::Item: AsMut<T> {
+    pub fn items_as_mut<T: ?Sized>(&mut self) -> EnumMapArray<E, &mut T>
+    where
+        D::Item: AsMut<T>,
+    {
         EnumMapArray::from_iter(self.data.iter_mut().map(|v| v.as_mut()))
     }
 }
@@ -704,6 +762,10 @@ impl<E: Enum, T> EnumMapArray<E, T> {
             data: array,
             __enum: PhantomData,
         }
+    }
+    
+    pub const fn from_std_array<const N: usize>(array: [T; N]) -> Self where typenum::Const<N>: IntoArrayLength<ArrayLength=E::Count> {
+        Self::from_array(GenericArray::from_array(array))
     }
 }
 

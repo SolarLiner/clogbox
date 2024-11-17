@@ -8,14 +8,17 @@ use az::{Cast, CastFrom};
 use clogbox_core::module::analysis::{FreqAnalysis, Matrix};
 use clogbox_core::module::sample::SampleModule;
 use clogbox_core::module::{ProcessStatus, StreamData};
+use clogbox_core::param::{FloatMapping, Value, FloatRange, Params, IValue};
 use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 use clogbox_core::r#enum::Enum;
 use clogbox_derive::Enum;
+use generic_array::GenericArray;
 use num_complex::Complex;
 use num_traits::{Float, FloatConst, Num, Zero};
 use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
 use std::ops;
+use std::sync::Arc;
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
@@ -45,7 +48,7 @@ pub enum SvfOutput {
 }
 
 /// SVF topology filter, with optional non-linearities.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct Svf<T, Mode = Linear<T>> {
     s: [T; 2],
     r: T,
@@ -56,6 +59,7 @@ pub struct Svf<T, Mode = Linear<T>> {
     w_step: T,
     sample_rate: T,
     saturator: Mode,
+    params: Arc<EnumMapArray<SvfParams, Value>>,
 }
 
 impl<T, Mode> Svf<T, Mode> {
@@ -75,6 +79,7 @@ impl<T, Mode> Svf<T, Mode> {
             d,
             w_step,
             sample_rate,
+            params,
             ..
         } = self;
         Svf {
@@ -87,25 +92,42 @@ impl<T, Mode> Svf<T, Mode> {
             w_step,
             sample_rate,
             saturator,
+            params,
         }
     }
 }
 
 impl<T: Copy + Float + FloatConst + CastFrom<f64> + Num> Svf<T, Linear<T>> {
+    const fn cutoff_param(cutoff: f32) -> Value {
+        Value::new(cutoff)
+            .with_range(FloatRange::new(20.0..=20e3).with_mapping(FloatMapping::Logarithmic))
+    }
+
+    const fn resonance_param(resonance: f32) -> Value {
+        Value::new(resonance)
+            .with_range(FloatRange::new(0.0..=1.25).with_mapping(FloatMapping::Logarithmic))
+    }
+
     /// Create a new SVF filter with the provided sample rate, frequency cutoff (in Hz) and resonance amount
     /// (in 0..1 for stable filters, otherwise use bounded nonlinearities).
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn new(sample_rate: T, cutoff: T, resonance: T) -> Self {
+    pub fn new(sample_rate: T, cutoff: f32, resonance: f32) -> Self {
+        let fc = T::cast_from(cutoff as _);
+        let q = T::cast_from(resonance as _);
         let mut this = Self {
             s: [0.; 2],
-            r: 1. - resonance,
-            fc: cutoff,
+            r: 1. - q,
+            fc,
             g: 0.,
             g1: 0.,
             d: 0.,
             sample_rate,
             w_step: T::PI() / sample_rate,
             saturator: Linear::default(),
+            params: Arc::new(EnumMapArray::from_std_array([
+                Self::cutoff_param(cutoff),
+                Self::resonance_param(resonance),
+            ])),
         };
         this.update_coefficients();
         this
@@ -121,7 +143,7 @@ impl<T: Cast<f64> + CastFrom<f64> + Float, C> Svf<T, C> {
 impl<T: Copy + CastFrom<f64> + Cast<f64> + Float, C> Svf<T, C> {
     /// Set the resonance amount (in 0..1 for stable filters, otherwise use bounded nonlinearities).
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn set_r(&mut self, r: T) {
+    pub fn set_resonance(&mut self, r: T) {
         let r = 1. - r;
         self.r = 2. * r;
         self.update_coefficients();
@@ -129,7 +151,6 @@ impl<T: Copy + CastFrom<f64> + Cast<f64> + Float, C> Svf<T, C> {
 }
 
 impl<T: Float + CastFrom<f64>, C> Svf<T, C> {
-
     #[profiling::function]
     #[replace_float_literals(T::cast_from(literal))]
     fn update_coefficients(&mut self) {
@@ -140,13 +161,18 @@ impl<T: Float + CastFrom<f64>, C> Svf<T, C> {
 }
 
 impl<
-        T: 'static + Send + Copy + Cast<f64> + CastFrom<f64> + Num,
+        T: 'static + Send + Cast<f64> + CastFrom<f64> + Float,
         Mode: 'static + Send + Saturator<Sample = T>,
     > SampleModule for Svf<T, Mode>
 {
     type Sample = Mode::Sample;
     type Inputs = SvfInput;
     type Outputs = SvfOutput;
+    type Params = SvfParams;
+
+    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        self.params.clone()
+    }
 
     fn reset(&mut self) {
         self.s.fill(T::cast_from(0.));
@@ -162,8 +188,12 @@ impl<
     }
 
     #[replace_float_literals(T::cast_from(literal))]
-    fn process_sample(&mut self, _: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>, mut outputs: EnumMapMut<Self::Outputs, Self::Sample>) -> ProcessStatus
-    {
+    fn process_sample(
+        &mut self,
+        _: &StreamData,
+        inputs: EnumMapArray<Self::Inputs, Self::Sample>,
+        mut outputs: EnumMapMut<Self::Outputs, Self::Sample>,
+    ) -> ProcessStatus {
         use SvfInput::*;
         use SvfOutput::*;
         let x = inputs[AudioInput];
@@ -188,14 +218,32 @@ impl<
         outputs[Highpass] = hp;
         ProcessStatus::Running
     }
+
+    fn on_begin_block(&mut self, stream_data: &StreamData) -> ProcessStatus {
+        use SvfParams::*;
+        if self.params[Cutoff].has_changed() {
+            let value = T::cast_from(self.params[Cutoff].get_value() as _);
+            self.set_cutoff(value);
+        }
+        if self.params[Resonance].has_changed() {
+            let value = T::cast_from(self.params[Resonance].get_value() as _);
+            self.set_resonance(value);
+        }
+        ProcessStatus::Running
+    }
 }
 
-impl<T: 'static + Send + Copy + Zero + CastFrom<f64> + Cast<f64> + Float, Mode: 'static + Send + Saturator<Sample = T>> FreqAnalysis for Svf<T, Mode> {
+impl<
+        T: 'static + Send + Copy + Zero + CastFrom<f64> + Cast<f64> + Float,
+        Mode: 'static + Send + Saturator<Sample = T>,
+    > FreqAnalysis for Svf<T, Mode>
+{
     #[replace_float_literals(Complex::from(T::cast_from(literal)))]
     fn h_z(
         &self,
         z: Complex<Self::Sample>,
-    ) -> Matrix<Complex<Self::Sample>, <Self::Outputs as Enum>::Count, <Self::Inputs as Enum>::Count> {
+    ) -> Matrix<Complex<Self::Sample>, <Self::Outputs as Enum>::Count, <Self::Inputs as Enum>::Count>
+    {
         let omega_c = 2.0 * self.fc * self.w_step;
         let x0 = z + 1.0;
         let x1 = x0.powi(2) * omega_c.powi(2);

@@ -14,18 +14,24 @@ profiling.workspace = true
 serde_json.workspace = true
 typenum.workspace = true
 
+bincode = { version = "2.0.0-rc.3", optional = true }
 duplicate = "2.0.0"
 fortuples = "0.9.1"
 serde = { version = "1.0.215", optional = true }
 thiserror.workspace = true
-vtable = "0.2.0"
+bitflags = "2.6.0"
 
 [dev-dependencies]
 clogbox-derive = { path = "../clogbox-derive" }
 
+approx = "0.5.1"
+insta = { workspace = true, features = ["redactions"] }
+proptest.workspace = true
 rstest.workspace = true
 
-approx = "0.5.1"
-
 [features]
+default = ["std"]
+std = ["bincode/std", "num-complex/std", "num-traits/std", "serde/std"]
+no_std = ["typenum/no_std", "num-traits/libm"]
 serialize = ["dep:serde", "numeric-array/serde", "serde/derive"]
+data-param = ["dep:bincode", "bincode/derive"]

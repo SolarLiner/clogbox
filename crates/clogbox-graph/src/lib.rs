@@ -1,22 +1,22 @@
 use crate::graph::error::{AddEdgeError, AddPortError, CompileGraphError};
 use crate::graph::{AudioGraphHelper, ModuleMap, NodeID, PortID};
 use crate::schedule::Schedule;
-use clogbox_core::module::{BufferStorage, Module, RawModule};
+use clogbox_core::module::{BufferStorage, Module, RawModule, StreamData};
 use clogbox_core::r#enum::az::Cast;
-use clogbox_core::r#enum::{count, enum_iter, Enum, Sequential};
+use clogbox_core::r#enum::{count, enum_iter, Enum};
 use clogbox_derive::Enum;
 use num_traits::Zero;
-use std::collections::HashMap;
 use std::marker::PhantomData;
-use typenum::U1;
+use clogbox_core::module::utilitarian::{FixedDelay, FixedDelayConstructor};
 
 mod graph;
-mod schedule;
+pub mod schedule;
 
 pub struct ScheduleBuilder<T> {
     audio_graph: AudioGraphHelper<PortType>,
     modules: ModuleMap<T>,
     io_nodes: Vec<IoNode>,
+    param_nodes: Vec<ParamNode>,
 }
 
 impl<T> Default for ScheduleBuilder<T> {
@@ -25,6 +25,7 @@ impl<T> Default for ScheduleBuilder<T> {
             audio_graph: AudioGraphHelper::new(),
             modules: ModuleMap::default(),
             io_nodes: vec![],
+            param_nodes: vec![],
         }
     }
 }
@@ -33,6 +34,11 @@ impl<T> Default for ScheduleBuilder<T> {
 pub struct IoNode {
     id: NodeID,
     is_input: bool,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ParamNode {
+    id: NodeID,
 }
 
 #[derive(Debug)]
@@ -63,6 +69,15 @@ impl<T: Zero> ScheduleBuilder<T> {
         Ok(node)
     }
 
+    pub fn add_param_node(&mut self) -> Result<ParamNode, AddPortError> {
+        let id = self.audio_graph.add_node(0.0);
+        self.audio_graph
+            .add_port(id, PortID(0), PortType::Param, false)?;
+        let node = ParamNode { id };
+        self.param_nodes.push(node);
+        Ok(node)
+    }
+
     pub fn add_node<M: Module<Sample = T>>(
         &mut self,
         module: impl Into<Box<M>>,
@@ -88,14 +103,14 @@ impl<T: Zero> ScheduleBuilder<T> {
         &mut self,
         source: Node<M1>,
         target: Node<M2>,
-        input: M1::Inputs,
-        output: M2::Outputs,
+        output: M1::Outputs,
+        input: M2::Inputs,
     ) -> Result<(), AddEdgeError> {
         self.audio_graph.add_edge(
             source.id,
-            input_port::<M1>(input),
+            output_port::<M1>(output),
             target.id,
-            output_port::<M2>(output),
+            input_port::<M2>(input),
             true,
         )?;
         Ok(())
@@ -132,36 +147,69 @@ impl<T: Zero> ScheduleBuilder<T> {
         )?;
         Ok(())
     }
+
+    pub fn connect_param<M: Module>(
+        &mut self,
+        source: ParamNode,
+        target: Node<M>,
+        param: M::Params,
+    ) -> Result<(), AddEdgeError> {
+        self.audio_graph.add_edge(
+            source.id,
+            param_port::<M>(param),
+            target.id,
+            PortID(0),
+            true,
+        )?;
+        Ok(())
+    }
 }
 
 impl<T: Zero> ScheduleBuilder<T> {
     pub fn compile(mut self, max_buffer_size: usize) -> Result<Schedule<T>, CompileGraphError> {
         let schedule = self.audio_graph.compile()?;
-        let max_buffers = schedule.num_buffers[PortType::Audio];
-        let buffers = std::iter::repeat_with(|| {
+        let buffers_audio = std::iter::repeat_with(|| {
             std::iter::repeat_with(T::zero)
                 .take(max_buffer_size)
                 .collect::<Box<[_]>>()
         })
-        .take(max_buffers)
+        .take(schedule.num_buffers[PortType::Audio])
+        .collect::<Box<[_]>>();
+        let buffers_param = std::iter::repeat_with(|| {
+            std::iter::repeat((0, 0.0))
+                .take(max_buffer_size)
+                .collect::<Box<[_]>>()
+        })
+        .take(schedule.num_buffers[PortType::Param])
         .collect::<Box<[_]>>();
         Ok(Schedule {
             schedule,
-            input_nodes: self
+            inputs: self
                 .io_nodes
                 .iter()
                 .filter(|n| n.is_input)
-                .map(|n| n.id)
+                .enumerate()
+                .map(|(i, n)| (n.id, i))
                 .collect(),
-            output_nodes: self
+            outputs: self
                 .io_nodes
                 .iter()
                 .filter(|n| !n.is_input)
-                .map(|n| n.id)
+                .enumerate()
+                .map(|(i, n)| (n.id, i))
+                .collect(),
+            param_nodes: self
+                .param_nodes
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (n.id, i))
                 .collect(),
             modules: self.modules,
-            buffers,
+            buffers_audio,
+            buffers_param,
             max_buffer_size,
+            audio_delays: schedule.delays.iter()
+                .map(|delay| FixedDelay::new(delay.delay))
         })
     }
 }
@@ -174,8 +222,13 @@ fn output_port<M: Module>(output: M::Outputs) -> PortID {
     PortID((count::<M::Inputs>() + output.cast()) as u32)
 }
 
+fn param_port<M: Module>(param: M::Params) -> PortID {
+    PortID((count::<M::Inputs>() + count::<M::Outputs>() + param.cast()) as u32)
+}
+
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Enum)]
 #[cfg_attr(feature = "serialize", derive(serde::Deserialize, serde::Serialize))]
 pub enum PortType {
     Audio,
+    Param,
 }

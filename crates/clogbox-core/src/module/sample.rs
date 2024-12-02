@@ -12,7 +12,7 @@
 //! use typenum::U1;
 //! use clogbox_core::module::{Module, StreamData, ProcessStatus};
 //! use clogbox_core::module::sample::{SampleContext, SampleContextImpl, SampleModule};
-//! use clogbox_core::param::{Params, EMPTY_PARAMS};
+//! use clogbox_core::param::Params;
 //! use clogbox_core::r#enum::{enum_iter, seq, Empty, Enum, Sequential};
 //! use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
 //!
@@ -30,17 +30,9 @@
 //!     type Outputs = In;
 //!     type Params = Empty;
 //!
-//!     fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
-//!         Arc::new(EMPTY_PARAMS)
-//!     }
-//!
-//!     fn latency(&self, input_latency: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
-//!         input_latency
-//!     }
-//!
-//!     fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>, mut outputs: EnumMapMut<Self::Outputs, Self::Sample>) -> ProcessStatus {
+//!     fn process_sample(&mut self, context: SampleContext<Self>) -> ProcessStatus {
 //!         for k in enum_iter() {
-//!             outputs[k] = -inputs[k];
+//!             context.outputs[k] = -context.inputs[k];
 //!         }
 //!         ProcessStatus::Running
 //!     }
@@ -54,19 +46,25 @@
 //! };
 //! let inputs = EnumMapArray::new(|_| 42.0);
 //! let mut outputs = EnumMapArray::new(|_| 0.0);
-//! let status = module.process_sample(stream_data, inputs, outputs.to_mut());
+//! let context = SampleContextImpl {
+//!     stream_data,
+//!     inputs,
+//!     outputs: outputs.to_mut(),
+//!     params: EnumMapArray::new(|_| 0.0),
+//! };
+//! let status = module.process_sample(context);
 //! assert_eq!(ProcessStatus::Running, status);
 //! assert_eq!(-42.0, outputs[seq(0)]);
 //! ```
 
-use std::sync::Arc;
-use num_traits::Zero;
+use super::BufferStorage;
 use crate::module::{Module, ModuleContext, ProcessStatus, StreamData};
+use crate::param::events::{ParamEvents, ParamSlice};
+use crate::param::Params;
 use crate::r#enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
 use crate::r#enum::Enum;
+use num_traits::Zero;
 use numeric_array::ArrayLength;
-use crate::param::Params;
-use super::BufferStorage;
 
 /// Type alias for the sample context implementation,
 /// making it easier to use with [`SampleModule`] implementations.
@@ -75,20 +73,19 @@ pub type SampleContext<'a, M> = SampleContextImpl<
     <M as SampleModule>::Sample,
     <M as SampleModule>::Inputs,
     <M as SampleModule>::Outputs,
+    <M as SampleModule>::Params,
 >;
 
 /// A context implementation for handling stream data with input and output enums.
-pub struct SampleContextImpl<'a, T, In: Enum, Out: Enum>
-where
-    In::Count: ArrayLength,
-    Out::Count: ArrayLength,
-{
+pub struct SampleContextImpl<'a, T, In: Enum, Out: Enum, Params: Enum> {
     /// Reference to the stream data.
     pub stream_data: &'a StreamData,
     /// Enum map array for input data.
     pub inputs: EnumMapArray<In, T>,
     /// Enum map array for output data.
-    pub outputs: EnumMapArray<Out, T>,
+    pub outputs: EnumMapMut<'a, Out, T>,
+    /// Enum map array for parameters.
+    pub params: EnumMapArray<Params, f32>,
 }
 
 /// This trait outlines the module structure for per-sample handling and processing.
@@ -103,9 +100,8 @@ pub trait SampleModule: 'static + Send {
     /// Enum type representing outputs of the module.
     type Outputs: Enum;
 
-    type Params: Enum;
-
-    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>>;
+    /// Params type representing the input parameters of the module.
+    type Params: Params;
 
     /// Reallocate resources based on the provided stream data.
     #[inline]
@@ -116,22 +112,21 @@ pub trait SampleModule: 'static + Send {
     fn reset(&mut self) {}
 
     /// Calculate the output latency based on input latency.
-    fn latency(
-        &self,
-        input_latency: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64>;
+    fn latency(&self) -> f64 {
+        0.0
+    }
 
     /// Process the given context and update the status.
-    fn process_sample(&mut self, stream_data: &StreamData, inputs: EnumMapArray<Self::Inputs, Self::Sample>, outputs: EnumMapMut<Self::Outputs, Self::Sample>) -> ProcessStatus;
-    
+    fn process_sample(&mut self, context: SampleContext<Self>) -> ProcessStatus;
+
     /// This method is run at the beginning of each block. This is provided to [SampleModule]s in
     /// order to allow per-block processing (e.g. updating coefficients, etc.).
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `stream_data`: [StreamData] for this block.
-    /// 
-    /// returns: ProcessStatus 
+    ///
+    /// returns: ProcessStatus
     fn on_begin_block(&mut self, stream_data: &StreamData) -> ProcessStatus {
         ProcessStatus::Running
     }
@@ -143,10 +138,6 @@ impl<M: SampleModule<Sample: Copy + Zero>> Module for M {
     type Inputs = M::Inputs;
     type Outputs = M::Outputs;
     type Params = M::Params;
-
-    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
-        M::get_params(self)
-    }
 
     #[inline]
     fn supports_stream(&self, _: StreamData) -> bool {
@@ -164,27 +155,34 @@ impl<M: SampleModule<Sample: Copy + Zero>> Module for M {
     }
 
     #[inline]
-    fn latency(
-        &self,
-        input_latency: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64>
-    where
-        <Self::Outputs as Enum>::Count: ArrayLength,
-    {
-        M::latency(self, input_latency)
+    fn latency(&self) -> f64 {
+        M::latency(self)
     }
 
-    fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(
+    fn process<
+        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
+    >(
         &mut self,
         context: &mut ModuleContext<S>,
+        params: EnumMapRef<Self::Params, &dyn ParamEvents>,
     ) -> ProcessStatus {
         let mut status = ProcessStatus::Running;
         let block_size = context.stream_data().block_size;
         for i in 0..block_size {
-            let sample_in = EnumMapArray::new(|inp: Self::Inputs| context.buffers.get_input_buffer(inp)[i]);
-            let mut sample_out = EnumMapArray::new(|_| Self::Sample::zero());
-            let new_status = M::process_sample(self, context.stream_data(), sample_in, sample_out.to_mut());
-            for (out, val) in sample_out {
+            let inputs =
+                EnumMapArray::new(|inp: Self::Inputs| context.buffers.get_input_buffer(inp)[i]);
+            let mut outputs = EnumMapArray::new(|_| Self::Sample::zero());
+            let params = EnumMapArray::new(|p| params[p].interpolate(i));
+            let new_status = M::process_sample(
+                self,
+                SampleContextImpl {
+                    stream_data: &context.stream_data,
+                    params,
+                    inputs,
+                    outputs: outputs.to_mut(),
+                },
+            );
+            for (out, val) in outputs {
                 context.buffers.get_output_buffer(out)[i] = val;
             }
 

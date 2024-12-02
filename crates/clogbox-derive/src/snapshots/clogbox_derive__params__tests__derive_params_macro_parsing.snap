@@ -1,0 +1,49 @@
+---
+source: crates/clogbox-derive/src/params.rs
+expression: format_output(derive_params)
+---
+#[automatically_derived]
+impl ::clogbox_core::param::Params for TestEnum
+where
+    Self: ::clogbox_core::r#enum::Enum,
+{
+    fn metadata(&self) -> ::clogbox_core::param::ParamMetadata {
+        match self {
+            #[allow(clippy::needless_update)]
+            TestEnum::VariantOne => {
+                ::clogbox_core::param::ParamMetadata {
+                    range: 1..=10,
+                    flags: some_flag,
+                    default: 5,
+                    ..Default::default()
+                }
+            }
+            #[allow(clippy::needless_update)]
+            TestEnum::VariantTwo => {
+                ::clogbox_core::param::ParamMetadata {
+                    range: 20..=30,
+                    ..Default::default()
+                }
+            }
+        }
+    }
+    fn value_to_string(&self, value: ::clogbox_core::param::Normalized) -> String {
+        match self {
+            TestEnum::VariantOne => ::clogbox_core::param::value_to_string_default(value),
+            TestEnum::VariantTwo => v2s_function(value),
+        }
+    }
+    fn string_to_value(
+        &self,
+        string: &str,
+    ) -> Result<::clogbox_core::param::Normalized, String> {
+        match self {
+            TestEnum::VariantOne => {
+                ::clogbox_core::param::string_to_value_default(string)
+            }
+            TestEnum::VariantTwo => {
+                ::clogbox_core::param::string_to_value_default(string)
+            }
+        }
+    }
+}

@@ -8,9 +8,13 @@
 //! or interpolation is needed, such as in mathematical computations, graphics,
 //! or data processing.
 use crate::r#enum::enum_map::Collection;
+use crate::r#enum::Count;
 use az::{Cast, CastFrom};
 use num_traits::{Float, Num};
+use numeric_array::generic_array::IntoArrayLength;
+use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
+use typenum::{Const, Unsigned};
 
 /// A trait that defines a method for interpolating values within a [`Collection`](crate::r#enum::enum_map::Collection) type.
 ///
@@ -32,24 +36,38 @@ pub trait Interpolation<T> {
     fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T;
 }
 
+pub trait InterpolateSingle<T> {
+    type Count: IntoArrayLength;
+
+    fn offset_index(&self, index: T) -> T {
+        index
+    }
+
+    fn interpolate_single(
+        &self,
+        values: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>,
+        index: T,
+    ) -> T;
+}
+
+impl<T: Float, I: InterpolateSingle<T>> Interpolation<T> for I {
+    fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T {
+        let min = self.offset_index(index).floor().to_usize().unwrap();
+        let max = values
+            .len()
+            .min(min + <<I as InterpolateSingle<T>>::Count as IntoArrayLength>::ArrayLength::USIZE);
+        let array = NumericArray::from_slice(&values[min..max]);
+        self.interpolate_single(array, index.fract())
+    }
+}
+
 /// `Linear` is a struct that represents linear interpolation.
-///
-/// # Usage
-///
-/// The `Linear` struct is typically used in scenarios where a linear transformation
-/// is needed, such as in mathematical computations, graphics, or data processing.
-///
-/// This struct does not currently contain any fields or methods, and its primary
-/// purpose is to serve as a type marker or placeholder in more complex systems.
 ///
 /// # Examples
 /// ```
 /// use clogbox_core::math::interpolation::Interpolation;
 /// use clogbox_core::math::interpolation::Linear;
 ///
-/// // Example of creating a Linear instance
-/// ///
-/// // Assume we have a collection of values to interpolate
 /// let values = vec![0.0, 1.0, 2.0, 3.0];
 /// let index = 1.5;
 ///
@@ -60,25 +78,19 @@ pub trait Interpolation<T> {
 /// ```
 pub struct Linear;
 
-impl<T: Copy + Float + Cast<usize>> Interpolation<T> for Linear {
-    fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T {
-        let i = index.floor().cast();
-        let j = T::cast(index + T::one());
-        let a = values[i];
-        let b = values[j];
-        a + (b - a) * index.fract()
+impl<T: Copy + Float + Cast<usize>> InterpolateSingle<T> for Linear {
+    type Count = Const<2>;
+
+    fn interpolate_single(
+        &self,
+        values: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>,
+        index: T,
+    ) -> T {
+        values[0] + (values[1] - values[0]) * index
     }
 }
+
 /// `Cubic` is a struct that represents cubic interpolation.
-///
-/// # Usage
-///
-/// The `Cubic` struct is typically used in scenarios where a cubic transformation
-/// or interpolation is needed, such as in mathematical computations, graphics,
-/// or data processing.
-///
-/// This struct does not currently contain any fields or methods, and its primary
-/// purpose is to serve as a type marker or placeholder in more complex systems.
 ///
 /// # Examples
 /// ```
@@ -93,37 +105,25 @@ impl<T: Copy + Float + Cast<usize>> Interpolation<T> for Linear {
 /// ```
 pub struct Cubic;
 
-impl<T: Float + CastFrom<f64> + Cast<usize>> Interpolation<T> for Cubic {
-    #[replace_float_literals(T::cast_from(literal))]
-    fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T {
-        debug_assert!(!values.is_empty());
-        if index < 0.0 {
-            return values[0];
-        }
-        if index > T::cast_from((values.len() - 1) as f64) {
-            return values[values.len() - 1];
-        }
-        let i = index.floor().cast();
-        let ip1 = (i + 1).min(values.len() - 1);
-        let im1 = i.saturating_sub(1);
-        let ip2 = (i + 2).min(values.len() - 1);
+impl<T: Float + CastFrom<f64> + Cast<usize>> InterpolateSingle<T> for Cubic {
+    type Count = Const<4>;
 
-        let p0 = values[im1];
-        let p1 = values[i];
-        let p2 = values[ip1];
-        let p3 = values[ip2];
-
-        cubic_interpolate([p0, p1, p2, p3], index.fract())
+    fn offset_index(&self, index: T) -> T {
+        index - T::cast_from(1.0)
     }
-}
 
-#[replace_float_literals(T::cast_from(literal))]
-fn cubic_interpolate<T: Copy + CastFrom<f64> + Num>(p: [T; 4], x: T) -> T {
-    p[1] + x
-        * 0.5
-        * (p[2] - p[0]
-            + x * (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3]
-                + x * (3.0 * (p[1] - p[2]) + p[3] - p[0])))
+    #[replace_float_literals(T::cast_from(literal))]
+    fn interpolate_single(
+        &self,
+        p: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>,
+        x: T,
+    ) -> T {
+        p[1] + x
+            * 0.5
+            * (p[2] - p[0]
+                + x * (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3]
+                    + x * (3.0 * (p[1] - p[2]) + p[3] - p[0])))
+    }
 }
 
 #[cfg(test)]

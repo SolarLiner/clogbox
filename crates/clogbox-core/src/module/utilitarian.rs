@@ -2,19 +2,63 @@
 //! audio processing components. It includes definitions for processing statuses,
 //! stream metadata, and configuration, as well as implementations of different
 //! processing units.
-use crate::math::recip::Recip;
-use crate::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
-use crate::param::{Value, Params};
-use crate::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapBox};
-use crate::r#enum::{enum_iter, CartesianProduct, Enum};
+
+use crate::math::interpolation::{Cubic, InterpolateSingle, Interpolation, Linear};
+use crate::module::sample::{SampleContext, SampleModule};
+use crate::module::{Module, ModuleConstructor, ProcessStatus, StreamData};
+use crate::param;
+use crate::param::Params;
+use crate::r#enum::{enum_iter, CartesianProduct, Empty, Enum, Mono};
 use az::{Cast, CastFrom};
-use num_traits::{Num, NumAssign, Zero};
-use numeric_array::ArrayLength;
+use generic_array::sequence::GenericSequence;
+use num_traits::{Float, Num, NumAssign, One, Zero};
+use numeric_array::{ArrayLength, NumericArray};
+use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::ops;
-use std::sync::Arc;
 use typenum::Unsigned;
-use crate::param::smoother::{LinearSmoother, Smoother};
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct SummingMatrixParams<In, Out>(CartesianProduct<In, Out>);
+
+impl<In, Out> az::CastFrom<usize> for SummingMatrixParams<In, Out>
+where
+    CartesianProduct<In, Out>: CastFrom<usize>,
+{
+    fn cast_from(src: usize) -> Self {
+        Self(CartesianProduct::cast_from(src))
+    }
+}
+
+impl<In, Out> az::Cast<usize> for SummingMatrixParams<In, Out>
+where
+    CartesianProduct<In, Out>: Cast<usize>,
+{
+    fn cast(self) -> usize {
+        self.0.cast()
+    }
+}
+
+impl<In: Enum, Out: Enum> Enum for SummingMatrixParams<In, Out>
+where
+    CartesianProduct<In, Out>: Enum,
+{
+    type Count = <CartesianProduct<In, Out> as Enum>::Count;
+
+    fn name(&self) -> Cow<str> {
+        self.0.name()
+    }
+}
+
+impl<In, Out> Params for SummingMatrixParams<In, Out>
+where
+    Self: Enum,
+{
+    fn metadata(&self) -> param::ParamMetadata {
+        param::ParamMetadata::CONST_DEFAULT
+    }
+}
 
 /// A matrix that sums the inputs given a matrix of input:output coefficients.
 ///
@@ -27,13 +71,19 @@ use crate::param::smoother::{LinearSmoother, Smoother};
 /// * `Out` - The type representing the output parameters.
 #[derive(Debug, Clone)]
 pub struct SummingMatrix<T, In, Out> {
-    params: Arc<EnumMapBox<CartesianProduct<In, Out>, Value>>,
-    smoothers: Option<EnumMapBox<CartesianProduct<In, Out>, LinearSmoother>>,
-    __sample: PhantomData<fn(T) -> T>,
+    __sample: PhantomData<fn(T, In, Out) -> T>,
+}
+
+impl<T, In, Out> Default for SummingMatrix<T, In, Out> {
+    fn default() -> Self {
+        Self::CONST_DEFAULT
+    }
 }
 
 impl<T, In, Out> SummingMatrix<T, In, Out> {
-    const PARAMS_MAX_TIMESTAMPS: usize = 64;
+    const CONST_DEFAULT: Self = Self {
+        __sample: PhantomData,
+    };
 }
 
 impl<T, In: Enum, Out: Enum> SummingMatrix<T, In, Out>
@@ -49,17 +99,8 @@ where
     /// * `sample_rate` - The sample rate (in Hz) used to interpret the timestamps.
     /// * `max_timestamps` - The maximum number of timestamps each `ParamCurve` can store.
     /// * `initial_values` - An `EnumMapBox` providing the initial values for the `ParamCurve` for each combination of `In` and `Out`.
-    pub fn new(
-        sample_rate: impl Into<Recip<f32>>,
-        initial_values: EnumMapBox<CartesianProduct<In, Out>, f32>,
-        smoothing_time: impl Into<Option<f32>>,
-    ) -> Self {
-        let sample_rate = sample_rate.into();
+    pub fn new() -> Self {
         Self {
-            params: Arc::new(EnumMap::new(|k| Value::new(initial_values[k]))),
-            smoothers: smoothing_time
-                .into()
-                .map(|time| EnumMap::new(|k| LinearSmoother::new(0., 0., time, sample_rate))),
             __sample: PhantomData,
         }
     }
@@ -69,64 +110,84 @@ impl<
         T: 'static + Copy + Send + NumAssign + Num + Zero + CastFrom<f32>,
         In: 'static + Send + Sync + Enum,
         Out: 'static + Send + Sync + Enum,
-    > Module for SummingMatrix<T, In, Out>
+    > SampleModule for SummingMatrix<T, In, Out>
 where
     In::Count: ops::Mul<Out::Count, Output: Unsigned + ArrayLength>,
 {
     type Sample = T;
     type Inputs = In;
     type Outputs = Out;
-    type Params = CartesianProduct<In, Out>;
+    type Params = SummingMatrixParams<In, Out>;
 
-    fn get_params(&self) -> Arc<impl Params<Params= Self::Params>> {
-        self.params.clone()
-    }
-
-    fn supports_stream(&self, _: StreamData) -> bool {
-        true
-    }
-
-    fn latency(
-        &self,
-        input_latencies: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64> {
-        EnumMapArray::new(|out| {
-            input_latencies
-                .iter()
-                .map(|(k, &v)| v * self.params[CartesianProduct(k, out)].get_value_normalized() as f64)
-                .sum()
-        })
+    fn latency(&self) -> f64 {
+        0.0
     }
 
     #[inline]
     #[profiling::function]
-    fn process<
-        S: BufferStorage<Sample = Self::Sample, Input = Self::Inputs, Output = Self::Outputs>,
-    >(
-        &mut self,
-        context: &mut ModuleContext<S>,
-    ) -> ProcessStatus {
-        let block_size = context.stream_data.block_size;
-        for out in enum_iter::<Self::Outputs>() {
-            context.get_output(out).fill_with(T::zero);
+    fn process_sample(&mut self, mut context: SampleContext<Self>) -> ProcessStatus {
+        for out in enum_iter::<Out>() {
+            context.outputs[out].set_zero();
         }
 
-        if let Some(smoothers) = &mut self.smoothers {
-            for param in enum_iter::<CartesianProduct<In, Out>>() {
-                let smoother = &mut smoothers[param];
-                let (in_buf, out_buf) = context.get_input_output_pair(param.0, param.1);
-                if self.params[param].has_changed() {
-                    smoother.set_target(self.params[param].get_value_normalized());
-                }
-                // TODO: simd
-                for i in 0..block_size {
-                    let k = T::cast_from(smoother.next_value());
-                    out_buf[i] += k * in_buf[i];
-                }
-            }
+        for param in enum_iter::<SummingMatrixParams<In, Out>>() {
+            let k = T::cast_from(context.params[param]);
+            context.outputs[param.0 .1] += context.inputs[param.0 .0] * k;
         }
 
         ProcessStatus::Running
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FixedDelay<T> {
+    delay: VecDeque<T>,
+    pos_fract: T,
+}
+
+impl<T: Cast<usize> + One + Float> FixedDelay<T> {
+    pub fn new(amount: T) -> Self {
+        let len = amount.ceil().cast();
+        let delay = (0..len).map(|_| T::zero()).collect();
+        FixedDelay {
+            delay,
+            pos_fract: T::one() - amount.fract(),
+        }
+    }
+}
+
+impl<T: 'static + Copy + Send + Float + Cast<usize>> SampleModule for FixedDelay<T> {
+    type Sample = T;
+    type Inputs = Mono;
+    type Outputs = Mono;
+    type Params = Empty;
+
+    fn process_sample(&mut self, mut context: SampleContext<Self>) -> ProcessStatus {
+        use self::Mono::Mono;
+
+        context.outputs[Mono] =
+            Linear.interpolate_single(&NumericArray::generate(|i| self.delay[i]), self.pos_fract);
+        self.delay.pop_front().unwrap();
+        self.delay.push_back(context.inputs[Mono]);
+        ProcessStatus::Tail(self.delay.len() as _)
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serialize", derive(serde::Deserialize, serde::Serialize))]
+pub struct FixedDelayConstructor<T> {
+    pub amount: f64,
+    __sample: PhantomData<T>,
+}
+
+impl<T: One + Float + Cast<usize> + CastFrom<f64>> ModuleConstructor for FixedDelayConstructor<T>
+where
+    FixedDelay<T>: Module,
+{
+    type Module = FixedDelay<T>;
+
+    fn allocate(&self, stream_data: StreamData) -> Self::Module {
+        FixedDelay::new(T::cast_from(self.amount))
     }
 }
 

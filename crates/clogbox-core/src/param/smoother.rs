@@ -1,5 +1,6 @@
 use num_traits::{Float, NumAssign};
 use az::CastFrom;
+use numeric_literals::replace_float_literals;
 use crate::math::recip::Recip;
 
 pub trait Smoother<T> {
@@ -74,7 +75,7 @@ pub struct ExponentialSmoother<T> {
     tau: T,
 }
 
-impl<T: Float + NumAssign> ExponentialSmoother<T> {
+impl<T: Float + NumAssign + CastFrom<f64>> ExponentialSmoother<T> {
 
     /// Creates a new `ExponentialSmoother` instance.
     ///
@@ -122,12 +123,13 @@ impl<T: Float + NumAssign> ExponentialSmoother<T> {
     }
 
     /// Checks if the smoother has converged to the target value.
+    #[replace_float_literals(T::cast_from(literal))]
     pub fn has_converged(&self) -> bool {
         (self.value - self.target).abs() < 1e-6
     }
 
     fn tau(time: T, dt: T) -> T {
-        const T60: f32 = 6.91;
+        const T60: f64 = 6.91;
         -dt / (time * T::cast_from(T60))
     }
 }

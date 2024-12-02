@@ -3,12 +3,15 @@
 //!
 //! This module provides a number of non-linear filters that can be used to modify the
 //! amplitude of audio signals.
-use clogbox_core::module::sample::SampleModule;
+use az::CastFrom;
+use clogbox_core::module::sample::{SampleContext, SampleModule};
 use clogbox_core::module::{BufferStorage, Module, ModuleContext, ProcessStatus, StreamData};
-use clogbox_core::param::{Value, Params, EMPTY_PARAMS};
-use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
-use clogbox_core::r#enum::{seq, Empty, Enum, Sequential};
-use num_traits::Float;
+use clogbox_core::param::events::ParamEvents;
+use clogbox_core::param::Params;
+use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
+use clogbox_core::r#enum::{seq, Empty, Enum, Mono, Sequential};
+use clogbox_derive::{Enum, Params};
+use num_traits::{Float, Num};
 use std::marker::PhantomData;
 use std::sync::Arc;
 use typenum::U1;
@@ -19,18 +22,22 @@ pub mod svf;
 pub trait Saturator {
     /// The type of sample that the saturator works with.
     type Sample;
-    type Params: Enum;
-
-    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>>;
+    type Params: Params;
 
     /// Saturates a single value.
     ///
     /// # Parameters
+    ///
     /// - `value`: The value to be saturated.
     ///
     /// # Returns
+    ///
     /// The saturated value.
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample;
+    fn saturate(
+        &mut self,
+        params: EnumMapArray<Self::Params, f32>,
+        value: Self::Sample,
+    ) -> Self::Sample;
 
     /// Saturates a buffer of values in place.
     ///
@@ -38,12 +45,16 @@ pub trait Saturator {
     /// - `buffer`: The buffer containing the values to be saturated.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample])
-    where
+    fn saturate_buffer_in_place(
+        &mut self,
+        params: EnumMapRef<Self::Params, &dyn ParamEvents>,
+        buffer: &mut [Self::Sample],
+    ) where
         Self::Sample: Copy,
     {
-        for value in buffer {
-            *value = self.saturate(*value);
+        for (i, value) in buffer.iter_mut().enumerate() {
+            let params = EnumMapArray::new(|p| params[p].interpolate(i));
+            *value = self.saturate(params, *value);
         }
     }
 
@@ -54,12 +65,16 @@ pub trait Saturator {
     /// - `output`: The output buffer where the saturated values will be stored.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer(&mut self, input: &[Self::Sample], output: &mut [Self::Sample])
-    where
+    fn saturate_buffer(
+        &mut self,
+        params: EnumMapRef<Self::Params, &dyn ParamEvents>,
+        input: &[Self::Sample],
+        output: &mut [Self::Sample],
+    ) where
         Self::Sample: Copy,
     {
         output.copy_from_slice(input);
-        self.saturate_buffer_in_place(output);
+        self.saturate_buffer_in_place(params, output);
     }
 }
 
@@ -71,21 +86,14 @@ impl<Sat: 'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S
     type Sample = Sat::Sample;
     type Inputs = Sequential<U1>;
     type Outputs = Sequential<U1>;
-    type Params = Empty;
-
-    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
-        Arc::new(EnumMapArray::<Self::Params, Value>::CONST_DEFAULT)
-    }
+    type Params = Sat::Params;
 
     fn supports_stream(&self, _: StreamData) -> bool {
         true
     }
 
-    fn latency(
-        &self,
-        input_latencies: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64> {
-        input_latencies
+    fn latency(&self) -> f64 {
+        0.0
     }
 
     #[inline]
@@ -95,9 +103,10 @@ impl<Sat: 'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<S
     >(
         &mut self,
         context: &mut ModuleContext<S>,
+        params: EnumMapRef<Self::Params, &dyn ParamEvents>,
     ) -> ProcessStatus {
         let (inp, out) = context.get_input_output_pair(seq(0), seq(0));
-        self.0.saturate_buffer(inp, out);
+        self.0.saturate_buffer(params, inp, out);
         ProcessStatus::Running
     }
 }
@@ -108,28 +117,18 @@ pub struct SaturatorSampleModule<S: Saturator>(pub S);
 
 impl<S: 'static + Send + Saturator<Sample: Copy>> SampleModule for SaturatorSampleModule<S> {
     type Sample = S::Sample;
-    type Inputs = Sequential<U1>;
-    type Outputs = Sequential<U1>;
+    type Inputs = Mono;
+    type Outputs = Mono;
     type Params = S::Params;
 
-    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
-        S::get_params(&self.0)
+    fn latency(&self) -> f64 {
+        0.0
     }
 
-    fn latency(
-        &self,
-        input_latency: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64> {
-        input_latency
-    }
+    fn process_sample(&mut self, mut context: SampleContext<Self>) -> ProcessStatus {
+        use self::Mono::Mono;
 
-    fn process_sample(
-        &mut self,
-        _stream_data: &StreamData,
-        inputs: EnumMapArray<Self::Inputs, Self::Sample>,
-        mut outputs: EnumMapMut<Self::Outputs, Self::Sample>,
-    ) -> ProcessStatus {
-        outputs[seq(0)] = self.0.saturate(inputs[seq(0)]);
+        context.outputs[Mono] = self.0.saturate(context.params, context.inputs[Mono]);
         ProcessStatus::Running
     }
 }
@@ -149,12 +148,11 @@ impl<T> Saturator for Linear<T> {
     type Params = Empty;
 
     #[inline]
-    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
-        Arc::new(EMPTY_PARAMS)
-    }
-
-    #[inline]
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
+    fn saturate(
+        &mut self,
+        _: EnumMapArray<Self::Params, f32>,
+        value: Self::Sample,
+    ) -> Self::Sample {
         value
     }
 }
@@ -183,15 +181,16 @@ impl<T: Copy + Send, F: Send + Fn(T) -> T> Saturator for Memoryless<T, F> {
     type Params = Empty;
 
     #[inline]
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
+    fn saturate(
+        &mut self,
+        _: EnumMapArray<Self::Params, f32>,
+        value: Self::Sample,
+    ) -> Self::Sample {
         self.1(value)
     }
-
-    #[inline]
-    fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
-        Arc::new(EMPTY_PARAMS)
-    }
 }
+
+pub type SimpleSaturator<T> = Memoryless<T, fn(T) -> T>;
 
 /// Creates a new `Memoryless` instance using the hyperbolic tangent function.
 ///
@@ -223,4 +222,62 @@ pub const fn asinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
 /// A `Memoryless` instance that clamps input values.
 pub fn hard_clip<T: Float>(min: T, max: T) -> Memoryless<T, impl Copy + Fn(T) -> T> {
     Memoryless::new(move |x: T| x.clamp(min, max))
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum, Params)]
+pub enum DrivenParams<SatParams> {
+    Drive,
+    Inner(SatParams),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Driven<Sat: Saturator>(pub Sat);
+
+impl<Sat: Saturator<Sample: Copy + Num + CastFrom<f32>>> Saturator for Driven<Sat>
+where
+    DrivenParams<Sat::Params>: Params,
+{
+    type Sample = Sat::Sample;
+    type Params = DrivenParams<Sat::Params>;
+
+    fn saturate(
+        &mut self,
+        params: EnumMapArray<Self::Params, f32>,
+        value: Self::Sample,
+    ) -> Self::Sample {
+        let amp = Sat::Sample::cast_from(params[DrivenParams::Drive]);
+        self.0.saturate(
+            EnumMapArray::new(|p| params[DrivenParams::Inner(p)]),
+            amp * value,
+        ) / amp
+    }
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum, Params)]
+pub enum BiasedParams<SatParams> {
+    Bias,
+    Inner(SatParams),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Biased<Sat: Saturator>(pub Sat);
+
+impl<Sat: Saturator<Sample: Copy + Num + CastFrom<f32>>> Saturator for Biased<Sat>
+where
+    BiasedParams<Sat::Params>: Params,
+{
+    type Sample = Sat::Sample;
+    type Params = BiasedParams<Sat::Params>;
+
+    fn saturate(
+        &mut self,
+        params: EnumMapArray<Self::Params, f32>,
+        value: Self::Sample,
+    ) -> Self::Sample {
+        let bias = Sat::Sample::cast_from(params[BiasedParams::Bias]);
+        self.0.saturate(
+            EnumMapArray::new(|p| params[BiasedParams::Inner(p)]),
+            value + bias,
+        ) - bias
+    }
 }

@@ -1,0 +1,9 @@
+---
+source: crates/clogbox-derive/tests/derive_enum.rs
+expression: expected_names
+---
+A
+B
+C
+D
+Second

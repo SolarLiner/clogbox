@@ -1,0 +1,73 @@
+---
+source: crates/clogbox-derive/src/enum.rs
+expression: format_output(from_derive_input)
+---
+#[automatically_derived]
+impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::az::CastFrom<usize>
+for Constrained<T>
+where
+    T: std::fmt::Debug,
+{
+    fn cast_from(mut i: usize) -> Self {
+        if i
+            < <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE
+        {
+            return Self::VariantA(
+                <T as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i),
+            );
+        } else {
+            i
+                -= <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+        }
+        if i == 0 {
+            return Self::VariantB;
+        } else {
+            i -= 1;
+        }
+        unreachable!();
+    }
+}
+#[automatically_derived]
+impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::az::Cast<usize>
+for Constrained<T>
+where
+    T: std::fmt::Debug,
+{
+    fn cast(self) -> usize {
+        let mut i = 0;
+        if let Self::VariantA(value) = self {
+            return i + value.cast();
+        } else {
+            i
+                += <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+        }
+        if let Self::VariantB = self {
+            return i;
+        } else {
+            i += 1;
+        }
+        unreachable!()
+    }
+}
+#[automatically_derived]
+impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::Enum for Constrained<T>
+where
+    T: std::fmt::Debug,
+    ::clogbox_core::r#enum::typenum::U1: ::std::ops::Add<
+        <T as ::clogbox_core::r#enum::Enum>::Count,
+    >,
+    <::clogbox_core::r#enum::typenum::U1 as ::std::ops::Add<
+        <T as ::clogbox_core::r#enum::Enum>::Count,
+    >>::Output: ::clogbox_core::r#enum::generic_array::ArrayLength,
+{
+    type Count = ::clogbox_core::r#enum::typenum::operator_aliases::Sum<
+        ::clogbox_core::r#enum::typenum::U1,
+        <T as ::clogbox_core::r#enum::Enum>::Count,
+    >;
+    fn name(&self) -> ::std::borrow::Cow<str> {
+        match self {
+            Self::VariantA(inner) => inner.name(),
+            Self::VariantB => ::std::borrow::Cow::from("VariantB"),
+        }
+    }
+}

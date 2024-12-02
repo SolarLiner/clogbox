@@ -25,6 +25,9 @@
 //! }
 //! ```
 pub use az;
+pub use generic_array;
+pub use typenum;
+
 use az::{Cast, CastFrom};
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
@@ -32,7 +35,7 @@ use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::ops;
 use std::ops::{Deref, DerefMut};
-use typenum::{Prod, Sum, Unsigned, U0};
+use typenum::{Prod, Sum, Unsigned, U0, U1, U2};
 
 pub mod enum_map;
 
@@ -162,6 +165,72 @@ impl Enum for Empty {
 /// Iterate all variants of the given enum
 pub fn enum_iter<E: Enum>() -> impl Iterator<Item = E> {
     (0..E::Count::USIZE).map(|i| E::cast_from(i))
+}
+
+/// Type for mono audio inputs and outputs.
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Mono {
+    /// The mono input
+    Mono,
+}
+
+impl Cast<usize> for Mono {
+    fn cast(self) -> usize {
+        0
+    }
+}
+
+impl CastFrom<usize> for Mono {
+    fn cast_from(_: usize) -> Self {
+        Self::Mono
+    }
+}
+
+impl Enum for Mono {
+    type Count = U1;
+
+    fn name(&self) -> Cow<str> {
+        Cow::Borrowed("Mono")
+    }
+}
+
+/// Type for stereo audio inputs and outputs.
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub enum Stereo {
+    /// The left input
+    Left,
+    /// The right input
+    Right,
+}
+
+impl Cast<usize> for Stereo {
+    fn cast(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+        }
+    }
+}
+
+impl CastFrom<usize> for Stereo {
+    fn cast_from(value: usize) -> Self {
+        match value {
+            0 => Self::Left,
+            1 => Self::Right,
+            _ => unreachable!()
+        }
+    }
+}
+
+impl Enum for Stereo {
+    type Count = U2;
+
+    fn name(&self) -> Cow<str> {
+        match self {
+            Self::Left => Cow::Borrowed("Left"),
+            Self::Right => Cow::Borrowed("Right"),
+        }
+    }
 }
 
 /// A wrapper type representing a sequential index with a compile-time known size.

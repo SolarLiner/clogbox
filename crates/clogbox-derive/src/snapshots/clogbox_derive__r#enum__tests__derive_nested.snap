@@ -11,20 +11,24 @@ impl ::clogbox_core::r#enum::az::CastFrom<usize> for Outer {
             i -= 1;
         }
         if i
-            < <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE
+            < <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE
         {
-            return Self::B(Inner::cast_from(i));
+            return Self::B(
+                <Inner as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i),
+            );
         } else {
             i
-                -= <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE;
+                -= <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
         }
         if i
-            < <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE
+            < <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE
         {
-            return Self::C(Inner::cast_from(i));
+            return Self::C(
+                <Inner as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i),
+            );
         } else {
             i
-                -= <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::typenum::Unsigned>::USIZE;
+                -= <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
         }
         unreachable!();
     }
@@ -41,21 +45,36 @@ impl ::clogbox_core::r#enum::az::Cast<usize> for Outer {
         if let Self::B(value) = self {
             return i + value.cast();
         } else {
-            i += <Inner as ::clogbox_core::r#enum::Enum>::Count::USIZE;
+            i
+                += <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
         }
         if let Self::C(value) = self {
             return i + value.cast();
         } else {
-            i += <Inner as ::clogbox_core::r#enum::Enum>::Count::USIZE;
+            i
+                += <<Inner as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
         }
         unreachable!()
     }
 }
 #[automatically_derived]
-impl ::clogbox_core::r#enum::Enum for Outer {
-    type Count = ::typenum::operator_aliases::Sum<
-        ::typenum::U1,
-        ::typenum::operator_aliases::Sum<
+impl ::clogbox_core::r#enum::Enum for Outer
+where
+    ::clogbox_core::r#enum::typenum::U1: ::std::ops::Add<
+        <Inner as ::clogbox_core::r#enum::Enum>::Count,
+    >,
+    <::clogbox_core::r#enum::typenum::U1 as ::std::ops::Add<
+        <Inner as ::clogbox_core::r#enum::Enum>::Count,
+    >>::Output: ::std::ops::Add<<Inner as ::clogbox_core::r#enum::Enum>::Count>,
+    <<::clogbox_core::r#enum::typenum::U1 as ::std::ops::Add<
+        <Inner as ::clogbox_core::r#enum::Enum>::Count,
+    >>::Output as ::std::ops::Add<
+        <Inner as ::clogbox_core::r#enum::Enum>::Count,
+    >>::Output: ::clogbox_core::r#enum::generic_array::ArrayLength,
+{
+    type Count = ::clogbox_core::r#enum::typenum::operator_aliases::Sum<
+        ::clogbox_core::r#enum::typenum::U1,
+        ::clogbox_core::r#enum::typenum::operator_aliases::Sum<
             <Inner as ::clogbox_core::r#enum::Enum>::Count,
             <Inner as ::clogbox_core::r#enum::Enum>::Count,
         >,

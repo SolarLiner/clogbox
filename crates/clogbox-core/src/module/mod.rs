@@ -15,9 +15,9 @@
 //! use typenum::U1;
 //!
 //! use clogbox_core::module::{enum_mapped_storage, BufferStorage, Module, ModuleContext, OwnedBufferStorage, ProcessStatus, StreamData};
-//! use clogbox_core::param::{Params, EMPTY_PARAMS};
+//! use clogbox_core::param::events::ParamEvents;
 //! use clogbox_core::r#enum::{enum_iter, seq, Empty, Enum, Sequential};
-//! use clogbox_core::r#enum::enum_map::EnumMapArray;
+//! use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapRef};
 //!
 //! struct Inverter<T, In>(PhantomData<(T, In)>);
 //!
@@ -34,19 +34,11 @@
 //!     type Outputs = In;
 //!     type Params = Empty;
 //!
-//!     fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>> {
-//!         Arc::new(EMPTY_PARAMS)
-//!     }
-//!
 //!     fn supports_stream(&self, data: StreamData) -> bool {
 //!         true
 //!     }
 //!
-//!     fn latency(&self, input_latency: EnumMapArray<Self::Inputs, f64>) -> EnumMapArray<Self::Outputs, f64> {
-//!         input_latency
-//!     }
-//!
-//!     fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>> (&mut self, context: &mut ModuleContext<S>) -> ProcessStatus {
+//!     fn process<S: BufferStorage<Sample=Self::Sample, Input=Self::Inputs, Output=Self::Outputs>>(&mut self, context: &mut ModuleContext<S>, params: EnumMapRef<Self::Params, &dyn ParamEvents>) -> ProcessStatus {
 //!         for inp in enum_iter::<In>() {
 //!             let (inp_buf, out_buf) = context.get_input_output_pair(inp, inp);
 //!
@@ -67,7 +59,8 @@
 //!     stream_data,
 //!     buffers: enum_mapped_storage(&mut storage),
 //! };
-//! my_module.process(&mut context);
+//! let params = EnumMapArray::new(|_| &0.0);
+//! my_module.process(&mut context, params.to_ref());
 //! drop(context);
 //! assert_eq!(-4., storage.outputs[0][4]);
 //! ```
@@ -75,15 +68,15 @@ pub mod analysis;
 pub mod sample;
 pub mod utilitarian;
 
-use crate::param::{Params, RawParams};
-use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::{count, Either, Enum};
+use crate::param::container::ParamEventsContainer;
+use crate::param::events::ParamEvents;
+use crate::param::Params;
+use crate::r#enum::enum_map::{Collection, CollectionMut, EnumMapArray, EnumMapRef};
+use crate::r#enum::{count, Either, Enum, Mono};
 use az::Cast;
 use num_traits::Zero;
 use std::marker::PhantomData;
 use std::ops;
-use std::sync::Arc;
-use typenum::Unsigned;
 
 /// Represents the metadata and configuration for a stream of audio data.
 #[derive(Debug, Copy, Clone)]
@@ -171,8 +164,8 @@ pub trait RawModule: Send {
     /// Returns the number of outputs of the module.
     fn outputs(&self) -> usize;
 
-    /// Returns the number of params of the module.
-    fn get_params(&self) -> Arc<dyn '_ + RawParams>;
+    /// Returns the number of parameters of the module.
+    fn params(&self) -> usize;
 
     /// Checks if the module supports the given stream data.
     ///
@@ -187,6 +180,12 @@ pub trait RawModule: Send {
     ///
     /// * `stream_data` - The new stream data.
     fn reallocate(&mut self, stream_data: StreamData) {}
+
+    /// Latency of this module, i.e. the time it takes for an input sample to start affecting the
+    /// output of the module.
+    fn latency(&self) -> f64 {
+        0.0
+    }
 
     /// Resets the module to its initial state.
     fn reset(&mut self) {}
@@ -205,6 +204,7 @@ pub trait RawModule: Send {
         context: &mut ModuleContext<
             &mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>,
         >,
+        params: &dyn ParamEventsContainer<usize>,
     ) -> ProcessStatus;
 }
 
@@ -220,9 +220,7 @@ pub trait Module: 'static + Send {
     /// The type representing the outputs of the module.
     type Outputs: Enum;
 
-    type Params: Enum;
-
-    fn get_params(&self) -> Arc<impl '_ + Params<Params=Self::Params>>;
+    type Params: Params;
 
     /// Checks if the module supports the provided stream data.
     ///
@@ -247,17 +245,12 @@ pub trait Module: 'static + Send {
 
     /// Calculates the latency for the module.
     ///
-    /// # Arguments
-    ///
-    /// - `input_latencies`: An array representing latencies for each input.
-    ///
     /// # Returns
     ///
     /// An array representing latencies for each output.
-    fn latency(
-        &self,
-        input_latencies: EnumMapArray<Self::Inputs, f64>,
-    ) -> EnumMapArray<Self::Outputs, f64>;
+    fn latency(&self) -> f64 {
+        0.0
+    }
 
     /// Processes the module with the given context.
     ///
@@ -273,6 +266,7 @@ pub trait Module: 'static + Send {
     >(
         &mut self,
         context: &mut ModuleContext<S>,
+        params: EnumMapRef<Self::Params, &dyn ParamEvents>,
     ) -> ProcessStatus;
 }
 
@@ -281,16 +275,16 @@ impl<M: Module<Sample: Zero>> RawModule for M {
 
     #[inline]
     fn inputs(&self) -> usize {
-        <M::Inputs as Enum>::Count::USIZE
+        count::<M::Inputs>()
     }
 
     #[inline]
     fn outputs(&self) -> usize {
-        <M::Outputs as Enum>::Count::USIZE
+        count::<M::Outputs>()
     }
 
-    fn get_params(&self) -> Arc<dyn '_ + RawParams> {
-        M::get_params(self)
+    fn params(&self) -> usize {
+        count::<M::Params>()
     }
 
     #[inline]
@@ -303,6 +297,10 @@ impl<M: Module<Sample: Zero>> RawModule for M {
         M::reallocate(self, stream_data)
     }
 
+    fn latency(&self) -> f64 {
+        M::latency(self)
+    }
+
     #[inline]
     fn reset(&mut self) {
         M::reset(self)
@@ -313,6 +311,7 @@ impl<M: Module<Sample: Zero>> RawModule for M {
         context: &mut ModuleContext<
             &mut dyn BufferStorage<Sample = Self::Sample, Input = usize, Output = usize>,
         >,
+        params: &dyn ParamEventsContainer<usize>,
     ) -> ProcessStatus {
         let storage = MappedBufferStorage {
             storage: &mut *context.buffers,
@@ -322,12 +321,14 @@ impl<M: Module<Sample: Zero>> RawModule for M {
             },
             __io_types: PhantomData,
         };
+        let params = EnumMapArray::new(|p: M::Params| params.get_param_events(p.cast()).unwrap());
         M::process(
             self,
             &mut ModuleContext {
                 stream_data: context.stream_data,
                 buffers: storage,
             },
+            params.to_ref(),
         )
     }
 }
@@ -582,6 +583,49 @@ impl<In, Out, S: BufferStorage<Input = usize, Output = usize>, F: Fn(Either<In, 
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SingleBufferStorage<Input, Output> {
+    pub input: Input,
+    pub output: Output,
+}
+
+impl<Input: CollectionMut<Item: Zero>, Output: CollectionMut<Item = Input::Item>> BufferStorage
+    for SingleBufferStorage<Input, Output>
+{
+    type Sample = Input::Item;
+    type Input = usize;
+    type Output = usize;
+
+    fn get_input_buffer(&self, _: Self::Input) -> &[Self::Sample] {
+        &self.input
+    }
+
+    fn get_output_buffer(&mut self, _: Self::Output) -> &mut [Self::Sample] {
+        &mut self.output
+    }
+
+    fn get_inout_pair(
+        &mut self,
+        _: Self::Input,
+        _: Self::Output,
+    ) -> (&[Self::Sample], &mut [Self::Sample]) {
+        (&self.input, &mut self.output)
+    }
+
+    fn reset(&mut self) {
+        self.clear_input(0);
+        self.clear_output(0);
+    }
+
+    fn clear_input(&mut self, _: Self::Input) {
+        self.input.fill_with(Input::Item::zero);
+    }
+
+    fn clear_output(&mut self, _: Self::Output) {
+        self.output.fill_with(Input::Item::zero);
+    }
+}
+
 impl<'a, S: ?Sized + BufferStorage> BufferStorage for &'a mut S {
     type Sample = S::Sample;
     type Input = S::Input;
@@ -616,7 +660,13 @@ impl<'a, S: ?Sized + BufferStorage> BufferStorage for &'a mut S {
     }
 }
 
-pub const fn enum_mapped_storage<S: BufferStorage<Input=usize, Output=usize>, In: Enum, Out: Enum>(storage: S) -> impl BufferStorage<Sample=S::Sample, Input=In, Output=Out> {
+pub const fn enum_mapped_storage<
+    S: BufferStorage<Input = usize, Output = usize>,
+    In: Enum,
+    Out: Enum,
+>(
+    storage: S,
+) -> impl BufferStorage<Sample = S::Sample, Input = In, Output = Out> {
     MappedBufferStorage {
         storage,
         mapper: |x: Either<In, Out>| match x {

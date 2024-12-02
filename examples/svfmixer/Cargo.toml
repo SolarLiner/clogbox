@@ -1,0 +1,20 @@
+[package]
+name = "svfmixer"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clogbox-core = { path = "../../crates/clogbox-core" }
+clogbox-derive = { path = "../../crates/clogbox-derive" }
+clogbox-graph = { path = "../../crates/clogbox-graph" }
+clogbox-clap = { path = "../../crates/clogbox-clap" }
+clogbox-filters = { path = "../../crates/clogbox-filters" }

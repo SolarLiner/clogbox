@@ -1,6 +1,6 @@
 ---
 source: crates/clogbox-derive/src/enum.rs
-expression: "prettyplease::unparse(&syn::parse_file(&output).unwrap())"
+expression: format_output(from_derive_input)
 ---
 #[automatically_derived]
 impl ::clogbox_core::r#enum::az::CastFrom<usize> for Params {
@@ -57,7 +57,7 @@ impl ::clogbox_core::r#enum::az::Cast<usize> for Params {
 }
 #[automatically_derived]
 impl ::clogbox_core::r#enum::Enum for Params {
-    type Count = ::typenum::U4;
+    type Count = ::clogbox_core::r#enum::typenum::U4;
     fn name(&self) -> ::std::borrow::Cow<str> {
         match self {
             Self::Cutoff => ::std::borrow::Cow::from("Cutoff"),

@@ -53,6 +53,7 @@ struct SerializedSchedule {
     modules_data: SecondaryMap<NodeID, serde_json::Value>,
     input_nodes: HashSet<NodeID>,
     output_nodes: HashSet<NodeID>,
+    param_nodes: HashSet<NodeID>,
 }
 
 impl SerializedSchedule {
@@ -68,8 +69,9 @@ impl SerializedSchedule {
         SerializedSchedule {
             schedule: schedule.schedule.clone(),
             modules_data,
-            input_nodes: schedule.input_nodes.clone(),
-            output_nodes: schedule.output_nodes.clone(),
+            input_nodes: schedule.inputs.clone(),
+            output_nodes: schedule.outputs.clone(),
+            param_nodes: schedule.param_nodes.clone(),
         }
     }
 
@@ -84,21 +86,31 @@ impl SerializedSchedule {
             .into_iter()
             .map(|(id, data)| (id, realize_module(data)))
             .collect::<ModuleMap<T>>();
-        let num_buffers = self.schedule.num_buffers[PortType::Audio];
-        let buffers = std::iter::repeat_with(|| {
+        let [num_buffers_audio, num_buffers_param] = [PortType::Audio, PortType::Param]
+            .map(|port_type| self.schedule.num_buffers[port_type]);
+
+        let buffers_audio = std::iter::repeat_with(|| {
             std::iter::repeat_with(T::zero)
                 .take(max_buffer_size)
                 .collect::<Box<[_]>>()
         })
-        .take(num_buffers)
+        .take(num_buffers_audio)
         .collect::<Box<[_]>>();
-
+        let buffers_param = std::iter::repeat_with(|| {
+            std::iter::repeat_with(T::zero)
+                .take(max_buffer_size)
+                .collect::<Box<[_]>>()
+        })
+        .take(num_buffers_param)
+        .collect::<Box<[_]>>();
         super::Schedule {
             schedule: self.schedule,
-            input_nodes: self.input_nodes,
-            output_nodes: self.output_nodes,
+            inputs: self.input_nodes,
+            outputs: self.output_nodes,
+            param_nodes: self.param_nodes,
             modules,
-            buffers,
+            buffers_audio,
+            buffers_param,
             max_buffer_size,
         }
     }
@@ -124,7 +136,7 @@ mod tests {
         type Outputs = Sequential<U1>;
         type Params = Empty;
 
-        fn get_params(&self) -> Arc<impl '_ + Params<Params= Self::Params>> {
+        fn get_params(&self) -> Arc<impl '_ + Params<Params = Self::Params>> {
             Arc::new(EMPTY_PARAMS)
         }
 
@@ -135,6 +147,7 @@ mod tests {
         fn latency(
             &self,
             input_latencies: EnumMapArray<Self::Inputs, f64>,
+            params: EnumMapArray<Self::Params, f32>,
         ) -> EnumMapArray<Self::Outputs, f64> {
             input_latencies
         }

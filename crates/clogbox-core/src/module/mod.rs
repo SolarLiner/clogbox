@@ -334,9 +334,10 @@ impl<M: Module<Sample: Zero>> RawModule for M {
 }
 
 /// Represents the status of a process.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq)]
 pub enum ProcessStatus {
     /// The process is currently running.
+    #[default]
     Running,
     /// The process will begin returning silence after this many samples, provided the input is also
     /// silent.

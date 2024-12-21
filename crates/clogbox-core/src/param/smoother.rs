@@ -1,7 +1,7 @@
-use num_traits::{Float, NumAssign};
-use az::CastFrom;
-use numeric_literals::replace_float_literals;
 use crate::math::recip::Recip;
+use az::CastFrom;
+use num_traits::{Float, NumAssign};
+use numeric_literals::replace_float_literals;
 
 pub trait Smoother<T> {
     /// Computes the next value in the smoothing process.
@@ -76,7 +76,6 @@ pub struct ExponentialSmoother<T> {
 }
 
 impl<T: Float + NumAssign + CastFrom<f64>> ExponentialSmoother<T> {
-
     /// Creates a new `ExponentialSmoother` instance.
     ///
     /// # Parameters
@@ -131,6 +130,56 @@ impl<T: Float + NumAssign + CastFrom<f64>> ExponentialSmoother<T> {
     fn tau(time: T, dt: T) -> T {
         const T60: f64 = 6.91;
         -dt / (time * T::cast_from(T60))
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum OptionalSmoother<T, S: Smoother<T> = ExponentialSmoother<T>> {
+    Smoothed(S),
+    Unsmoothed(T),
+}
+
+impl<T, S: Smoother<T>> OptionalSmoother<T, S> {
+    pub fn unsmoothed(value: T) -> Self {
+        Self::Unsmoothed(value)
+    }
+}
+
+impl<T: Copy + Float + NumAssign> OptionalSmoother<T, LinearSmoother<T>> {
+    pub fn linear(samplerate: T, value: T, speed: T) -> Self {
+        Self::Smoothed(LinearSmoother::new(value, value, speed, samplerate))
+    }
+}
+
+impl<T: Copy + Float + NumAssign + CastFrom<f64>> OptionalSmoother<T, ExponentialSmoother<T>>
+where
+    ExponentialSmoother<T>: Smoother<T>,
+{
+    pub fn exponential(samplerate: T, value: T, time: T) -> Self {
+        Self::Smoothed(ExponentialSmoother::new(value, value, time, samplerate))
+    }
+}
+
+impl<T: Copy, S: Smoother<T>> Smoother<T> for OptionalSmoother<T, S> {
+    fn next_value(&mut self) -> T {
+        match self {
+            Self::Smoothed(s) => s.next_value(),
+            Self::Unsmoothed(v) => *v,
+        }
+    }
+
+    fn has_converged(&self) -> bool {
+        match self {
+            Self::Smoothed(s) => s.has_converged(),
+            Self::Unsmoothed(_) => true,
+        }
+    }
+
+    fn set_target(&mut self, target: T) {
+        match self {
+            Self::Smoothed(s) => s.set_target(target),
+            Self::Unsmoothed(v) => *v = target,
+        }
     }
 }
 

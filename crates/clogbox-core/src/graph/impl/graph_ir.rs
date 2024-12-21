@@ -1,6 +1,6 @@
 //! The internal [GraphIR] datastructure used by the compiler passes.
 //!
-use crate::graph::{
+use super::{
     buffer_allocator::{BufferAllocator, BufferRef},
     error::CompileGraphError,
     input_ir::*,
@@ -9,8 +9,8 @@ use crate::graph::{
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use clogbox_core::r#enum::enum_map::EnumMapArray;
-use clogbox_core::r#enum::{count, Enum};
+use crate::r#enum::enum_map::EnumMapArray;
+use crate::r#enum::{count, Enum};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SparseSecondaryMap};

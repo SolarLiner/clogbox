@@ -1,12 +1,11 @@
 //! Structs that help construct and modify audio graphs.
 
-use crate::graph::error::{AddEdgeError, AddPortError, CompileGraphError, RemovePortError};
-use crate::graph::{
+use super::error::{AddEdgeError, AddPortError, CompileGraphError, RemovePortError};
+use super::{
     CompiledSchedule, Edge, EdgeID, EdgeMap, GraphIR, Node, NodeID, NodeMap, Port, PortID,
 };
-use crate::PortType;
-use clogbox_core::r#enum::Enum;
-use slotmap::{new_key_type, SlotMap};
+use crate::r#enum::Enum;
+use slotmap::new_key_type;
 use std::marker::PhantomData;
 
 new_key_type! { struct NodeKey; struct EdgeKey; }
@@ -300,7 +299,7 @@ impl<PortType: Enum> AudioGraphHelper<PortType> {
     pub fn compile(&mut self) -> Result<CompiledSchedule<PortType>, CompileGraphError> {
         self.needs_compile = false;
 
-        crate::graph::compile::<PortType>(self.nodes.values(), self.edges.values())
+        super::compile::<PortType>(self.nodes.values(), self.edges.values())
     }
 
     /// Returns `true` if `AudioGraphHelper::compile()` should be called

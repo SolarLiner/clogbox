@@ -3,7 +3,7 @@
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
-use clogbox_core::module::RawModule;
+use crate::module::RawModule;
 
 new_key_type! { pub struct NodeID; pub struct EdgeID; }
 

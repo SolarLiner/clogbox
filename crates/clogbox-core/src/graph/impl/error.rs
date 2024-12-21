@@ -1,4 +1,4 @@
-use crate::graph::{Edge, EdgeID, NodeID, PortID};
+use super::{Edge, EdgeID, NodeID, PortID};
 use thiserror::Error;
 
 /// An error occurred while attempting to add a port to the graph.

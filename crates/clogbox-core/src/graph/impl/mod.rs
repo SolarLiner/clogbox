@@ -21,12 +21,11 @@ pub use output_ir::*;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::r#enum::{seq, Sequential};
     use std::collections::{HashMap, HashSet};
-    use clogbox_core::r#enum::count;
-    use clogbox_derive::Enum;
+    use typenum::U2;
 
-    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Enum)]
-    enum PortType { A, B, }
+    type PortType = Sequential<U2>;
 
     #[test]
     fn simplest_graph_compile_test() {
@@ -35,11 +34,11 @@ mod tests {
             id,
             inputs: vec![Port {
                 id: PortID(0),
-                port_type: PortType::A,
+                port_type: seq(0),
             }],
             outputs: vec![Port {
                 id: PortID(1),
-                port_type: PortType::A,
+                port_type: seq(0),
             }],
             latency: 0.0,
         });
@@ -47,11 +46,11 @@ mod tests {
             id,
             inputs: vec![Port {
                 id: PortID(0),
-                port_type: PortType::A,
+                port_type: seq(0),
             }],
             outputs: vec![Port {
                 id: PortID(1),
-                port_type: PortType::B,
+                port_type: seq(1),
             }],
             latency: 0.0,
         });
@@ -70,7 +69,7 @@ mod tests {
 
         assert_eq!(schedule.schedule.len(), 2);
         assert_eq!(schedule.delays.len(), 0);
-        assert!(schedule.num_buffers[PortType::A] > 0);
+        assert!(schedule.num_buffers[seq(0)] > 0);
 
         let edge_src_buffer_id = if let ScheduleEntry::Node(scheduled_node) = &schedule.schedule[0]
         {

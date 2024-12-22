@@ -104,6 +104,28 @@ impl<T: PartialOrd> EventBuffer<T> {
             }
         }
     }
+
+    /// Checks if there is an event at the current timestamp.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp`: Timestamp to check
+    pub fn has_event(&self, timestamp: usize) -> bool {
+        self.data
+            .binary_search_by_key(&timestamp, |t| t.sample)
+            .is_ok()
+    }
+
+    /// Returns the event at the given timestamp, if any.
+    /// 
+    /// # Arguments 
+    /// 
+    /// * `timestamp`: Timestamp to check for
+    pub fn event_at(&self, timestamp: usize) -> Option<&T> {
+        self.data.binary_search_by_key(&timestamp, |t| t.sample)
+            .ok()
+            .map(|pos| &self.data[pos].value)
+    }
 }
 
 /// Iterator combinator for iterators of timestamped values, emitting as an ordered iterator of

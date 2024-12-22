@@ -14,6 +14,7 @@ use numeric_array::generic_array::{GenericArray, IntoArrayLength};
 use numeric_array::ArrayLength;
 use std::iter::{Enumerate, Map};
 use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::ops;
 use std::ops::{Deref, DerefMut};
 use typenum::{Cmp, Equal, IsEqual};
@@ -558,7 +559,6 @@ impl<E: Enum, D: Collection + IntoIterator<Item = <D as Collection>::Item>> Enum
     /// use numeric_array::generic_array::GenericArray;
     /// use clogbox_enum::Enum;
     /// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
-    /// use clogbox_derive::Enum;
     ///
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
     /// enum Color {
@@ -722,6 +722,34 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
     }
 }
 
+impl<
+        E: Enum,
+        T,
+        Err,
+        C: IntoIterator<Item = <C as Collection>::Item> + Collection<Item = Result<T, Err>>,
+    > EnumMap<E, C>
+{
+    pub fn transpose<D: Collection<Item = T> + FromIterator<T>>(
+        self,
+    ) -> Result<EnumMap<E, D>, Err> {
+        let mut data = EnumMapArray::new(|_| MaybeUninit::uninit());
+        for (k, v) in self.into_iter() {
+            match v {
+                Ok(v) => {
+                    data[k].write(v);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        // # Safety
+        //
+        // All values have been written to, or the function has already returned early by this
+        // point.
+        // Also, after `read`, each value will never be observed again.
+        unsafe { Ok(EnumMap::new(|e| data[e].assume_init_read())) }
+    }
+}
+
 impl<E: Enum, T> EnumMapArray<E, T> {
     /// Creates a new `EnumMapArray` from a given `GenericArray`.
     ///
@@ -763,8 +791,11 @@ impl<E: Enum, T> EnumMapArray<E, T> {
             __enum: PhantomData,
         }
     }
-    
-    pub const fn from_std_array<const N: usize>(array: [T; N]) -> Self where typenum::Const<N>: IntoArrayLength<ArrayLength=E::Count> {
+
+    pub const fn from_std_array<const N: usize>(array: [T; N]) -> Self
+    where
+        typenum::Const<N>: IntoArrayLength<ArrayLength = E::Count>,
+    {
         Self::from_array(GenericArray::from_array(array))
     }
 }

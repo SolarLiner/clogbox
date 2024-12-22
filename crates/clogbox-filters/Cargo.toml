@@ -11,7 +11,7 @@ keywords.workspace = true
 
 [dependencies]
 clogbox-core = { path = "../clogbox-core" }
-clogbox-derive = { path = "../clogbox-derive" }
+clogbox-enum = { path = "../clogbox-enum" }
 
 az.workspace = true
 generic-array.workspace = true

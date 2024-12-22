@@ -188,7 +188,7 @@ version = "0.1.0"
 dependencies = [
  "az",
  "clogbox-core",
- "clogbox-derive",
+ "clogbox-enum",
  "generic-array 1.1.0",
  "num-complex",
  "num-traits",

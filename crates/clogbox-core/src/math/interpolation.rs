@@ -76,6 +76,7 @@ impl<T: Float, I: InterpolateSingle<T>> Interpolation<T> for I {
 ///
 /// assert_eq!(1.5, interpolated_value);
 /// ```
+#[derive(Debug, Copy, Clone)]
 pub struct Linear;
 
 impl<T: Copy + Float + Cast<usize>> InterpolateSingle<T> for Linear {

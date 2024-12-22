@@ -1,20 +1,12 @@
 use clogbox_clap::{
     clap_module, features, ClapModule, HostSharedHandle, PluginDescriptor, PluginError,
 };
-use clogbox_core::module::utilitarian::{SummingMatrix, SummingMatrixParams};
-use clogbox_core::module::{
-    BufferStorage, Module, ModuleConstructor, ModuleContext, ProcessStatus, StreamData,
-};
-use clogbox_core::param::events::ParamEvents;
-use clogbox_core::r#enum::enum_map::EnumMapRef;
-use clogbox_core::r#enum::{enum_iter, Mono, Stereo};
-use clogbox_derive::{Enum, Params};
 use clogbox_filters::svf::{Svf, SvfInput, SvfOutput, SvfParams};
 use clogbox_filters::{Memoryless, Saturator, SimpleSaturator};
 use clogbox_graph::schedule::Schedule;
 use clogbox_graph::ScheduleBuilder;
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum, Params)]
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum PluginParams {
     SvfParam(SvfParams<<SimpleSaturator<f32> as Saturator>::Params>),
     MixerParam(SummingMatrixParams<SvfOutput, Mono>),

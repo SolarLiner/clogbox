@@ -3,8 +3,9 @@ source: crates/clogbox-derive/src/enum.rs
 expression: format_output(from_derive_input)
 ---
 #[automatically_derived]
-impl ::clogbox_core::r#enum::az::CastFrom<usize> for Params {
-    fn cast_from(mut i: usize) -> Self {
+impl ::clogbox_enum::Enum for Params {
+    type Count = ::clogbox_enum::typenum::U4;
+    fn from_usize(mut i: usize) -> Self {
         if i == 0 {
             return Self::Cutoff;
         } else {
@@ -27,10 +28,7 @@ impl ::clogbox_core::r#enum::az::CastFrom<usize> for Params {
         }
         unreachable!();
     }
-}
-#[automatically_derived]
-impl ::clogbox_core::r#enum::az::Cast<usize> for Params {
-    fn cast(self) -> usize {
+    fn to_usize(self) -> usize {
         let mut i = 0;
         if let Self::Cutoff = self {
             return i;
@@ -54,10 +52,6 @@ impl ::clogbox_core::r#enum::az::Cast<usize> for Params {
         }
         unreachable!()
     }
-}
-#[automatically_derived]
-impl ::clogbox_core::r#enum::Enum for Params {
-    type Count = ::clogbox_core::r#enum::typenum::U4;
     fn name(&self) -> ::std::borrow::Cow<str> {
         match self {
             Self::Cutoff => ::std::borrow::Cow::from("Cutoff"),

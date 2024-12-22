@@ -27,8 +27,8 @@ use std::rc::Rc;
 
 
 use super::BufferIdx;
-use crate::r#enum::enum_map::{EnumMap, EnumMapArray};
-use crate::r#enum::Enum;
+use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
+use clogbox_enum::Enum;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 

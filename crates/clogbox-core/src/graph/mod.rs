@@ -1,11 +1,8 @@
 use crate::graph::event::EventBuffer;
-use crate::r#enum::Enum;
+use clogbox_enum::Enum;
 use derive_more::{Deref, DerefMut};
 use duplicate::duplicate_item;
 use num_traits::Zero;
-use std::borrow::Cow;
-use ordered_float::NotNan;
-use typenum::U3;
 
 pub mod context;
 pub mod driver;
@@ -16,7 +13,7 @@ pub mod slots;
 mod storage;
 
 /// Enum of slot types that a module can export
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Enum)]
 pub enum SlotType {
     /// Audio-rate data
     Audio,
@@ -24,39 +21,6 @@ pub enum SlotType {
     Control,
     /// Note events
     Note,
-}
-
-impl az::Cast<usize> for SlotType {
-    fn cast(self) -> usize {
-        match self {
-            SlotType::Audio => 0,
-            SlotType::Control => 1,
-            SlotType::Note => 2,
-        }
-    }
-}
-
-impl az::CastFrom<usize> for SlotType {
-    fn cast_from(value: usize) -> Self {
-        match value {
-            0 => SlotType::Audio,
-            1 => SlotType::Control,
-            2 => SlotType::Note,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl Enum for SlotType {
-    type Count = U3;
-
-    fn name(&self) -> Cow<str> {
-        match self {
-            SlotType::Audio => Cow::Borrowed("Audio"),
-            SlotType::Control => Cow::Borrowed("Control"),
-            SlotType::Note => Cow::Borrowed("Note"),
-        }
-    }
 }
 
 impl SlotType {
@@ -103,7 +67,10 @@ impl<T> Timestamped<T> {
     }
 }
 
+/// Type alias for parameter events (ie. at "control rate").
 pub type ControlBuffer = EventBuffer<f32>;
+
+/// Type alias for note events.
 pub type NoteBuffer = EventBuffer<(NoteKey, NoteEvent)>;
 
 #[duplicate_item(
@@ -112,6 +79,7 @@ pub type NoteBuffer = EventBuffer<(NoteKey, NoteEvent)>;
     [SlotMut]  [& 'lifetime mut type];
 )]
 #[derive(Debug)]
+/// Runtime-variable buffer type for a given slot.
 pub enum ty<'a, T> {
     /// Audio-rate buffer
     AudioBuffer(reference([a], [[T]])),
@@ -127,6 +95,7 @@ pub enum ty<'a, T> {
     [SlotMut]  [& 'lifetime mut type];
 )]
 impl<'a, T> ty<'a, T> {
+    /// Casts this slot to an audio buffer, if it is the right type.
     pub fn to_audio_buffer(self) -> Option<reference([a], [[T]])> {
         match self {
             Self::AudioBuffer(buf) => Some(buf),
@@ -134,6 +103,7 @@ impl<'a, T> ty<'a, T> {
         }
     }
 
+    /// Casts this slot to a control buffer, if it is the right type.
     pub fn to_control_events(self) -> Option<reference([a], [ControlBuffer])> {
         match self {
             Self::ControlEvents(events) => Some(events),
@@ -141,6 +111,7 @@ impl<'a, T> ty<'a, T> {
         }
     }
 
+    /// Casts this slot to a note buffer, if it is the right type.
     pub fn to_note_events(self) -> Option<reference([a], [NoteBuffer])> {
         match self {
             Self::NoteEvents(events) => Some(events),
@@ -150,6 +121,8 @@ impl<'a, T> ty<'a, T> {
 }
 
 impl<'a, T: Zero> SlotMut<'a, T> {
+    /// Clear the contents of this slot. For audio buffers, this means filling the buffer with
+    /// zeros, otherwise it means removing all events.
     pub fn clear(&mut self) {
         match self {
             SlotMut::AudioBuffer(buf) => buf.fill_with(T::zero),
@@ -166,17 +139,31 @@ impl<'a, T: Zero> SlotMut<'a, T> {
 /// Type uniquely defining a note
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NoteKey {
+    /// Noce channel
     pub channel: u8,
+    /// Note key index
     pub note: u8,
 }
 
 /// Type of note events
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum NoteEvent {
-    NoteOn { velocity: f32 },
-    NoteOff { velocity: f32 },
+    /// A key was pressed
+    NoteOn {
+        /// Velocity of the keypress
+        velocity: f32,
+    },
+    /// A key was released
+    NoteOff {
+        /// Velocity of the release
+        velocity: f32,
+    },
+    /// Per-key pressure (aka. Polyphonic Aftertouch)
     Pressure(f32),
+    /// MPE Timbre
     Timbre(f32),
+    /// MPE Pan
     Pan(f32),
+    /// MPE Gain
     Gain(f32),
 }

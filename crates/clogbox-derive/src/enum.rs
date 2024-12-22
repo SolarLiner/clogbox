@@ -3,8 +3,7 @@ use darling::{ast, FromDeriveInput, FromField, FromVariant};
 use itertools::Itertools;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use syn::punctuated::Punctuated;
-use syn::{TypeGenerics, WhereClause};
+use syn::TypeGenerics;
 
 #[derive(Debug, FromField)]
 #[darling(attributes(r#enum))]
@@ -33,9 +32,7 @@ pub(crate) struct DeriveEnum {
 }
 
 impl DeriveEnum {
-    fn impl_cast_from(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
-        let (ty_generics, where_clause, generics) =
-            self.generics_for_impl(quote! { ::clogbox_core::r#enum::Enum });
+    fn impl_from_usize(&self, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
             .map(|EnumVariant { ident, fields, .. }| match fields.len() {
@@ -43,10 +40,10 @@ impl DeriveEnum {
                 1 => {
                     let EnumField { ty, .. } = &fields.fields[0];
                     quote! {
-                        if i < <<#ty as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE {
-                            return Self::#ident(<#ty as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i));
+                        if i < <<#ty as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE {
+                            return Self::#ident(<#ty as ::clogbox_enum::Enum>::from_usize(i));
                         } else {
-                            i -= <<#ty as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                            i -= <<#ty as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
                         }
                     }
                 }
@@ -57,19 +54,14 @@ impl DeriveEnum {
                     .into_compile_error(),
             });
         quote! {
-            #[automatically_derived]
-            impl #generics ::clogbox_core::r#enum::az::CastFrom<usize> for #ident #ty_generics #where_clause {
-                fn cast_from(mut i: usize) -> Self {
-                    #(#arms)*
-                    unreachable!();
-                }
+            fn from_usize(mut i: usize) -> Self {
+                #(#arms)*
+                unreachable!();
             }
         }
     }
 
-    fn impl_cast(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
-        let (ty_generics, where_clause, generics) = self.generics_for_impl(quote! {
-        ::clogbox_core::r#enum::Enum });
+    fn impl_to_usize(&self, fields: &[EnumVariant]) -> TokenStream {
         let arms = fields
             .iter()
             .map(|EnumVariant { ident, fields, .. }| match fields.len() {
@@ -78,9 +70,9 @@ impl DeriveEnum {
                     let EnumField { ty, .. } = &fields.fields[0];
                     quote! {
                         if let Self::#ident(value) = self {
-                            return i + value.cast();
+                            return i + value.to_usize();
                         } else {
-                            i += <<#ty as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                            i += <<#ty as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
                         }
                     }
                 }
@@ -91,45 +83,65 @@ impl DeriveEnum {
                 .into_compile_error(),
             });
         quote! {
-            #[automatically_derived]
-            impl #generics ::clogbox_core::r#enum::az::Cast<usize> for #ident #ty_generics #where_clause {
-                fn cast(self) -> usize {
-                    let mut i = 0;
-                    #(#arms)*
-                    unreachable!()
-                }
+            fn to_usize(self) -> usize {
+                let mut i = 0;
+                #(#arms)*
+                unreachable!()
             }
         }
     }
 
     fn impl_enum(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
-        let (ty_generics, where_clause, impl_generics) =
-            self.generics_for_impl(quote! { ::clogbox_core::r#enum::Enum });
+        let (ty_generics, impl_generics) =
+            self.generics_for_impl(quote! { ::clogbox_enum::Enum });
         let (unit, variant) = fields
             .iter()
             .partition::<Vec<_>, _>(|field| field.fields.is_empty());
-        let unit_count_ty = syn::parse_str::<syn::Type>(&format!(
-            "::clogbox_core::r#enum::typenum::U{}",
-            unit.len()
-        ))
-        .unwrap()
-        .to_token_stream();
-        let count_ty = if variant.is_empty() {
+        let unit_count_ty =
+            syn::parse_str::<syn::Type>(&format!("::clogbox_enum::typenum::U{}", unit.len()))
+                .unwrap()
+                .to_token_stream();
+        let count_ty = Self::count_ty(&variant, &unit_count_ty);
+        let where_clause = self.where_clause(variant, unit_count_ty);
+
+        let name = Self::impl_name(fields);
+        let from_usize = self.impl_from_usize(fields);
+        let to_usize = self.impl_to_usize(fields);
+
+        quote! {
+            #[automatically_derived]
+            impl #impl_generics ::clogbox_enum::Enum for #ident #ty_generics #where_clause {
+                type Count = #count_ty;
+
+                #from_usize
+
+                #to_usize
+
+                #name
+            }
+        }
+    }
+
+    fn count_ty(variant: &Vec<&EnumVariant>, unit_count_ty: &TokenStream) -> TokenStream {
+        if variant.is_empty() {
             unit_count_ty.clone()
         } else {
             let variant_count_ty = variant
                 .iter()
                 .map(|EnumVariant { fields, .. }| {
                     let EnumField { ty, .. } = &fields.fields[0];
-                    quote! { <#ty as ::clogbox_core::r#enum::Enum>::Count }
+                    quote! { <#ty as ::clogbox_enum::Enum>::Count }
                 })
                 .reduce(|a, b| {
-                    quote! { ::clogbox_core::r#enum::typenum::operator_aliases::Sum<#a,
+                    quote! { ::clogbox_enum::typenum::operator_aliases::Sum<#a,
                     #b> }
                 })
                 .unwrap();
-            quote! { ::clogbox_core::r#enum::typenum::operator_aliases::Sum<#unit_count_ty, #variant_count_ty> }
-        };
+            quote! { ::clogbox_enum::typenum::operator_aliases::Sum<#unit_count_ty, #variant_count_ty> }
+        }
+    }
+
+    fn where_clause(&self, variant: Vec<&EnumVariant>, unit_count_ty: TokenStream) -> TokenStream {
         let where_clause = {
             let mut last_variant_input = None;
             let additional = variant
@@ -137,7 +149,7 @@ impl DeriveEnum {
                 .map(|EnumVariant { fields, .. }| {
                     let EnumField { ty, .. } = &fields.fields[0];
                     quote! {
-                        <#ty as ::clogbox_core::r#enum::Enum>::Count
+                        <#ty as ::clogbox_enum::Enum>::Count
                     }
                 })
                 .scan(quote! { #unit_count_ty }, |acc, ty| {
@@ -152,7 +164,7 @@ impl DeriveEnum {
                 let punct = (!where_clause.predicates.trailing_punct()).then(|| quote! { , });
                 let last_variant_input = last_variant_input.map(|inp| {
                     quote! { #inp:
-                    ::clogbox_core::r#enum::generic_array::ArrayLength }
+                    ::clogbox_enum::generic_array::ArrayLength }
                 });
                 quote! {
                     #where_clause #punct
@@ -162,7 +174,7 @@ impl DeriveEnum {
             } else {
                 let last_variant_input = last_variant_input.map(|inp| {
                     quote! { #inp:
-                    ::clogbox_core::r#enum::generic_array::ArrayLength }
+                    ::clogbox_enum::generic_array::ArrayLength }
                 });
                 quote! { where
                              #(#additional,)*
@@ -170,6 +182,10 @@ impl DeriveEnum {
                 }
             }
         };
+        where_clause
+    }
+
+    fn impl_name(fields: &[EnumVariant]) -> TokenStream {
         let arms = fields.iter().map(|EnumVariant { ident, name, fields, prefix }| {
             let name = name
                 .clone()
@@ -192,25 +208,19 @@ impl DeriveEnum {
                 _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
             }
         });
-        quote! {
-            #[automatically_derived]
-            impl #impl_generics ::clogbox_core::r#enum::Enum for #ident #ty_generics #where_clause {
-                type Count = #count_ty;
 
-                fn name(&self) -> ::std::borrow::Cow<str> {
-                    match self {
-                        #(#arms),*
-                    }
+        let name = quote! {
+            fn name(&self) -> ::std::borrow::Cow<str> {
+                match self {
+                    #(#arms),*
                 }
             }
-        }
+        };
+        name
     }
 
-    fn generics_for_impl(
-        &self,
-        bound: TokenStream,
-    ) -> (TypeGenerics, Option<&WhereClause>, TokenStream) {
-        let (_, ty_generics, where_clause) = self.generics.split_for_impl();
+    fn generics_for_impl(&self, bound: TokenStream) -> (TypeGenerics, TokenStream) {
+        let (_, ty_generics, _) = self.generics.split_for_impl();
         let generics = self
             .generics
             .type_params()
@@ -233,7 +243,7 @@ impl DeriveEnum {
         } else {
             quote! {}
         };
-        (ty_generics, where_clause, generics)
+        (ty_generics, generics)
     }
 }
 
@@ -248,8 +258,6 @@ impl quote::ToTokens for DeriveEnum {
             return;
         };
 
-        tokens.extend(self.impl_cast_from(ident, fields));
-        tokens.extend(self.impl_cast(ident, fields));
         tokens.extend(self.impl_enum(ident, fields));
     }
 }
@@ -318,12 +326,12 @@ mod tests {
             VariantB,
         }"#,
         )
-            .expect("Parsing valid code");
+        .expect("Parsing valid code");
         let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         eprintln!("{from_derive_input:#?}");
         insta::assert_snapshot!(format_output(from_derive_input));
     }
-    
+
     #[test]
     fn test_derive_generic_enum() {
         let input = syn::parse_str(

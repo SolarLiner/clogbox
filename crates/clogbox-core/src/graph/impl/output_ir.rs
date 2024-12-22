@@ -4,8 +4,8 @@ use std::hash::Hash;
 
 use super::input_ir::{Edge, NodeID, PortID};
 
-use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::Enum;
+use clogbox_enum::enum_map::EnumMapArray;
+use clogbox_enum::Enum;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +30,7 @@ pub struct CompiledSchedule<PortType: Enum> {
 
 /// A [ScheduleEntry] is one element of the schedule to evalute.
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScheduleEntry<PortType> {
     /// One of the input nodes, to process
     Node(ScheduledNode<PortType>),

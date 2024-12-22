@@ -1,11 +1,10 @@
-use crate::graph::context::{GraphContextImpl, RawGraphContext};
+use crate::graph::context::RawGraphContext;
 use crate::graph::module::{ModuleError, RawModule};
+use crate::graph::module::{ProcessStatus, StreamData};
 use crate::graph::r#impl::{BufferAssignment, BufferIdx, EdgeID, NodeID, ScheduleEntry};
 use crate::graph::storage::GraphStorage;
-use crate::graph::{r#impl, SlotType};
-use crate::module::{ProcessStatus, StreamData};
+use crate::graph::{r#impl, ControlBuffer, SlotType};
 use crate::modules::delay::FixedAudioDelay;
-use crate::modules::sum::Sum;
 use az::Cast;
 use derive_more::Debug;
 use num_traits::{Float, Zero};
@@ -25,11 +24,13 @@ pub struct GraphDriver<T> {
 }
 
 impl<T: Copy + Float + ops::AddAssign<T> + Cast<usize>> GraphDriver<T> {
+    /// Executes the graph for the given inputs and outputs
     pub fn process(
         &mut self,
         stream_data: &StreamData,
         inputs: &[&[T]],
         outputs: &mut [&mut [T]],
+        params: &[&ControlBuffer],
     ) -> Result<ProcessStatus, ModuleError> {
         let schedule = std::mem::take(&mut self.schedule.schedule);
         for entry in schedule.iter() {
@@ -61,7 +62,7 @@ impl<T: Copy + Float + ops::AddAssign<T> + Cast<usize>> GraphDriver<T> {
                             .map(|m| m.to_audio_buffer())
                             .transpose()
                             .unwrap();
-                        buf.copy_from_slice(&inputs[input_ix]);
+                        buf.copy_from_slice(inputs[input_ix]);
                     } else if self.output_nodes.contains_key(node.id) {
                         let output_ix = self.output_nodes[node.id];
                         let BufferIdx(idx) = node.input_buffers[0].buffer_index;
@@ -97,7 +98,7 @@ impl<T: Copy + Float + ops::AddAssign<T> + Cast<usize>> GraphDriver<T> {
                 }
                 ScheduleEntry::Sum(sum) => {
                     let slot_type = sum.output_buffer.type_index;
-                    let mut out = self
+                    let out = self
                         .storage
                         .get_buffer_mut(slot_type, sum.output_buffer.buffer_index.0);
                     match slot_type {

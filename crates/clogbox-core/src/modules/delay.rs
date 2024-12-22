@@ -1,14 +1,12 @@
 use crate::graph::context::GraphContext;
-use crate::graph::module::{Module, ModuleError};
-use crate::graph::slots::Mono;
+use crate::graph::module::{Module, ModuleError, ProcessStatus};
+use clogbox_enum::Mono;
 use crate::math::interpolation::{InterpolateSingle, Linear};
-use crate::module::ProcessStatus;
-use crate::r#enum;
 use ::serde::{Deserializer, Serializer};
-use generic_array::sequence::GenericSequence;
 use num_traits::Float;
-use numeric_array::NumericArray;
 use std::collections::VecDeque;
+use generic_array::sequence::GenericSequence;
+use numeric_array::NumericArray;
 
 #[cfg(feature = "serialize")]
 mod serde {
@@ -57,13 +55,13 @@ impl<T: Float + az::Cast<usize>> Module for FixedAudioDelay<T> {
         &mut self,
         graph_context: GraphContext<Self>,
     ) -> Result<ProcessStatus, ModuleError> {
-        use r#enum::Mono::Mono;
-        let input = graph_context.get_audio_input(Mono.into())?;
-        let mut output = graph_context.get_audio_output(Mono.into())?;
+        use clogbox_enum::Mono;
+        let input = graph_context.get_audio_input(Mono)?;
+        let mut output = graph_context.get_audio_output(Mono)?;
 
         for (i, o) in input.iter().zip(output.iter_mut()) {
             *o = Linear
-                .interpolate_single(&NumericArray::generate(|i| self.delay[i]), self.pos_fract)
+                .interpolate_single(&NumericArray::generate(|i| self.delay[i]), self.pos_fract);
             self.delay.pop_front().unwrap();
             self.delay.push_back(*i);
         }

@@ -1,17 +1,16 @@
 use crate::graph::event::EventBuffer;
 use crate::graph::{
-    ControlBuffer, NoteBuffer, NoteEvent, NoteKey, Slot, SlotMut, SlotType, Timestamped,
+    ControlBuffer, NoteBuffer, Slot, SlotMut, SlotType,
 };
-use crate::r#enum::enum_map::EnumMapArray;
+use clogbox_enum::enum_map::EnumMapArray;
 use derive_more::{Deref, DerefMut};
-use duplicate::{duplicate, duplicate_item};
 use num_traits::Zero;
-use std::collections::BTreeSet;
+use std::cell::UnsafeCell;
 use std::fmt::{Formatter, Write};
-use std::mem::{ManuallyDrop, MaybeUninit};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::mem::ManuallyDrop;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::{fmt, ops};
+use std::fmt;
 
 struct AtomicBitset {
     bits: Vec<AtomicU64>,
@@ -68,11 +67,10 @@ impl AtomicBitset {
     }
 }
 
-#[derive(Clone)]
 pub struct GraphStorage<T> {
-    audio_buffers: Vec<Box<[T]>>,
-    control_events: Vec<ControlBuffer>,
-    note_events: Vec<NoteBuffer>,
+    audio_buffers: Vec<UnsafeCell<Box<[T]>>>,
+    control_events: Vec<UnsafeCell<ControlBuffer>>,
+    note_events: Vec<UnsafeCell<NoteBuffer>>,
     shared_borrows: Arc<EnumMapArray<SlotType, AtomicBitset>>,
     mut_borrows: Arc<EnumMapArray<SlotType, AtomicBitset>>,
 }
@@ -93,9 +91,18 @@ impl<T> GraphStorage<T> {
         //
         // Borrows have been checked above, which means the mutable borrow cannot induce aliasing.
         let slot = match slot_type {
-            SlotType::Audio => Slot::AudioBuffer(&self.audio_buffers[slot_index]),
-            SlotType::Control => Slot::ControlEvents(&self.control_events[slot_index]),
-            SlotType::Note => Slot::NoteEvents(&self.note_events[slot_index]),
+            SlotType::Audio => Slot::AudioBuffer({
+                let ptr = self.audio_buffers[slot_index].get();
+                unsafe { &*ptr }.iter().as_slice()
+            }),
+            SlotType::Control => Slot::ControlEvents({
+                let ptr = self.control_events[slot_index].get();
+                unsafe { &*ptr }
+            }),
+            SlotType::Note => Slot::NoteEvents({
+                let ptr = self.note_events[slot_index].get();
+                unsafe { &*ptr }
+            }),
         };
 
         self.shared_borrows[slot_type].set(slot_index);
@@ -121,16 +128,16 @@ impl<T> GraphStorage<T> {
         // Borrows have been checked above, which means the mutable borrow cannot induce aliasing.
         let slot_mut = match slot_type {
             SlotType::Audio => SlotMut::AudioBuffer({
-                let len = self.audio_buffers[slot_index].len();
-                let ptr = self.audio_buffers[slot_index].as_ptr().cast_mut();
-                unsafe { std::slice::from_raw_parts_mut(ptr, len) }
+                let ptr = self.audio_buffers[slot_index].get();
+                let ref_ = unsafe { &mut *ptr };
+                &mut *ref_
             }),
             SlotType::Control => SlotMut::ControlEvents({
-                let ptr = (&self.control_events[slot_index] as *const ControlBuffer).cast_mut();
+                let ptr = self.control_events[slot_index].get();
                 unsafe { &mut *ptr }
             }),
             SlotType::Note => SlotMut::NoteEvents({
-                let ptr = (&self.note_events[slot_index] as *const NoteBuffer).cast_mut();
+                let ptr = self.note_events[slot_index].get();
                 unsafe { &mut *ptr }
             }),
         };
@@ -160,23 +167,26 @@ impl<T: Zero> GraphStorage<T> {
         Self {
             audio_buffers: (0..num_audio_buffers)
                 .map(|_| (0..max_block_size).map(|_| T::zero()).collect())
+                .map(UnsafeCell::new)
                 .collect(),
             control_events: (0..num_control_events)
                 .map(|_| EventBuffer::new(max_block_size))
+                .map(UnsafeCell::new)
                 .collect(),
             note_events: (0..num_note_events)
                 .map(|_| EventBuffer::new(max_block_size))
+                .map(UnsafeCell::new)
                 .collect(),
             shared_borrows: gen_bitset(),
             mut_borrows: gen_bitset(),
         }
     }
 }
-pub type SlotRef<'a, T> = StorageRef<Slot<'a, T>>;
-pub type SlotRefMut<'a, T> = StorageRef<SlotMut<'a, T>>;
+pub type SlotRef<'a, T> = StorageBorrow<Slot<'a, T>>;
+pub type SlotRefMut<'a, T> = StorageBorrow<SlotMut<'a, T>>;
 
 #[derive(Debug, Deref, DerefMut)]
-pub struct StorageRef<T> {
+pub struct StorageBorrow<T> {
     #[deref]
     #[deref_mut]
     pub data: T,
@@ -185,17 +195,18 @@ pub struct StorageRef<T> {
     borrow_marker: Arc<EnumMapArray<SlotType, AtomicBitset>>,
 }
 
-impl<T> StorageRef<T> {
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StorageRef<U> {
-        let mut this = ManuallyDrop::new(self);
-        StorageRef {
+impl<T> StorageBorrow<T> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> StorageBorrow<U> {
+        let this = ManuallyDrop::new(self);
+        StorageBorrow {
             // # Safety
             //
             // `data` is never read from/written to again (self has been move into this method, and
             // `ManuallyDrop` will ensure that no matter the drop implementation, it just won't 
-            // be called). Placing an uninitialized value is therefore okay.
+            // be called). Rust cannot recognize that this is a valid move, so we force its hand 
+            // here.
             data: f(unsafe {
-                std::mem::replace(&mut this.data, MaybeUninit::uninit().assume_init())
+                std::ptr::read(&this.data)
             }),
             slot_type: this.slot_type,
             index: this.index,
@@ -204,8 +215,8 @@ impl<T> StorageRef<T> {
     }
 }
 
-impl<T> StorageRef<Option<T>> {
-    pub fn transpose(self) -> Option<StorageRef<T>> {
+impl<T> StorageBorrow<Option<T>> {
+    pub fn transpose(self) -> Option<StorageBorrow<T>> {
         if self.data.is_none() {
             None
         } else {
@@ -214,7 +225,7 @@ impl<T> StorageRef<Option<T>> {
     }
 }
 
-impl<T> Drop for StorageRef<T> {
+impl<T> Drop for StorageBorrow<T> {
     fn drop(&mut self) {
         self.borrow_marker[self.slot_type].clear(self.index);
     }

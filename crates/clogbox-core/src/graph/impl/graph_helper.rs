@@ -4,7 +4,7 @@ use super::error::{AddEdgeError, AddPortError, CompileGraphError, RemovePortErro
 use super::{
     CompiledSchedule, Edge, EdgeID, EdgeMap, GraphIR, Node, NodeID, NodeMap, Port, PortID,
 };
-use crate::r#enum::Enum;
+use clogbox_enum::Enum;
 use slotmap::new_key_type;
 use std::marker::PhantomData;
 

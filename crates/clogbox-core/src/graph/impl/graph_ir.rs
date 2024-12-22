@@ -9,8 +9,8 @@ use super::{
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::r#enum::enum_map::EnumMapArray;
-use crate::r#enum::{count, Enum};
+use clogbox_enum::enum_map::EnumMapArray;
+use clogbox_enum::{count, Enum};
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use slotmap::{SecondaryMap, SparseSecondaryMap};

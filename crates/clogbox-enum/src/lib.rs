@@ -7,8 +7,7 @@
 //! # Example
 //!
 //! ```rust
-//! use clogbox_derive::Enum;
-//! use clogbox_core::r#enum::{enum_iter, Enum};
+//! use clogbox_enum::{enum_iter, Enum};
 //!
 //! #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
 //! enum Color {
@@ -24,11 +23,9 @@
 //!     println!("{:?}", variant);
 //! }
 //! ```
-pub use az;
 pub use generic_array;
 pub use typenum;
 
-use az::{Cast, CastFrom};
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -36,6 +33,8 @@ use std::marker::PhantomData;
 use std::ops;
 use std::ops::{Deref, DerefMut};
 use typenum::{Prod, Sum, Unsigned, U0, U1, U2};
+#[cfg(feature = "derive")]
+pub use clogbox_derive::Enum;
 
 pub mod enum_map;
 
@@ -59,13 +58,17 @@ pub mod enum_map;
 ///     Blue,
 /// }
 /// ```
-pub trait Enum: 'static + Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize> {
+pub trait Enum: 'static + Copy + Send + Eq + Ord {
     /// An associated constant representing the total number of enum variants.
     ///
     /// This is used to define the length of arrays or other collections
     /// that index using this enum. The type must be unsigned and compatible
     /// with compile-time array lengths.
     type Count: Unsigned + ArrayLength;
+    
+    fn from_usize(value: usize) -> Self;
+    
+    fn to_usize(self) -> usize;
 
     /// Returns the name of the enum variant as a `Cow<str>`.
     ///
@@ -74,8 +77,7 @@ pub trait Enum: 'static + Copy + Send + Eq + Ord + Cast<usize> + CastFrom<usize>
     ///
     /// # Example
     /// ```rust
-    /// use clogbox_core::r#enum::Enum;
-    /// use clogbox_derive::Enum;
+    /// use clogbox_enum::Enum;
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
     /// enum Color {
     ///     Red,
@@ -118,17 +120,17 @@ impl<C, E> From<C> for EnumIndex<C, E> {
     }
 }
 
-impl<E: Cast<usize>, C: ops::Index<usize>> ops::Index<E> for EnumIndex<C, E> {
+impl<E: Enum, C: ops::Index<usize>> ops::Index<E> for EnumIndex<C, E> {
     type Output = C::Output;
 
     fn index(&self, index: E) -> &Self::Output {
-        self.0.index(index.cast())
+        self.0.index(index.to_usize())
     }
 }
 
-impl<E: Cast<usize>, C: ops::IndexMut<usize>> ops::IndexMut<E> for EnumIndex<C, E> {
+impl<E: Enum, C: ops::IndexMut<usize>> ops::IndexMut<E> for EnumIndex<C, E> {
     fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        self.0.index_mut(index.cast())
+        self.0.index_mut(index.to_usize())
     }
 }
 
@@ -142,20 +144,16 @@ impl<C, E> EnumIndex<C, E> {
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Empty {}
 
-impl Cast<usize> for Empty {
-    fn cast(self) -> usize {
-        unreachable!()
-    }
-}
-
-impl CastFrom<usize> for Empty {
-    fn cast_from(_: usize) -> Self {
-        unreachable!()
-    }
-}
-
 impl Enum for Empty {
     type Count = U0;
+
+    fn from_usize(value: usize) -> Self {
+        unreachable!()
+    }
+    
+    fn to_usize(self) -> usize {
+        unreachable!()
+    }
 
     fn name(&self) -> Cow<str> {
         unreachable!()
@@ -164,30 +162,26 @@ impl Enum for Empty {
 
 /// Iterate all variants of the given enum
 pub fn enum_iter<E: Enum>() -> impl Iterator<Item = E> {
-    (0..E::Count::USIZE).map(|i| E::cast_from(i))
+    (0..E::Count::USIZE).map(|i| E::from_usize(i))
 }
 
 /// Type for mono audio inputs and outputs.
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Mono {
-    /// The mono input
-    Mono,
-}
-
-impl Cast<usize> for Mono {
-    fn cast(self) -> usize {
-        0
-    }
-}
-
-impl CastFrom<usize> for Mono {
-    fn cast_from(_: usize) -> Self {
-        Self::Mono
-    }
-}
+pub struct Mono;
 
 impl Enum for Mono {
     type Count = U1;
+
+    fn from_usize(value: usize) -> Self {
+        match value {
+            0 => Self,
+            _ => unreachable!()
+        }
+    }
+
+    fn to_usize(self) -> usize {
+        0
+    }
 
     fn name(&self) -> Cow<str> {
         Cow::Borrowed("Mono")
@@ -203,27 +197,23 @@ pub enum Stereo {
     Right,
 }
 
-impl Cast<usize> for Stereo {
-    fn cast(self) -> usize {
-        match self {
-            Self::Left => 0,
-            Self::Right => 1,
-        }
-    }
-}
-
-impl CastFrom<usize> for Stereo {
-    fn cast_from(value: usize) -> Self {
+impl Enum for Stereo {
+    type Count = U2;
+    
+    fn from_usize(value: usize) -> Self {
         match value {
             0 => Self::Left,
             1 => Self::Right,
             _ => unreachable!()
         }
     }
-}
-
-impl Enum for Stereo {
-    type Count = U2;
+    
+    fn to_usize(self) -> usize {
+        match self {
+            Self::Left => 0,
+            Self::Right => 1,
+        }
+    }
 
     fn name(&self) -> Cow<str> {
         match self {
@@ -255,7 +245,7 @@ impl Enum for Stereo {
 ///
 /// ```rust
 /// use typenum::U3;
-/// use clogbox_core::r#enum::{seq, Sequential};
+/// use clogbox_enum::{seq, Sequential};
 ///
 /// let index: Sequential<U3> = seq::<U3>(2); // Creates a sequential index for a size 3 collection
 /// ```
@@ -264,18 +254,6 @@ impl Enum for Stereo {
 /// fixed-size collections in a type-safe manner.
 #[derive(Debug, Copy, Clone)]
 pub struct Sequential<N: Unsigned>(N, usize);
-
-impl<N: Unsigned> Cast<usize> for Sequential<N> {
-    fn cast(self) -> usize {
-        self.1
-    }
-}
-
-impl<N: Unsigned> CastFrom<usize> for Sequential<N> {
-    fn cast_from(src: usize) -> Self {
-        seq(src)
-    }
-}
 
 impl<N: Unsigned> From<usize> for Sequential<N> {
     fn from(value: usize) -> Self {
@@ -298,7 +276,7 @@ impl<N: Unsigned> From<usize> for Sequential<N> {
 ///
 /// ```rust
 /// use typenum::U3;
-/// use clogbox_core::r#enum::seq;
+/// use clogbox_enum::seq;
 ///
 /// let valid_index = seq::<U3>(2); // Valid index within bounds for a size 3 array
 /// // let invalid_index = seq::<U3>(3); // Panics because 3 is out of bounds
@@ -331,6 +309,15 @@ impl<N: Unsigned> PartialOrd<Self> for Sequential<N> {
 impl<N: Send + Unsigned + ArrayLength> Enum for Sequential<N> {
     type Count = N;
 
+    fn from_usize(value: usize) -> Self {
+        assert!(value < N::USIZE);
+        Sequential(N::default(), value)
+    }
+
+    fn to_usize(self) -> usize {
+        self.1
+    }
+
     fn name(&self) -> Cow<str> {
         Cow::Owned(format!("{}", 1 + self.1))
     }
@@ -349,8 +336,7 @@ impl<N: Send + Unsigned + ArrayLength> Enum for Sequential<N> {
 ///
 /// ## Example
 /// ```rust
-/// use clogbox_core::r#enum::{Enum,CartesianProduct};
-/// use clogbox_derive::Enum;
+/// use clogbox_enum::{Enum, CartesianProduct};
 ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
 /// enum Color {
 ///     Red,
@@ -371,26 +357,22 @@ impl<N: Send + Unsigned + ArrayLength> Enum for Sequential<N> {
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct CartesianProduct<A, B>(pub A, pub B);
 
-impl<A: Enum, B: Enum> CastFrom<usize> for CartesianProduct<A, B> {
-    fn cast_from(src: usize) -> Self {
-        let src_a = src / A::Count::USIZE;
-        let src_b = src % A::Count::USIZE;
-        Self(A::cast_from(src_a), B::cast_from(src_b))
-    }
-}
-
-impl<A: Enum, B: Enum> Cast<usize> for CartesianProduct<A, B> {
-    fn cast(self) -> usize {
-        self.0.cast() * A::Count::USIZE + self.1.cast()
-    }
-}
-
 impl<A: Enum, B: Enum> Enum for CartesianProduct<A, B>
 where
     A::Count: ops::Mul<B::Count, Output: Unsigned + ArrayLength>,
 {
     type Count = Prod<A::Count, B::Count>;
 
+    fn from_usize(src: usize) -> Self {
+        let src_a = src / A::Count::USIZE;
+        let src_b = src % A::Count::USIZE;
+        Self(A::from_usize(src_a), B::from_usize(src_b))
+    }
+    
+    fn to_usize(self) -> usize {
+        self.0.to_usize() * A::Count::USIZE + self.1.to_usize()
+    }
+    
     fn name(&self) -> Cow<str> {
         Cow::Owned(format!("{}:{}", self.0.name(), self.1.name()))
     }
@@ -402,36 +384,26 @@ pub enum Either<A, B> {
     Right(B),
 }
 
-impl<A: Enum, B: Enum> Cast<usize> for Either<A, B>
-where
-    A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
-{
-    fn cast(self) -> usize {
-        match self {
-            Self::Left(a) => a.cast(),
-            Self::Right(b) => A::Count::USIZE + b.cast(),
-        }
-    }
-}
-
-impl<A: Enum, B: Enum> CastFrom<usize> for Either<A, B>
-where
-    A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
-{
-    fn cast_from(src: usize) -> Self {
-        if src < A::Count::USIZE {
-            Self::Left(A::cast_from(src))
-        } else {
-            Self::Right(B::cast_from(src - A::Count::USIZE))
-        }
-    }
-}
-
 impl<A: Enum, B: Enum> Enum for Either<A, B>
 where
     A::Count: ops::Add<B::Count, Output: Unsigned + ArrayLength>,
 {
     type Count = Sum<A::Count, B::Count>;
+
+    fn from_usize(src: usize) -> Self {
+        if src < A::Count::USIZE {
+            Self::Left(A::from_usize(src))
+        } else {
+            Self::Right(B::from_usize(src - A::Count::USIZE))
+        }
+    }
+
+    fn to_usize(self) -> usize {
+        match self {
+            Self::Left(a) => a.to_usize(),
+            Self::Right(b) => A::Count::USIZE + b.to_usize(),
+        }
+    }
 
     fn name(&self) -> Cow<str> {
         match self {

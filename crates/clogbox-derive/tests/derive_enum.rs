@@ -1,7 +1,5 @@
-use clogbox_core::r#enum::{az::CastFrom, enum_iter, Enum, Sequential};
-use clogbox_derive::Enum;
+use clogbox_enum::{enum_iter, Enum, Sequential};
 use typenum::U3;
-use clogbox_core::param::Normalized;
 
 #[derive(Debug, Default, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Enum)]
 enum Inner {
@@ -38,8 +36,8 @@ fn test_outer_has_correct_size() {
 }
 
 #[test]
-fn test_inner_cast_from() {
-    let actual = [0, 1, 2, 3].map(Inner::cast_from);
+fn test_inner_from_usize() {
+    let actual = [0, 1, 2, 3].map(Inner::from_usize);
     let expected = [Inner::A, Inner::B, Inner::C, Inner::D];
     assert_eq!(expected, actual);
 }
@@ -61,8 +59,8 @@ where
 }
 
 #[test]
-fn test_complex_enum_cast_from() {
-    let actual_with_inner = [0, 1, 2, 3, 4].map(ComplexEnum::<Inner>::cast_from);
+fn test_complex_enum_from_usize() {
+    let actual_with_inner = [0, 1, 2, 3, 4].map(ComplexEnum::<Inner>::from_usize);
     let expected_with_inner = [
         ComplexEnum::SimpleVariant,
         ComplexEnum::ComplexVariant(Inner::A),
@@ -82,8 +80,8 @@ fn test_complex_enum_iter() {
 }
 
 #[test]
-fn test_generic_enum_cast_from() {
-    let actual_with_inner = [0, 1, 2, 3, 4].map(GenericEnum::<Inner>::cast_from);
+fn test_generic_enum_from_usize() {
+    let actual_with_inner = [0, 1, 2, 3, 4].map(GenericEnum::<Inner>::from_usize);
     let expected_with_inner = [
         GenericEnum::First(Inner::A),
         GenericEnum::First(Inner::B),

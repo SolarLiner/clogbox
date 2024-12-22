@@ -21,7 +21,7 @@ pub use output_ir::*;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::r#enum::{seq, Sequential};
+    use clogbox_enum::{seq, Sequential};
     use std::collections::{HashMap, HashSet};
     use typenum::U2;
 

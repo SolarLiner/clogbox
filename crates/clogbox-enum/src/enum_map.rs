@@ -9,7 +9,7 @@
 //! values of type `V` indexed by enum keys of type `K`. This module also
 //! includes iterators and utility methods for working with such maps.
 
-use crate::r#enum::{count, Enum};
+use crate::{count, Enum};
 use numeric_array::generic_array::{GenericArray, IntoArrayLength};
 use numeric_array::ArrayLength;
 use std::iter::{Enumerate, Map};
@@ -43,7 +43,7 @@ impl<C: Collection + DerefMut<Target = [C::Item]>> CollectionMut for C {}
 ///
 /// # Example
 /// ```rust
-/// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
+/// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
 /// use clogbox_derive::Enum;
 ///
 /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -88,7 +88,7 @@ where
 ///
 /// # Example
 /// ```rust
-/// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapBox};
+/// use clogbox_enum::enum_map::{EnumMap, EnumMapBox};
 /// use clogbox_derive::Enum;
 ///
 /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -113,7 +113,7 @@ pub type EnumMapBox<E, T> = EnumMap<E, Box<[T]>>;
 ///
 /// # Example
 /// ```rust
-/// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
+/// use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
 /// use clogbox_derive::Enum;
 ///
 /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -140,7 +140,7 @@ pub type EnumMapRef<'a, E, T> = EnumMap<E, &'a [T]>;
 ///
 /// # Example
 /// ```rust
-/// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray, EnumMapMut};
+/// use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapMut};
 /// use clogbox_derive::Enum;
 ///
 /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -170,7 +170,7 @@ pub type EnumMapMut<'a, E, T> = EnumMap<E, &'a mut [T]>;
 /// # Example
 /// ```rust
 /// use clogbox_derive::Enum;
-/// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
+/// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
 ///
 ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
 /// enum Color {
@@ -240,7 +240,7 @@ impl<E: Enum, D: IntoIterator> IntoIterator for EnumMap<E, D> {
         self.data
             .into_iter()
             .enumerate()
-            .map(|(i, v)| (E::cast_from(i), v))
+            .map(|(i, v)| (E::from_usize(i), v))
     }
 }
 
@@ -298,8 +298,8 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
     /// # Example
     /// ```rust
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
-    /// use clogbox_core::r#enum::Sequential;
+    /// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
+    /// use clogbox_enum::Sequential;
     /// use numeric_array::generic_array::arr;
     ///
     /// let mut color_map = EnumMapArray::<Sequential<U3>, u32>::new(|_| 0);
@@ -319,13 +319,13 @@ impl<E: Enum, D: Collection> ops::Index<E> for EnumMap<E, D> {
     type Output = D::Item;
 
     fn index(&self, index: E) -> &Self::Output {
-        &self.data[index.cast()]
+        &self.data[index.to_usize()]
     }
 }
 
 impl<E: Enum, D: CollectionMut> ops::IndexMut<E> for EnumMap<E, D> {
     fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        &mut self.data[index.cast()]
+        &mut self.data[index.to_usize()]
     }
 }
 
@@ -340,11 +340,11 @@ impl<E, D: Collection> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
+    /// use clogbox_enum::Enum;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
-    /// use clogbox_core::r#enum::Sequential;
-    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::Sequential;
+    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let output = Vec::from_iter(map.values());
     /// assert_eq!(vec![&0, &1, &2], output);
     /// ```
@@ -364,11 +364,11 @@ impl<E, D: Collection> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
+    /// use clogbox_enum::Enum;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapRef};
-    /// use clogbox_core::r#enum::Sequential;
-    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+    /// use clogbox_enum::Sequential;
+    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let map_ref: EnumMapRef<_, _> = map.to_ref();
     /// let values: Vec<(Sequential<U3>, &usize)> = Vec::from_iter(map_ref.into_iter());
     /// ```
@@ -390,11 +390,11 @@ impl<E, D: Collection> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
+    /// use clogbox_enum::Enum;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
-    /// use clogbox_core::r#enum::Sequential;
-    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::Sequential;
+    /// let map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let values_slice = map.as_slice();
     /// assert_eq!(&[0, 1, 2], values_slice);
     /// ```
@@ -414,11 +414,11 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
+    /// use clogbox_enum::Enum;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
-    /// use clogbox_core::r#enum::Sequential;
-    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::Sequential;
+    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let output = Vec::from_iter(map.values_mut());
     /// assert_eq!(vec![&0, &1, &2], output);
     /// ```
@@ -438,11 +438,11 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
+    /// use clogbox_enum::Enum;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::{EnumMapArray, EnumMapMut};
-    /// use clogbox_core::r#enum::Sequential;
-    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut};
+    /// use clogbox_enum::Sequential;
+    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let map_mut: EnumMapMut<_, _> = map.to_mut();
     /// let values: Vec<(Sequential<U3>, &mut usize)> = Vec::from_iter(map_mut.into_iter());
     /// ```
@@ -464,11 +464,11 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use az::Cast;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
-    /// use clogbox_core::r#enum::Sequential;
-    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.cast());
+    /// use clogbox_enum::Enum;
+    /// use clogbox_enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::Sequential;
+    /// let mut map = EnumMapArray::<Sequential<U3>, usize>::new(|k| k.to_usize());
     /// let values_slice = map.as_slice_mut();
     /// assert_eq!(&mut [0, 1, 2], values_slice);
     /// ```
@@ -507,7 +507,7 @@ impl<E: Enum, D: Collection + FromIterator<D::Item>> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::enum_map::EnumMapArray;
     /// use clogbox_derive::Enum;
     ///
     /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -530,7 +530,7 @@ impl<E: Enum, D: Collection + FromIterator<D::Item>> EnumMap<E, D> {
     /// ```
     pub fn new(fill: impl FnMut(E) -> D::Item) -> Self {
         Self {
-            data: crate::r#enum::enum_iter().map(fill).collect(),
+            data: crate::enum_iter().map(fill).collect(),
             __enum: PhantomData,
         }
     }
@@ -556,8 +556,8 @@ impl<E: Enum, D: Collection + IntoIterator<Item = <D as Collection>::Item>> Enum
     /// # Example
     /// ```rust
     /// use numeric_array::generic_array::GenericArray;
-    /// use clogbox_core::r#enum::Enum;
-    /// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
+    /// use clogbox_enum::Enum;
+    /// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
     /// use clogbox_derive::Enum;
     ///
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
@@ -588,7 +588,7 @@ impl<E: Enum, D: Collection + IntoIterator<Item = <D as Collection>::Item>> Enum
                 .data
                 .into_iter()
                 .enumerate()
-                .map(|(i, v)| func(E::cast_from(i), v))
+                .map(|(i, v)| func(E::from_usize(i), v))
                 .collect(),
             __enum: PhantomData,
         }
@@ -610,7 +610,7 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
+    /// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
     /// use clogbox_derive::Enum;
     ///
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
@@ -641,7 +641,7 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
         self.data
             .iter()
             .enumerate()
-            .map(|(i, v)| (E::cast_from(i), v))
+            .map(|(i, v)| (E::from_usize(i), v))
     }
 
     pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T>
@@ -672,7 +672,7 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
     ///
     /// # Example
     /// ```rust
-    /// use clogbox_core::r#enum::enum_map::{EnumMap, EnumMapArray};
+    /// use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
     /// use clogbox_derive::Enum;
     ///
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
@@ -704,7 +704,7 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
         self.data
             .iter_mut()
             .enumerate()
-            .map(|(i, v)| (E::cast_from(i), v))
+            .map(|(i, v)| (E::from_usize(i), v))
     }
 
     pub fn items_as_deref_mut(&mut self) -> EnumMapArray<E, &mut <D::Item as Deref>::Target>
@@ -740,7 +740,7 @@ impl<E: Enum, T> EnumMapArray<E, T> {
     /// ```rust
     /// use numeric_array::generic_array::GenericArray;
     /// use typenum::U3;
-    /// use clogbox_core::r#enum::enum_map::EnumMapArray;
+    /// use clogbox_enum::enum_map::EnumMapArray;
     /// use clogbox_derive::Enum;
     ///
     ///  #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]

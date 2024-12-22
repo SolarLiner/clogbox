@@ -1,0 +1,23 @@
+[package]
+name = "clogbox-enum"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-derive = { path = "../clogbox-derive", default-features = false, features = ["enum"], optional = true }
+
+generic-array.workspace = true
+numeric-array.workspace = true
+serde = { workspace = true, features = ["derive"], optional = true }
+typenum.workspace = true
+
+[features]
+default = ["derive"]
+derive = ["dep:clogbox-derive"]
+serialize = ["dep:serde"]

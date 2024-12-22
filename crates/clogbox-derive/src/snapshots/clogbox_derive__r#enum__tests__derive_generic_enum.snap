@@ -3,18 +3,33 @@ source: crates/clogbox-derive/src/enum.rs
 expression: format_output(from_derive_input)
 ---
 #[automatically_derived]
-impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::az::CastFrom<usize>
-for Generic<T> {
-    fn cast_from(mut i: usize) -> Self {
+impl<T: ::clogbox_enum::Enum> ::clogbox_enum::Enum for Generic<T>
+where
+    ::clogbox_enum::typenum::U1: ::std::ops::Add<<T as ::clogbox_enum::Enum>::Count>,
+    <::clogbox_enum::typenum::U1 as ::std::ops::Add<
+        <T as ::clogbox_enum::Enum>::Count,
+    >>::Output: ::std::ops::Add<<T as ::clogbox_enum::Enum>::Count>,
+    <<::clogbox_enum::typenum::U1 as ::std::ops::Add<
+        <T as ::clogbox_enum::Enum>::Count,
+    >>::Output as ::std::ops::Add<
+        <T as ::clogbox_enum::Enum>::Count,
+    >>::Output: ::clogbox_enum::generic_array::ArrayLength,
+{
+    type Count = ::clogbox_enum::typenum::operator_aliases::Sum<
+        ::clogbox_enum::typenum::U1,
+        ::clogbox_enum::typenum::operator_aliases::Sum<
+            <T as ::clogbox_enum::Enum>::Count,
+            <T as ::clogbox_enum::Enum>::Count,
+        >,
+    >;
+    fn from_usize(mut i: usize) -> Self {
         if i
-            < <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE
+            < <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE
         {
-            return Self::VariantA(
-                <T as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i),
-            );
+            return Self::VariantA(<T as ::clogbox_enum::Enum>::from_usize(i));
         } else {
             i
-                -= <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                -= <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
         }
         if i == 0 {
             return Self::VariantB;
@@ -22,28 +37,22 @@ for Generic<T> {
             i -= 1;
         }
         if i
-            < <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE
+            < <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE
         {
-            return Self::SpecialVariant(
-                <T as ::clogbox_core::r#enum::az::CastFrom<usize>>::cast_from(i),
-            );
+            return Self::SpecialVariant(<T as ::clogbox_enum::Enum>::from_usize(i));
         } else {
             i
-                -= <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                -= <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
         }
         unreachable!();
     }
-}
-#[automatically_derived]
-impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::az::Cast<usize>
-for Generic<T> {
-    fn cast(self) -> usize {
+    fn to_usize(self) -> usize {
         let mut i = 0;
         if let Self::VariantA(value) = self {
-            return i + value.cast();
+            return i + value.to_usize();
         } else {
             i
-                += <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                += <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
         }
         if let Self::VariantB = self {
             return i;
@@ -51,36 +60,13 @@ for Generic<T> {
             i += 1;
         }
         if let Self::SpecialVariant(value) = self {
-            return i + value.cast();
+            return i + value.to_usize();
         } else {
             i
-                += <<T as ::clogbox_core::r#enum::Enum>::Count as ::clogbox_core::r#enum::typenum::Unsigned>::USIZE;
+                += <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE;
         }
         unreachable!()
     }
-}
-#[automatically_derived]
-impl<T: ::clogbox_core::r#enum::Enum> ::clogbox_core::r#enum::Enum for Generic<T>
-where
-    ::clogbox_core::r#enum::typenum::U1: ::std::ops::Add<
-        <T as ::clogbox_core::r#enum::Enum>::Count,
-    >,
-    <::clogbox_core::r#enum::typenum::U1 as ::std::ops::Add<
-        <T as ::clogbox_core::r#enum::Enum>::Count,
-    >>::Output: ::std::ops::Add<<T as ::clogbox_core::r#enum::Enum>::Count>,
-    <<::clogbox_core::r#enum::typenum::U1 as ::std::ops::Add<
-        <T as ::clogbox_core::r#enum::Enum>::Count,
-    >>::Output as ::std::ops::Add<
-        <T as ::clogbox_core::r#enum::Enum>::Count,
-    >>::Output: ::clogbox_core::r#enum::generic_array::ArrayLength,
-{
-    type Count = ::clogbox_core::r#enum::typenum::operator_aliases::Sum<
-        ::clogbox_core::r#enum::typenum::U1,
-        ::clogbox_core::r#enum::typenum::operator_aliases::Sum<
-            <T as ::clogbox_core::r#enum::Enum>::Count,
-            <T as ::clogbox_core::r#enum::Enum>::Count,
-        >,
-    >;
     fn name(&self) -> ::std::borrow::Cow<str> {
         match self {
             Self::VariantA(inner) => inner.name(),

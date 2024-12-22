@@ -1,8 +1,8 @@
+use crate::graph::module::StreamData;
 use crate::graph::module::{Module, ModuleError};
 use crate::graph::slots::Slots;
-use crate::graph::storage::{GraphStorage, SlotRef, SlotRefMut, StorageRef};
-use crate::graph::{ControlBuffer, NoteBuffer, Slot, SlotMut, SlotType};
-use crate::module::StreamData;
+use crate::graph::storage::{GraphStorage, SlotRef, SlotRefMut, StorageBorrow};
+use crate::graph::{ControlBuffer, NoteBuffer, SlotType};
 use derive_more::Debug;
 
 pub type GraphContext<'a, M> =
@@ -32,7 +32,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Some(self.storage.get_buffer(typ, index))
     }
 
-    pub fn get_audio_input(&self, input: In) -> Result<StorageRef<&[T]>, ModuleError> {
+    pub fn get_audio_input(&self, input: In) -> Result<StorageBorrow<&[T]>, ModuleError> {
         let Some(buf) = self
             .get_input(input)
             .and_then(|r| r.map(|s| s.to_audio_buffer()).transpose())
@@ -49,7 +49,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Ok(buf)
     }
 
-    pub fn get_control_input(&self, input: In) -> Result<StorageRef<&ControlBuffer>, ModuleError> {
+    pub fn get_control_input(&self, input: In) -> Result<StorageBorrow<&ControlBuffer>, ModuleError> {
         let Some(events) = self
             .get_input(input)
             .and_then(|r| r.map(|s| s.to_control_events()).transpose())
@@ -62,7 +62,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Ok(events)
     }
 
-    pub fn get_note_input(&self, input: In) -> Result<StorageRef<&NoteBuffer>, ModuleError> {
+    pub fn get_note_input(&self, input: In) -> Result<StorageBorrow<&NoteBuffer>, ModuleError> {
         let Some(events) = self
             .get_input(input)
             .and_then(|r| r.map(|s| s.to_note_events()).transpose())
@@ -81,7 +81,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Some(self.storage.get_buffer_mut(typ, index))
     }
 
-    pub fn get_audio_output(&self, output: Out) -> Result<StorageRef<&mut [T]>, ModuleError> {
+    pub fn get_audio_output(&self, output: Out) -> Result<StorageBorrow<&mut [T]>, ModuleError> {
         let Some(buf) = self
             .get_output(output)
             .and_then(|m| m.map(|s| s.to_audio_buffer()).transpose())
@@ -101,7 +101,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
     pub fn get_control_output(
         &self,
         output: Out,
-    ) -> Result<StorageRef<&mut ControlBuffer>, ModuleError> {
+    ) -> Result<StorageBorrow<&mut ControlBuffer>, ModuleError> {
         let Some(events) = self
             .get_output(output)
             .and_then(|m| m.map(|s| s.to_control_events()).transpose())
@@ -114,7 +114,7 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Ok(events)
     }
 
-    pub fn get_note_output(&self, output: Out) -> Result<StorageRef<&mut NoteBuffer>, ModuleError> {
+    pub fn get_note_output(&self, output: Out) -> Result<StorageBorrow<&mut NoteBuffer>, ModuleError> {
         let Some(events) = self
             .get_output(output)
             .and_then(|m| m.map(|s| s.to_note_events()).transpose())

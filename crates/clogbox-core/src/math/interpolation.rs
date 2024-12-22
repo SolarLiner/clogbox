@@ -7,8 +7,8 @@
 //! The `Interpolation` trait is typically used in scenarios where a linear transformation
 //! or interpolation is needed, such as in mathematical computations, graphics,
 //! or data processing.
-use crate::r#enum::enum_map::Collection;
-use crate::r#enum::Count;
+use clogbox_enum::enum_map::Collection;
+use clogbox_enum::Count;
 use az::{Cast, CastFrom};
 use num_traits::{Float, Num};
 use numeric_array::generic_array::IntoArrayLength;
@@ -16,7 +16,7 @@ use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
 use typenum::{Const, Unsigned};
 
-/// A trait that defines a method for interpolating values within a [`Collection`](crate::r#enum::enum_map::Collection) type.
+/// A trait that defines a method for interpolating values within a [`Collection`](clogbox_enum::enum_map::Collection) type.
 ///
 /// # Type Parameters
 ///

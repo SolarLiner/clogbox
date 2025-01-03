@@ -13,9 +13,9 @@ keywords.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-clogbox-core = { path = "../../crates/clogbox-core" }
-clogbox-enum = { path = "../../crates/clogbox-enum" }
-clogbox-filters = { path = "../../crates/clogbox-filters" }
+clogbox-core.workspace = true
+clogbox-enum.workspace = true
+clogbox-filters.workspace = true
 
 clack-plugin = { git = "https://github.com/prokopyl/clack.git" }
 clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-plugin", "audio-ports", "params",

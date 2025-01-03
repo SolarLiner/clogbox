@@ -24,9 +24,9 @@
 //! }
 //! ```
 pub use generic_array;
-use generic_array::IntoArrayLength;
 pub use typenum;
 
+use generic_array::IntoArrayLength;
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -34,6 +34,7 @@ use std::marker::PhantomData;
 use std::ops;
 use std::ops::{Deref, DerefMut};
 use typenum::{Prod, Sum, Unsigned, U0, U1, U2};
+
 #[cfg(feature = "derive")]
 pub use clogbox_derive::Enum;
 

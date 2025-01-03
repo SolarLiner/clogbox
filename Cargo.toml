@@ -13,6 +13,12 @@ repository = "https://github.com/SolarLiner/clogbox"
 keywords = ["virtual-analog", "audio", "plugin", "va-modeling", "dsp"]
 
 [workspace.dependencies]
+clogbox-core = { path = "crates/clogbox-core" }
+clogbox-derive = { path = "crates/clogbox-derive" }
+clogbox-enum = { path = "crates/clogbox-enum" }
+clogbox-filters = { path = "crates/clogbox-filters" }
+clogbox-params = { path = "crates/clogbox-params" }
+
 az = "1.2.1"
 derive_more = "1.0.0"
 generic-array = "1.1.0"

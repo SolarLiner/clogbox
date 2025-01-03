@@ -10,7 +10,7 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-clogbox-derive = { path = "../clogbox-derive", default-features = false, features = ["enum"], optional = true }
+clogbox-derive = { workspace = true, optional = true }
 
 generic-array.workspace = true
 numeric-array.workspace = true

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-clogbox-enum = { path = "../clogbox-enum" }
+clogbox-enum.workspace = true
 
 az.workspace = true
 derive_more = { workspace = true, features = ["debug", "deref", "deref_mut"] }

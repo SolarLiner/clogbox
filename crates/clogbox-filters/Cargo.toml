@@ -10,8 +10,8 @@ repository.workspace = true
 keywords.workspace = true
 
 [dependencies]
-clogbox-core = { path = "../clogbox-core" }
-clogbox-enum = { path = "../clogbox-enum" }
+clogbox-core.workspace = true
+clogbox-enum.workspace = true
 
 az.workspace = true
 generic-array.workspace = true

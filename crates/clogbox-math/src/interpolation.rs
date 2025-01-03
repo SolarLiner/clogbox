@@ -9,7 +9,6 @@
 //! or data processing.
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::Collection;
-use clogbox_enum::Count;
 use num_traits::{Float, Num};
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;
@@ -65,8 +64,8 @@ impl<T: Float, I: InterpolateSingle<T>> Interpolation<T> for I {
 ///
 /// # Examples
 /// ```
-/// use clogbox_core::math::interpolation::Interpolation;
-/// use clogbox_core::math::interpolation::Linear;
+/// use clogbox_math::interpolation::Interpolation;
+/// use clogbox_math::interpolation::Linear;
 ///
 /// let values = vec![0.0, 1.0, 2.0, 3.0];
 /// let index = 1.5;
@@ -95,8 +94,8 @@ impl<T: Copy + Float + Cast<usize>> InterpolateSingle<T> for Linear {
 ///
 /// # Examples
 /// ```
-/// use clogbox_core::math::interpolation::Interpolation;
-/// use clogbox_core::math::interpolation::Cubic;
+/// use clogbox_math::interpolation::Interpolation;
+/// use clogbox_math::interpolation::Cubic;
 ///
 /// let values = vec![0.0, 1.0, 4.0, 9.0];
 /// let index = 1.5;

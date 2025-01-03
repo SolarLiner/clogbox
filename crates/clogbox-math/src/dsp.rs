@@ -3,7 +3,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use clogbox_core::math::dsp::freq_to_z;
+//! use clogbox_math::dsp::freq_to_z;
 //! let z = freq_to_z(44100.0, 1000.0);
 //! ```
 use num_complex::Complex;
@@ -24,7 +24,7 @@ use num_traits::{Float, FloatConst};
 ///
 /// ```
 /// use num_complex::Complex;
-/// use clogbox_core::math::dsp::freq_to_z;
+/// use clogbox_math::dsp::freq_to_z;
 /// let z = freq_to_z(44100.0, 1000.0);
 /// ```
 #[inline]

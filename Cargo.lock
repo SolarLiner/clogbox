@@ -185,6 +185,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "clogbox-math"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "az",
+ "clogbox-enum",
+ "num-complex",
+ "num-traits",
+ "numeric-array",
+ "numeric_literals",
+ "proptest",
+ "typenum",
+]
+
+[[package]]
 name = "console"
 version = "0.15.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"

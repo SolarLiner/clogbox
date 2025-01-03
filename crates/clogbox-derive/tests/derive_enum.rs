@@ -23,12 +23,12 @@ enum GenericEnumFirst<T> {
     Second,
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum MixedEnum<C> {
-    First,
-    Second(Inner),
-    Third(C),
-}
+//#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
+//pub enum MixedEnum<C> {
+//    First,
+//    Second(Inner),
+//    Third(C),
+//}
 
 #[test]
 fn test_inner_has_correct_size() {

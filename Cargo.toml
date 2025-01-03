@@ -17,6 +17,7 @@ clogbox-core = { path = "crates/clogbox-core" }
 clogbox-derive = { path = "crates/clogbox-derive" }
 clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
+clogbox-math = { path = "crates/clogbox-math" }
 clogbox-params = { path = "crates/clogbox-params" }
 
 az = "1.2.1"
@@ -34,7 +35,9 @@ slotmap = "1.0.7"
 thiserror = "2.0.3"
 typenum = "1.17.0"
 typenum-consts = "0.1.5"
+
 # Dev dependencies
+approx = "0.5.1"
 insta = { version = "1.34.0", features = ["csv", "redactions"] }
 proptest = "1.5.0"
 rstest = "0.22.0"

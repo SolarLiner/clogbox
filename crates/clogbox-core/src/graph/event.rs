@@ -117,12 +117,13 @@ impl<T: PartialOrd> EventBuffer<T> {
     }
 
     /// Returns the event at the given timestamp, if any.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `timestamp`: Timestamp to check for
     pub fn event_at(&self, timestamp: usize) -> Option<&T> {
-        self.data.binary_search_by_key(&timestamp, |t| t.sample)
+        self.data
+            .binary_search_by_key(&timestamp, |t| t.sample)
             .ok()
             .map(|pos| &self.data[pos].value)
     }

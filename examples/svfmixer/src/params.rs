@@ -27,7 +27,7 @@ impl ParamId {
             _ => value,
         }
     }
-    
+
     pub(crate) fn clamp_value(&self, value: f64) -> f64 {
         let range = self.range();
         let start = *range.start();
@@ -35,17 +35,17 @@ impl ParamId {
         value.clamp(start, end)
     }
 
-/*    pub(crate) fn denormalize(&self, normalized: f64) -> f64 {
-        let normalized = match self {
-            Self::Cutoff | Self::Resonance => normalized.powf(1.0 / 4.0),
-            _ => normalized,
-        };
-        let range = self.range();
-        let start = *range.start();
-        let end = *range.end();
-        normalized * (end - start) + start
-    }
-*/
+    /*    pub(crate) fn denormalize(&self, normalized: f64) -> f64 {
+            let normalized = match self {
+                Self::Cutoff | Self::Resonance => normalized.powf(1.0 / 4.0),
+                _ => normalized,
+            };
+            let range = self.range();
+            let start = *range.start();
+            let end = *range.end();
+            normalized * (end - start) + start
+        }
+    */
     pub(crate) fn write_param_info(&self, writer: &mut ParamInfoWriter) {
         let range = self.range();
         let name = self.name();
@@ -81,7 +81,7 @@ impl ParamId {
             }
         }
     }
-    
+
     fn flags(&self) -> ParamInfoFlags {
         let flags = ParamInfoFlags::IS_AUTOMATABLE;
         flags
@@ -122,8 +122,8 @@ impl Storage {
         self.0[param_id].store(value.to_bits(), Ordering::SeqCst);
     }
 
-/*    pub fn set_param_normalized(&self, param_id: ParamId, value: f32) {
-        self.set_param(param_id, param_id.denormalize(value as _) as _);
-    }
-*/
+    /*    pub fn set_param_normalized(&self, param_id: ParamId, value: f32) {
+            self.set_param(param_id, param_id.denormalize(value as _) as _);
+        }
+    */
 }

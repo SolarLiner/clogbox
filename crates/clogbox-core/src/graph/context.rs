@@ -49,7 +49,10 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Ok(buf)
     }
 
-    pub fn get_control_input(&self, input: In) -> Result<StorageBorrow<&ControlBuffer>, ModuleError> {
+    pub fn get_control_input(
+        &self,
+        input: In,
+    ) -> Result<StorageBorrow<&ControlBuffer>, ModuleError> {
         let Some(events) = self
             .get_input(input)
             .and_then(|r| r.map(|s| s.to_control_events()).transpose())
@@ -114,7 +117,10 @@ impl<T, In: Slots, Out: Slots> GraphContextImpl<'_, T, In, Out> {
         Ok(events)
     }
 
-    pub fn get_note_output(&self, output: Out) -> Result<StorageBorrow<&mut NoteBuffer>, ModuleError> {
+    pub fn get_note_output(
+        &self,
+        output: Out,
+    ) -> Result<StorageBorrow<&mut NoteBuffer>, ModuleError> {
         let Some(events) = self
             .get_output(output)
             .and_then(|m| m.map(|s| s.to_note_events()).transpose())

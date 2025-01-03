@@ -1,12 +1,12 @@
 use crate::graph::context::GraphContext;
 use crate::graph::module::{Module, ModuleError, ProcessStatus};
-use clogbox_enum::Mono;
 use crate::math::interpolation::{InterpolateSingle, Linear};
 use ::serde::{Deserializer, Serializer};
-use num_traits::Float;
-use std::collections::VecDeque;
+use clogbox_enum::Mono;
 use generic_array::sequence::GenericSequence;
+use num_traits::Float;
 use numeric_array::NumericArray;
+use std::collections::VecDeque;
 
 #[cfg(feature = "serialize")]
 mod serde {
@@ -51,10 +51,7 @@ impl<T: Float + az::Cast<usize>> Module for FixedAudioDelay<T> {
     type Inputs = Mono;
     type Outputs = Mono;
 
-    fn process(
-        &mut self,
-        graph_context: GraphContext<Self>,
-    ) -> Result<ProcessStatus, ModuleError> {
+    fn process(&mut self, graph_context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
         use clogbox_enum::Mono;
         let input = graph_context.get_audio_input(Mono)?;
         let mut output = graph_context.get_audio_output(Mono)?;

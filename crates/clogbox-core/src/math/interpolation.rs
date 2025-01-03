@@ -7,9 +7,9 @@
 //! The `Interpolation` trait is typically used in scenarios where a linear transformation
 //! or interpolation is needed, such as in mathematical computations, graphics,
 //! or data processing.
+use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::Collection;
 use clogbox_enum::Count;
-use az::{Cast, CastFrom};
 use num_traits::{Float, Num};
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;

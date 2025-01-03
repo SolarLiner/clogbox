@@ -37,7 +37,9 @@ pub enum AddEdgeError {
     #[error("Could not add edge: could not find source port with ID {1:?} on node with ID {0:?}")]
     SrcPortNotFound(NodeID, PortID),
     /// The given destination port was not found in the graph.
-    #[error("Could not add edge: could not find destination port with ID {1:?} on node with ID {0:?}")]
+    #[error(
+        "Could not add edge: could not find destination port with ID {1:?} on node with ID {0:?}"
+    )]
     DstPortNotFound(NodeID, PortID),
     /// The source port and the destination port have different
     /// type indexes.
@@ -67,10 +69,14 @@ pub enum CompileGraphError {
     #[error("Failed to compile audio graph: input data contains an edge {0:?} referring to a non-existing node {1:?}")]
     NodeOnEdgeNotFound(Edge, NodeID),
     /// The input data contained multiple nodes with the same ID.
-    #[error("Failed to compile audio graph: input data contains multiple nodes with the same ID {0:?}")]
+    #[error(
+        "Failed to compile audio graph: input data contains multiple nodes with the same ID {0:?}"
+    )]
     NodeIDNotUnique(NodeID),
     /// The input data contained multiple edges with the same ID.
-    #[error("Failed to compile audio graph: input data contains multiple edges with the same ID {0:?}")]
+    #[error(
+        "Failed to compile audio graph: input data contains multiple edges with the same ID {0:?}"
+    )]
     EdgeIDNotUnique(EdgeID),
     /// The input data contained a port with an out-of-bounds type index.
     #[error("Failed to compile audio graph: input data contains a port {1:?} on node {0:?} with a type index that is out of bounds for a graph with {2} types")]

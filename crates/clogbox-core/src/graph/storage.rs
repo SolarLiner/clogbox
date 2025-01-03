@@ -1,16 +1,14 @@
 use crate::graph::event::EventBuffer;
-use crate::graph::{
-    ControlBuffer, NoteBuffer, Slot, SlotMut, SlotType,
-};
+use crate::graph::{ControlBuffer, NoteBuffer, Slot, SlotMut, SlotType};
 use clogbox_enum::enum_map::EnumMapArray;
 use derive_more::{Deref, DerefMut};
 use num_traits::Zero;
 use std::cell::UnsafeCell;
+use std::fmt;
 use std::fmt::{Formatter, Write};
 use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::fmt;
 
 struct AtomicBitset {
     bits: Vec<AtomicU64>,
@@ -202,12 +200,10 @@ impl<T> StorageBorrow<T> {
             // # Safety
             //
             // `data` is never read from/written to again (self has been move into this method, and
-            // `ManuallyDrop` will ensure that no matter the drop implementation, it just won't 
-            // be called). Rust cannot recognize that this is a valid move, so we force its hand 
+            // `ManuallyDrop` will ensure that no matter the drop implementation, it just won't
+            // be called). Rust cannot recognize that this is a valid move, so we force its hand
             // here.
-            data: f(unsafe {
-                std::ptr::read(&this.data)
-            }),
+            data: f(unsafe { std::ptr::read(&this.data) }),
             slot_type: this.slot_type,
             index: this.index,
             borrow_marker: this.borrow_marker.clone(),

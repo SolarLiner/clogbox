@@ -1,15 +1,15 @@
 //! Input data structures to the audio graph compiler.
 
+use crate::graph::module::RawModule;
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
 use slotmap::{new_key_type, SecondaryMap, SlotMap};
-use crate::graph::module::RawModule;
 
 new_key_type! { pub struct NodeID; pub struct EdgeID; }
 
 pub(crate) type NodeMap<PortType> = SlotMap<NodeID, Node<PortType>>;
 pub(crate) type EdgeMap = SlotMap<EdgeID, Edge>;
-pub(crate) type ModuleMap<T> = SecondaryMap<NodeID, Box<dyn RawModule<Sample=T>>>;
+pub(crate) type ModuleMap<T> = SecondaryMap<NodeID, Box<dyn RawModule<Sample = T>>>;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]

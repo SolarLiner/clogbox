@@ -1,6 +1,4 @@
-use darling::ast::GenericParamExt;
 use darling::{ast, FromDeriveInput, FromField, FromVariant};
-use itertools::Itertools;
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
 use syn::TypeGenerics;
@@ -122,10 +120,13 @@ impl DeriveEnum {
     }
 
     fn count_ty_iter<'a>(variant: &'a [&'a EnumVariant]) -> impl 'a + Iterator<Item = TokenStream> {
-        variant.iter().map(|EnumVariant { fields, .. }| {
-            let EnumField { ty, .. } = &fields.fields[0];
-            quote! { <#ty as ::clogbox_enum::Enum>::Count }
-        }).inspect(|tok| eprintln!("Count Type Item: {tok}"))
+        variant
+            .iter()
+            .map(|EnumVariant { fields, .. }| {
+                let EnumField { ty, .. } = &fields.fields[0];
+                quote! { <#ty as ::clogbox_enum::Enum>::Count }
+            })
+            .inspect(|tok| eprintln!("Count Type Item: {tok}"))
     }
 
     fn count_ty(variant: &[&EnumVariant], unit_count_ty: TokenStream) -> TokenStream {
@@ -258,14 +259,14 @@ mod tests {
 
     fn format_output(from_derive_input: DeriveEnum) -> String {
         let output = from_derive_input.to_token_stream().to_string();
-        let snapshot_contents = match syn::parse_file(&output) {
+
+        match syn::parse_file(&output) {
             Ok(contents) => prettyplease::unparse(&contents),
             Err(err) => {
                 eprintln!("Failed to parse output: {}", err);
                 output
             }
-        };
-        snapshot_contents
+        }
     }
 
     #[test]

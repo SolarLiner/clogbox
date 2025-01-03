@@ -616,12 +616,9 @@ where
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    
+
     fn non_zero() -> impl Strategy<Value = f64> {
-        prop_oneof![
-            (-1e300..-f64::EPSILON),
-            (f64::EPSILON..1e300)
-        ]
+        prop_oneof![(-1e300..-f64::EPSILON), (f64::EPSILON..1e300)]
     }
 
     proptest! {
@@ -639,7 +636,7 @@ mod tests {
             prop_assert!(approx::relative_eq!(recip.recip.recip(), recip.value));
             prop_assert!(approx::relative_eq!(recip.value.signum(), recip.recip.signum()));
         }
- 
+
         #[test]
         fn test_recip_add(a in non_zero(), b in non_zero()) {
             let recip_a = Recip::core_new(a);

@@ -1,5 +1,5 @@
-use clack_plugin::prelude::*;
 use crate::params;
+use clack_plugin::prelude::*;
 
 #[derive(Debug, Clone, Default)]
 pub struct SvfMixerShared {

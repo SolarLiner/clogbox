@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops;
 use std::ops::{Deref, DerefMut};
-use typenum::{Cmp, Equal, IsEqual};
+use typenum::{Cmp, Equal};
 
 /// A trait that represents a collection of items.
 pub trait Collection: Deref<Target = [Self::Item]> {

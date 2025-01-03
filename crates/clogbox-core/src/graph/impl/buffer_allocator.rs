@@ -25,7 +25,6 @@
 ///! consumed, we require consuming `self` to retrieve it.
 use std::rc::Rc;
 
-
 use super::BufferIdx;
 use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
 use clogbox_enum::Enum;

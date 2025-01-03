@@ -1,6 +1,6 @@
 //! This modules allows the user to specify a dependency graph of audio processes, which then get
 //! turned into a processing order to correctly execute the graph dependencies first.
-//! 
+//!
 //! Taken and vendored from <https://github.com/m-hilgendorf/audio-graph>, and modified to suit the
 //! needs of clogbox.
 #![allow(clippy::type_complexity)]
@@ -54,7 +54,7 @@ mod tests {
             }],
             latency: 0.0,
         });
-        
+
         let mut edges = EdgeMap::with_capacity_and_key(1);
         let edge = edges.insert_with_key(|id| Edge {
             id,
@@ -73,14 +73,22 @@ mod tests {
 
         let edge_src_buffer_id = if let ScheduleEntry::Node(scheduled_node) = &schedule.schedule[0]
         {
-            verify_scheduled_node(scheduled_node, &nodes[node1], &[(nodes[node1].inputs[0].id, true)]);
+            verify_scheduled_node(
+                scheduled_node,
+                &nodes[node1],
+                &[(nodes[node1].inputs[0].id, true)],
+            );
             scheduled_node.output_buffers[0].buffer_index
         } else {
             panic!("first entry not a node");
         };
         let edge_dst_buffer_id = if let ScheduleEntry::Node(scheduled_node) = &schedule.schedule[1]
         {
-            verify_scheduled_node(scheduled_node, &nodes[node2], &[(nodes[node2].inputs[0].id, false)]);
+            verify_scheduled_node(
+                scheduled_node,
+                &nodes[node2],
+                &[(nodes[node2].inputs[0].id, false)],
+            );
             scheduled_node.input_buffers[0].buffer_index
         } else {
             panic!("second entry not a node");

@@ -28,8 +28,7 @@ use num_traits::{Float, FloatConst};
 /// let z = freq_to_z(44100.0, 1000.0);
 /// ```
 #[inline]
-pub fn freq_to_z<T: Float + FloatConst>(sample_rate: T, f: T) -> Complex<T>
-{
+pub fn freq_to_z<T: Float + FloatConst>(sample_rate: T, f: T) -> Complex<T> {
     let jw = Complex::new(T::zero(), T::TAU() * f / sample_rate);
     jw.exp()
 }

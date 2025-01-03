@@ -26,7 +26,6 @@
 pub use generic_array;
 pub use typenum;
 
-use generic_array::IntoArrayLength;
 use numeric_array::ArrayLength;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -67,9 +66,9 @@ pub trait Enum: 'static + Copy + Send + Eq + Ord {
     /// that index using this enum. The type must be unsigned and compatible
     /// with compile-time array lengths.
     type Count: Unsigned + ArrayLength;
-    
+
     fn from_usize(value: usize) -> Self;
-    
+
     fn to_usize(self) -> usize;
 
     /// Returns the name of the enum variant as a `Cow<str>`.
@@ -152,7 +151,7 @@ impl Enum for Empty {
     fn from_usize(value: usize) -> Self {
         unreachable!()
     }
-    
+
     fn to_usize(self) -> usize {
         unreachable!()
     }
@@ -177,7 +176,7 @@ impl Enum for Mono {
     fn from_usize(value: usize) -> Self {
         match value {
             0 => Self,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -201,15 +200,15 @@ pub enum Stereo {
 
 impl Enum for Stereo {
     type Count = U2;
-    
+
     fn from_usize(value: usize) -> Self {
         match value {
             0 => Self::Left,
             1 => Self::Right,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
-    
+
     fn to_usize(self) -> usize {
         match self {
             Self::Left => 0,
@@ -370,11 +369,11 @@ where
         let src_b = src % A::Count::USIZE;
         Self(A::from_usize(src_a), B::from_usize(src_b))
     }
-    
+
     fn to_usize(self) -> usize {
         self.0.to_usize() * A::Count::USIZE + self.1.to_usize()
     }
-    
+
     fn name(&self) -> Cow<str> {
         Cow::Owned(format!("{}:{}", self.0.name(), self.1.name()))
     }

@@ -1,7 +1,7 @@
-use std::borrow::Cow;
-use duplicate::duplicate_item;
 use crate::graph::SlotType;
 use clogbox_enum::{Enum, Mono, Stereo};
+use duplicate::duplicate_item;
+use std::borrow::Cow;
 
 /// Trait for types which describe input/output slots in a module.
 pub trait Slots: Enum {
@@ -13,11 +13,11 @@ pub struct EnumSlots<E: Enum, const SLOT_TYPE_IDX: usize>(pub E);
 
 impl<E: Enum, const SLOT_TYPE_IDX: usize> Enum for EnumSlots<E, SLOT_TYPE_IDX> {
     type Count = E::Count;
-    
+
     fn from_usize(value: usize) -> Self {
         Self(E::from_usize(value))
     }
-    
+
     fn to_usize(self) -> usize {
         self.0.to_usize()
     }

@@ -103,15 +103,10 @@ impl PluginAudioProcessorParams for SvfMixerProcessor {
 impl SvfMixerProcessor {
     fn update_from_event(&mut self, event: &UnknownEvent) {
         if let Some(event) = event.as_event::<ParamValueEvent>() {
-            if let Some(param_id) = event
-                .param_id()
-                .into_iter()
-                .find_map(|id| {
-                    let index = id.get() as usize;
-                    (index < count::<params::ParamId>())
-                        .then(|| params::ParamId::from_usize(index))
-                })
-            {
+            if let Some(param_id) = event.param_id().into_iter().find_map(|id| {
+                let index = id.get() as usize;
+                (index < count::<params::ParamId>()).then(|| params::ParamId::from_usize(index))
+            }) {
                 let value = event.value() as _;
                 self.params.set_param(param_id, value);
                 self.smoothers[param_id].set_target(value);

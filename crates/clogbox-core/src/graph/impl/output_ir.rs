@@ -58,7 +58,9 @@ pub struct ScheduledNode<PortType> {
 
 impl<PortType: PartialEq> PartialEq for ScheduledNode<PortType> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.input_buffers == other.input_buffers && self.output_buffers == other.output_buffers
+        self.id == other.id
+            && self.input_buffers == other.input_buffers
+            && self.output_buffers == other.output_buffers
     }
 }
 

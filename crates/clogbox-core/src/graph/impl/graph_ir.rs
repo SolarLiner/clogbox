@@ -124,7 +124,7 @@ impl<PortType: Enum> GraphIR<PortType> {
             }
             let src = &mut adjacent[edge.src_node];
             src.outgoing.push(*edge);
-            
+
             if !adjacent.contains_key(edge.dst_node) {
                 adjacent.insert(edge.dst_node, AdjacentEdges::default());
             }
@@ -244,7 +244,13 @@ impl<PortType: Enum> GraphIR<PortType> {
         node: &Node<PortType>,
         allocator: &mut BufferAllocator<PortType>,
         assignment_table: &mut HashMap<EdgeID, Rc<BufferRef<PortType>>>,
-    ) -> Result<(ScheduledNode<PortType>, impl Iterator<Item = InsertedSum<PortType>>), CompileGraphError> {
+    ) -> Result<
+        (
+            ScheduledNode<PortType>,
+            impl Iterator<Item = InsertedSum<PortType>>,
+        ),
+        CompileGraphError,
+    > {
         // Allocate our output data structures, any summing nodes that need to
         // be inserted, the input buffers, and the output buffers.
         let mut summing_nodes = vec![];
@@ -479,7 +485,10 @@ impl<PortType: Enum> GraphIR<PortType> {
     }
 
     /// List the adjacent nodes along outgoing edges of `n`.
-    pub fn outgoing<'b>(&'b self, n: &'b Node<PortType>) -> impl Iterator<Item = &'b Node<PortType>> + 'b {
+    pub fn outgoing<'b>(
+        &'b self,
+        n: &'b Node<PortType>,
+    ) -> impl Iterator<Item = &'b Node<PortType>> + 'b {
         self.adjacent
             .get(n.id)
             .into_iter()
@@ -488,7 +497,10 @@ impl<PortType: Enum> GraphIR<PortType> {
     }
 
     /// List the adjacent nodes along incoming edges of `n`.
-    pub fn incoming<'b>(&'b self, n: &'b Node<PortType>) -> impl Iterator<Item = &'b Node<PortType>> + 'b {
+    pub fn incoming<'b>(
+        &'b self,
+        n: &'b Node<PortType>,
+    ) -> impl Iterator<Item = &'b Node<PortType>> + 'b {
         self.adjacent
             .get(n.id)
             .into_iter()

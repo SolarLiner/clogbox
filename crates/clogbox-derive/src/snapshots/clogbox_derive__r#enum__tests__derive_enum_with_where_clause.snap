@@ -9,12 +9,12 @@ where
     ::clogbox_enum::typenum::U1: ::std::ops::Add<<T as ::clogbox_enum::Enum>::Count>,
     <::clogbox_enum::typenum::U1 as ::std::ops::Add<
         <T as ::clogbox_enum::Enum>::Count,
-    >>::Output: ::clogbox_enum::generic_array::ArrayLength,
+    >>::Output: ::clogbox_enum::typenum::Unsigned
+        + ::clogbox_enum::generic_array::ArrayLength,
 {
-    type Count = ::clogbox_enum::typenum::operator_aliases::Sum<
-        ::clogbox_enum::typenum::U1,
+    type Count = <::clogbox_enum::typenum::U1 as std::ops::Add<
         <T as ::clogbox_enum::Enum>::Count,
-    >;
+    >>::Output;
     fn from_usize(mut i: usize) -> Self {
         if i
             < <<T as ::clogbox_enum::Enum>::Count as ::clogbox_enum::typenum::Unsigned>::USIZE

@@ -115,9 +115,10 @@ where
 
     fn process(&mut self, graph_context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
         let input = graph_context.get_audio_input(SaturatorInputs::AudioInput)?;
-        let params =
+        let params: EnumMapArray<_, _> =
             EnumMapArray::new(|p| graph_context.get_control_input(SaturatorInputs::Params(p)))
                 .transpose()?;
+        let params = EnumMapArray::new(|p| params[p].data);
         let mut output = graph_context.get_audio_output(Mono)?;
         self.0.saturate_buffer(params.to_ref(), &input, &mut output);
         Ok(ProcessStatus::Running)
@@ -203,6 +204,15 @@ pub const fn asinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
     Memoryless::new(T::asinh)
 }
 
+/// Creates a `Memoryless` instance for the hyperbolic sine function.
+///
+/// # Returns
+///
+/// A `Memoryless` instance that uses the `asinh` function.
+pub const fn sinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
+    Memoryless::new(T::sinh)
+}
+
 /// Creates a `Memoryless` instance that clamps input values between `min` and `max`.
 ///
 /// # Parameters
@@ -240,12 +250,12 @@ where
     type Params = DrivenParams<Sat::Params>;
 
     fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        let amp = Sat::Sample::cast_from(self.params[DrivenParams::Drive]);
+        let amp = self.params[DrivenParams::Drive];
         self.saturator.saturate(amp * value) / amp
     }
 
     fn set_param(&mut self, param: Self::Params, value: f32) {
-        self.params[param] = value;
+        self.params[param] = Sat::Sample::cast_from(value);
     }
 }
 
@@ -272,11 +282,11 @@ where
     type Params = BiasedParams<Sat::Params>;
 
     fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        let bias = Sat::Sample::cast_from(self.params[BiasedParams::Bias]);
+        let bias = self.params[BiasedParams::Bias];
         self.saturator.saturate(value + bias) - bias
     }
 
     fn set_param(&mut self, param: Self::Params, value: f32) {
-        self.params[param] = value;
+        self.params[param] = Sat::Sample::cast_from(value);
     }
 }

@@ -14,7 +14,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 clogbox-core = { path = "../../crates/clogbox-core" }
-clogbox-derive = { path = "../../crates/clogbox-derive" }
-clogbox-graph = { path = "../../crates/clogbox-graph" }
-clogbox-clap = { path = "../../crates/clogbox-clap" }
+clogbox-enum = { path = "../../crates/clogbox-enum" }
 clogbox-filters = { path = "../../crates/clogbox-filters" }
+
+clack-plugin = { git = "https://github.com/prokopyl/clack.git" }
+clack-extensions = { git = "https://github.com/prokopyl/clack.git", features = ["clack-plugin", "audio-ports", "params",
+    "state"] }

@@ -24,6 +24,7 @@
 //! }
 //! ```
 pub use generic_array;
+use generic_array::IntoArrayLength;
 pub use typenum;
 
 use numeric_array::ArrayLength;

@@ -92,8 +92,7 @@ impl DeriveEnum {
     }
 
     fn impl_enum(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
-        let (ty_generics, impl_generics) =
-            self.generics_for_impl(quote! { ::clogbox_enum::Enum });
+        let (ty_generics, impl_generics) = self.generics_for_impl(quote! { ::clogbox_enum::Enum });
         let (unit, variant) = fields
             .iter()
             .partition::<Vec<_>, _>(|field| field.fields.is_empty());
@@ -101,8 +100,8 @@ impl DeriveEnum {
             syn::parse_str::<syn::Type>(&format!("::clogbox_enum::typenum::U{}", unit.len()))
                 .unwrap()
                 .to_token_stream();
-        let count_ty = Self::count_ty(&variant, &unit_count_ty);
-        let where_clause = self.where_clause(variant, unit_count_ty);
+        let count_ty = Self::count_ty(&variant, unit_count_ty.clone());
+        let where_clause = self.where_clause(&variant, unit_count_ty);
 
         let name = Self::impl_name(fields);
         let from_usize = self.impl_from_usize(fields);
@@ -122,38 +121,30 @@ impl DeriveEnum {
         }
     }
 
-    fn count_ty(variant: &Vec<&EnumVariant>, unit_count_ty: &TokenStream) -> TokenStream {
-        if variant.is_empty() {
-            unit_count_ty.clone()
-        } else {
-            let variant_count_ty = variant
-                .iter()
-                .map(|EnumVariant { fields, .. }| {
-                    let EnumField { ty, .. } = &fields.fields[0];
-                    quote! { <#ty as ::clogbox_enum::Enum>::Count }
-                })
-                .reduce(|a, b| {
-                    quote! { ::clogbox_enum::typenum::operator_aliases::Sum<#a,
-                    #b> }
-                })
-                .unwrap();
-            quote! { ::clogbox_enum::typenum::operator_aliases::Sum<#unit_count_ty, #variant_count_ty> }
-        }
+    fn count_ty_iter<'a>(variant: &'a [&'a EnumVariant]) -> impl 'a + Iterator<Item = TokenStream> {
+        variant.iter().map(|EnumVariant { fields, .. }| {
+            let EnumField { ty, .. } = &fields.fields[0];
+            quote! { <#ty as ::clogbox_enum::Enum>::Count }
+        }).inspect(|tok| eprintln!("Count Type Item: {tok}"))
     }
 
-    fn where_clause(&self, variant: Vec<&EnumVariant>, unit_count_ty: TokenStream) -> TokenStream {
+    fn count_ty(variant: &[&EnumVariant], unit_count_ty: TokenStream) -> TokenStream {
+        std::iter::once(unit_count_ty)
+            .chain(Self::count_ty_iter(variant))
+            .reduce(|a, b| {
+                quote! { <#a as std::ops::Add<#b>>::Output }
+            })
+            .unwrap()
+    }
+
+    fn where_clause(&self, variant: &[&EnumVariant], unit_count_ty: TokenStream) -> TokenStream {
         let where_clause = {
             let mut last_variant_input = None;
-            let additional = variant
-                .into_iter()
-                .map(|EnumVariant { fields, .. }| {
-                    let EnumField { ty, .. } = &fields.fields[0];
-                    quote! {
-                        <#ty as ::clogbox_enum::Enum>::Count
-                    }
-                })
+            let additional = Self::count_ty_iter(variant)
                 .scan(quote! { #unit_count_ty }, |acc, ty| {
-                    let ret = quote! { #acc: ::std::ops::Add<#ty> };
+                    let ret = quote! {
+                        #acc: ::std::ops::Add<#ty>
+                    };
                     *acc = quote! { <#acc as ::std::ops::Add<#ty>>::Output };
                     last_variant_input.replace(acc.clone());
                     Some(ret)
@@ -163,8 +154,7 @@ impl DeriveEnum {
             if let Some(where_clause) = where_clause {
                 let punct = (!where_clause.predicates.trailing_punct()).then(|| quote! { , });
                 let last_variant_input = last_variant_input.map(|inp| {
-                    quote! { #inp:
-                    ::clogbox_enum::generic_array::ArrayLength }
+                    quote! { #inp: ::clogbox_enum::typenum::Unsigned + ::clogbox_enum::generic_array::ArrayLength }
                 });
                 quote! {
                     #where_clause #punct
@@ -173,12 +163,11 @@ impl DeriveEnum {
                 }
             } else {
                 let last_variant_input = last_variant_input.map(|inp| {
-                    quote! { #inp:
-                    ::clogbox_enum::generic_array::ArrayLength }
+                    quote! { #inp: ::clogbox_enum::typenum::Unsigned + ::clogbox_enum::generic_array::ArrayLength }
                 });
                 quote! { where
-                             #(#additional,)*
-                             #last_variant_input
+                    #(#additional,)*
+                    #last_variant_input
                 }
             }
         };
@@ -346,6 +335,22 @@ mod tests {
         .expect("Parsing valid code");
         let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         eprintln!("{from_derive_input:#?}");
+        insta::assert_snapshot!(format_output(from_derive_input));
+    }
+
+    #[test]
+    fn test_derive_generic_enum_with_nested() {
+        let input = syn::parse_str(
+            r#"        
+            pub enum MixedEnum<C> {
+                First,
+                Second(Inner),
+                Third(C),
+            }
+            "#,
+        )
+        .expect("Parsing valid code");
+        let from_derive_input = DeriveEnum::from_derive_input(&input).expect("Parsing valid code");
         insta::assert_snapshot!(format_output(from_derive_input));
     }
 }

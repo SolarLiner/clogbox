@@ -23,7 +23,7 @@ impl<T: Copy + Zero + Num, Interp> InterpSmoother<T, Interp> {
     pub fn new(interp: Interp, samplerate: T, time: T, initial: T, target: T) -> Self {
         Self {
             f: T::zero(),
-            step: time / samplerate,
+            step: samplerate / time,
             initial,
             target,
             time,
@@ -43,7 +43,9 @@ impl<T: Copy + Float + az::Cast<usize>, Interp: InterpolateSingle<T>> Smoother<T
             let x = self
                 .interp
                 .interpolate_single(NumericArray::from_slice(&[T::zero(), T::one()]), self.f);
-            Linear.interpolate_single(NumericArray::from_slice(&[self.initial, self.target]), x)
+            let out = Linear.interpolate_single(NumericArray::from_slice(&[self.initial, self.target]), x);
+            self.f = T::clamp(self.f + self.step, T::zero(), T::one());
+            out
         }
     }
 

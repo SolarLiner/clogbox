@@ -3,23 +3,19 @@
 //! Downloaded from <https://www.discodsp.net/VAFilterDesign_2.1.2.pdf>
 //! All references in this module, unless specified otherwise, are taken from this book.
 
-use crate::svf::SvfOutput::{Bandpass, Highpass};
 use crate::{Linear, Saturator};
 use az::{Cast, CastFrom};
 use clogbox_core::graph::context::GraphContext;
 use clogbox_core::graph::module::{Module, ModuleError, ProcessStatus};
 use clogbox_core::graph::slots::Slots;
 use clogbox_core::graph::SlotType;
-use clogbox_core::smoothers::{ExpSmoother, LinearSmoother, Smoother};
+use clogbox_core::smoothers::{ExpSmoother, Smoother};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{enum_iter, Enum, Mono};
-use num_complex::Complex;
+use clogbox_enum::{Enum, Mono};
 use num_traits::{Float, FloatConst, Num, Zero};
-use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
 use std::ops;
-use typenum::Unsigned;
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
@@ -34,11 +30,23 @@ pub enum SvfParams {
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum SvfInput<SatParams> {
     /// Audio input for the SVF.
-    #[r#enum(display = "Audio Input")]
     AudioInput,
-    /// SVF Parameters
-    Params(SvfParams),
+    // SVF Parameters repeated because of a limitation of the enum derive macro
+    /// Cutoff frequency (Hz)
+    Cutoff,
+    /// Resonance
+    Resonance,
+    /// Inner saturator parameters
     SaturatorParams(SatParams),
+}
+
+impl<SatParams> From<SvfParams> for SvfInput<SatParams> {
+    fn from(value: SvfParams) -> Self {
+        match value {
+            SvfParams::Cutoff => Self::Cutoff,
+            SvfParams::Resonance => Self::Resonance,
+        }
+    }
 }
 
 impl<SatParams> Slots for SvfInput<SatParams>
@@ -48,8 +56,8 @@ where
     fn slot_type(&self) -> SlotType {
         match self {
             Self::AudioInput => SlotType::Audio,
-            Self::Params(_) => SlotType::Control,
             Self::SaturatorParams(_) => SlotType::Control,
+            _ => SlotType::Control, // SVF Parameters
         }
     }
 }
@@ -197,7 +205,7 @@ where
         let mut buf_bp = graph_context.get_audio_output(SvfOutput::Bandpass)?;
         let mut buf_hp = graph_context.get_audio_output(SvfOutput::Highpass)?;
         let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| graph_context.get_control_input(SvfInput::Params(p)))
+            EnumMapArray::new(|p: SvfParams| graph_context.get_control_input(p.into()))
                 .transpose()?;
         let sat_params: EnumMapArray<_, _> =
             EnumMapArray::new(|p| graph_context.get_control_input(SvfInput::SaturatorParams(p)))
@@ -248,7 +256,7 @@ impl<
         let s2 = lp + v2;
 
         self.s = [s1, s2];
-        (hp, bp, lp)
+        (lp, bp, hp)
     }
 
     pub fn set_param(&mut self, param: SvfParams, value: f32) {

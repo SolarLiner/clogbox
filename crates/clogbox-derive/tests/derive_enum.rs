@@ -18,9 +18,16 @@ enum Outer {
 }
 
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Enum)]
-enum GenericEnum<T> {
+enum GenericEnumFirst<T> {
     First(T),
     Second,
+}
+
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
+pub enum MixedEnum<C> {
+    First,
+    Second(Inner),
+    Third(C),
 }
 
 #[test]
@@ -73,7 +80,7 @@ fn test_complex_enum_from_usize() {
 
 #[test]
 fn test_complex_enum_iter() {
-    let expected_names = enum_iter::<GenericEnum<Inner>>()
+    let expected_names = enum_iter::<GenericEnumFirst<Inner>>()
         .map(|e| e.name().to_string())
         .collect::<Vec<_>>();
     insta::assert_csv_snapshot!(expected_names);
@@ -81,20 +88,20 @@ fn test_complex_enum_iter() {
 
 #[test]
 fn test_generic_enum_from_usize() {
-    let actual_with_inner = [0, 1, 2, 3, 4].map(GenericEnum::<Inner>::from_usize);
+    let actual_with_inner = [0, 1, 2, 3, 4].map(GenericEnumFirst::<Inner>::from_usize);
     let expected_with_inner = [
-        GenericEnum::First(Inner::A),
-        GenericEnum::First(Inner::B),
-        GenericEnum::First(Inner::C),
-        GenericEnum::First(Inner::D),
-        GenericEnum::Second,
+        GenericEnumFirst::First(Inner::A),
+        GenericEnumFirst::First(Inner::B),
+        GenericEnumFirst::First(Inner::C),
+        GenericEnumFirst::First(Inner::D),
+        GenericEnumFirst::Second,
     ];
     assert_eq!(expected_with_inner, actual_with_inner);
 }
 
 #[test]
 fn test_generic_enum_iter() {
-    let expected_names = enum_iter::<GenericEnum<Inner>>()
+    let expected_names = enum_iter::<GenericEnumFirst<Inner>>()
         .map(|e| e.name().to_string())
         .collect::<Vec<_>>();
     insta::assert_csv_snapshot!(expected_names);

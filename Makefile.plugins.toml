@@ -1,0 +1,48 @@
+extend = "./Makefile.crates.toml"
+
+[env]
+FS_PROFILE = { source = "${CARGO_MAKE_CARGO_PROFILE}", default_value = "${CARGO_MAKE_CARGO_PROFILE}", mapping = { "dev" = "debug" } }
+TARGET_DIR = "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}/${FS_PROFILE}"
+LIB_FILE = "${TARGET_DIR}/${LIBPREFIX}${CARGO_MAKE_CRATE_FS_NAME}.${LIBSUFFIX}"
+CLAP_FILE = "${TARGET_DIR}/${CARGO_MAKE_CRATE_FS_NAME}.clap"
+
+[env.CLAP_DIR]
+source = "${CARGO_MAKE_RUST_TARGET_OS}"
+mapping = { "linux" = "~/.clap/", "macos" = "~/Library/Plug-Ins/CLAP", "windows" = "${LOCALAPPDATA}/Programs/Common/CLAP/" }
+
+[env.LIBPREFIX]
+source = "${CARGO_MAKE_RUST_TARGET_OS}"
+default_value = "lib"
+mapping = { "windows" = "" }
+
+[env.LIBSUFFIX]
+source = "${CARGO_MAKE_RUST_TARGET_OS}"
+default_value = "unknown"
+mapping = { "linux" = "so", "macos" = "dylib", "windows" = "dll", "openbsd" = "so" }
+
+[tasks.build-debug]
+description = "Runs the rust compiler."
+category = "Build"
+install_crate = false
+toolchain = "${CARGO_MAKE_RUST_DEFAULT_TOOLCHAIN}"
+command = "cargo"
+args = [
+    "build",
+    "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
+    "@@split(CARGO_MAKE_CARGO_BUILD_TEST_FLAGS, )",
+]
+
+[tasks.build]
+clear = true
+run_task = [
+    { name = "build-debug", condition = { env = { "CARGO_MAKE_CARGO_PROFILE" = "dev" } } },
+    { name = "build-release" }
+]
+
+[tasks.post-build]
+command = "python"
+args = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts/create_clap_bundle.py",
+    "${LIB_FILE}",
+    "--id", "dev.solarliner.clogbox.${CARGO_MAKE_CRATE_NAME}",
+    "--name", "${CARGO_MAKE_CRATE_NAME}",
+    "--version", "${CARGO_MAKE_CRATE_VERSION}"]

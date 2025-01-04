@@ -9,7 +9,7 @@ use clogbox_core::graph::context::GraphContext;
 use clogbox_core::graph::module::{Module, ModuleError, ProcessStatus};
 use clogbox_core::graph::slots::Slots;
 use clogbox_core::graph::SlotType;
-use clogbox_core::smoothers::{ExpSmoother, Smoother};
+use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{Enum, Mono};
 use num_traits::{Float, FloatConst, Num, Zero};

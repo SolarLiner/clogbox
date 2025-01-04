@@ -1,4 +1,4 @@
-use crate::math::interpolation::{InterpolateSingle, Linear};
+use clogbox_math::interpolation::{InterpolateSingle, Linear};
 use num_traits::{Float, Num, NumAssign, NumOps, One, Zero};
 use numeric_array::NumericArray;
 

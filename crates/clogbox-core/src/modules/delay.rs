@@ -1,6 +1,6 @@
 use crate::graph::context::GraphContext;
 use crate::graph::module::{Module, ModuleError, ProcessStatus};
-use crate::math::interpolation::{InterpolateSingle, Linear};
+use clogbox_math::interpolation::{InterpolateSingle, Linear};
 use ::serde::{Deserializer, Serializer};
 use clogbox_enum::Mono;
 use generic_array::sequence::GenericSequence;

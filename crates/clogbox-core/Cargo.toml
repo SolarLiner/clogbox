@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 clogbox-enum.workspace = true
+clogbox-math.workspace = true
 
 az.workspace = true
 derive_more = { workspace = true, features = ["debug", "deref", "deref_mut"] }

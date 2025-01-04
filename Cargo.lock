@@ -127,6 +127,7 @@ dependencies = [
  "az",
  "bincode",
  "clogbox-enum",
+ "clogbox-math",
  "derive_more",
  "duplicate",
  "generic-array 1.1.0",
@@ -174,6 +175,7 @@ dependencies = [
  "az",
  "clogbox-core",
  "clogbox-enum",
+ "clogbox-params",
  "generic-array 1.1.0",
  "num-complex",
  "num-traits",
@@ -197,6 +199,16 @@ dependencies = [
  "numeric_literals",
  "proptest",
  "typenum",
+]
+
+[[package]]
+name = "clogbox-params"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "clogbox-math",
+ "num-traits",
+ "numeric-array",
 ]
 
 [[package]]
@@ -805,9 +817,10 @@ version = "0.1.0"
 dependencies = [
  "clack-extensions",
  "clack-plugin",
- "clogbox-core",
  "clogbox-enum",
  "clogbox-filters",
+ "clogbox-math",
+ "clogbox-params",
 ]
 
 [[package]]

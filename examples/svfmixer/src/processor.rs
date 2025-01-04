@@ -4,12 +4,12 @@ use clack_plugin::events::event_types::ParamValueEvent;
 use clack_plugin::host::HostAudioProcessorHandle;
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
-use clogbox_core::math::interpolation;
-use clogbox_core::smoothers::{LinearSmoother, Smoother};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum};
 use clogbox_filters::svf::Svf;
 use clogbox_filters::{sinh, SimpleSaturator};
+use clogbox_math::interpolation;
+use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use std::array;
 
 pub struct SvfMixerProcessor {

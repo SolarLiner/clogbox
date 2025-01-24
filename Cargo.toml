@@ -13,7 +13,6 @@ repository = "https://github.com/SolarLiner/clogbox"
 keywords = ["virtual-analog", "audio", "plugin", "va-modeling", "dsp"]
 
 [workspace.dependencies]
-clogbox-core = { path = "crates/clogbox-core" }
 clogbox-derive = { path = "crates/clogbox-derive" }
 clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
@@ -59,6 +58,3 @@ clack-extensions = { git = "https://github.com/prokopyl/clack.git" }
 #homepage.workspace = true
 #repository.workspace = true
 #keywords.workspace = true
-#
-#[dependencies]
-#clogbox-core = { path = "crates/clogbox-core" }

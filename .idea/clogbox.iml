@@ -17,6 +17,7 @@
       <sourceFolder url="file://$MODULE_DIR$/examples/svfmixer/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-enum/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-params/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-schedule/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

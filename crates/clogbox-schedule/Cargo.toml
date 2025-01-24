@@ -1,0 +1,25 @@
+[package]
+name = "clogbox-schedule"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-enum = { workspace = true, features = ["derive"] }
+clogbox-graph.workspace = true
+clogbox-math.workspace = true
+
+az.workspace = true
+derive_more = { version = "1.0.0", features = ["deref", "deref_mut"] }
+num-traits.workspace = true
+numeric-array.workspace = true
+slotmap = "1.0.7"
+smallvec = { version = "1.13.2", features = ["const_new"] }
+
+[features]
+std = []

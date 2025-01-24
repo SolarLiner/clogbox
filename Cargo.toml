@@ -17,6 +17,7 @@ clogbox-clap = { path = "crates/clogbox-clap" }
 clogbox-derive = { path = "crates/clogbox-derive" }
 clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
+clogbox-graph = { path = "crates/clogbox-graph" }
 clogbox-math = { path = "crates/clogbox-math" }
 clogbox-params = { path = "crates/clogbox-params" }
 

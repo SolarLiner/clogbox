@@ -21,7 +21,7 @@ impl<T: Float + az::Cast<usize>> AudioDelay<T> {
         self.buffer.push_back(sample);
         ret
     }
-    
+
     pub(crate) fn process_buffer(&mut self, input: &[T], output: &mut [T]) {
         for (i, o) in input.iter().copied().zip(output.iter_mut()) {
             *o = self.process_sample(i);
@@ -61,11 +61,7 @@ impl<T: Copy + PartialOrd> EventDelay<T> {
         input: &EventBuffer<T>,
         output: &mut EventBuffer<T>,
     ) -> Result<(), BufferOverflow> {
-        for event in self
-            .staging
-            .iter_events()
-            .take_while(|t| t.sample < buffer_length)
-        {
+        for event in self.staging.iter_events().take_while(|t| t.sample < buffer_length) {
             let Ok(()) = output.push(event.sample, *event.value) else {
                 return Err(BufferOverflow);
             };

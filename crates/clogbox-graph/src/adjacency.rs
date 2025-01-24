@@ -87,21 +87,11 @@ impl SecondaryGraph for AdjacencyList {
 
 impl FromGraph for AdjacencyList {
     fn from_graph(graph: &impl Graph) -> Self {
-        let incoming = SecondaryMap::from_iter(
-            graph
-                .nodes()
-                .map(|node| (node, graph.incoming(node).collect())),
-        );
-        let outgoing = SecondaryMap::from_iter(
-            graph
-                .nodes()
-                .map(|node| (node, graph.outgoing(node).collect())),
-        );
+        let incoming = SecondaryMap::from_iter(graph.nodes().map(|node| (node, graph.incoming(node).collect())));
+        let outgoing = SecondaryMap::from_iter(graph.nodes().map(|node| (node, graph.outgoing(node).collect())));
         Self {
             nodes: SecondaryMap::from_iter(graph.nodes().map(|n| (n, ()))),
-            edges: SecondaryMap::from_iter(
-                graph.edges().map(|id| (id, graph.get_edge(id).unwrap())),
-            ),
+            edges: SecondaryMap::from_iter(graph.edges().map(|id| (id, graph.get_edge(id).unwrap()))),
             incoming,
             outgoing,
         }

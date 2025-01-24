@@ -2,7 +2,7 @@ use crate::{EdgeId, NodeId};
 use slotmap::SecondaryMap;
 use std::ops;
 
-/// Type of data associated with a graph. Use this alongside a graph to store arbitrary data in 
+/// Type of data associated with a graph. Use this alongside a graph to store arbitrary data in
 /// a map.
 #[derive(Debug)]
 pub struct GraphData<N, E> {
@@ -57,49 +57,49 @@ impl<N, E> GraphData<N, E> {
 
     /// Add a new data for this particular node. Returns the previously stored data, if there was
     /// one.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `id`: Node ID
     /// * `value`: Value to insert
-    /// 
+    ///
     pub fn add_node(&mut self, id: NodeId, value: N) -> Option<N> {
         self.nodes.insert(id, value)
     }
-    
+
     /// Retrieve the data for the given node, if it exists.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `id`: Node ID
-    /// 
+    ///
     pub fn get_node(&self, id: NodeId) -> Option<&N> {
         self.nodes.get(id)
     }
 
     /// Add a new data for this edge. Returns the previously stored data, if there was one.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `id`: Edge ID
     /// * `value`: Value to insert.
-    /// 
+    ///
     pub fn add_edge(&mut self, id: EdgeId, value: E) -> Option<E> {
         self.edges.insert(id, value)
     }
-    
+
     /// Retrieve the data for the given edge, if it exists.
-    /// 
-    /// # Arguments 
-    /// 
+    ///
+    /// # Arguments
+    ///
     /// * `id`: Edge ID
-    /// 
-    /// returns: Option<&E> 
-    /// 
-    /// # Examples 
-    /// 
+    ///
+    /// returns: Option<&E>
+    ///
+    /// # Examples
+    ///
     /// ```
-    /// 
+    ///
     /// ```
     pub fn get_edge(&self, id: EdgeId) -> Option<&E> {
         self.edges.get(id)

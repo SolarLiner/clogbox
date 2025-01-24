@@ -57,7 +57,7 @@ use std::collections::HashMap;
 /// graph.add_edge(b, d);
 ///
 /// let edge_weight = |edge| 1.0; // Assume all edges have a weight of 1.0.
-/// 
+///
 /// let expected_distances = SecondaryMap::from_iter([
 ///     (a, 0.0),
 ///     (b, 1.0),
@@ -158,10 +158,7 @@ pub fn bellman_ford(
 ///     }
 /// }
 /// ```
-pub fn floyd_warshall(
-    graph: &impl Graph,
-    edge_weight: impl Fn(EdgeId) -> f32,
-) -> HashMap<(NodeId, NodeId), f32> {
+pub fn floyd_warshall(graph: &impl Graph, edge_weight: impl Fn(EdgeId) -> f32) -> HashMap<(NodeId, NodeId), f32> {
     let adj = AdjacencyList::from_graph(graph);
     let mut distances = HashMap::from_iter(
         adj.edges()

@@ -18,9 +18,7 @@ pub struct SvfMixerProcessor {
     dsp: [Svf<SimpleSaturator<f32>>; 2],
 }
 
-impl PluginAudioProcessor<'_, shared::SvfMixerShared, main_thread::SvfMixerMainThread>
-    for SvfMixerProcessor
-{
+impl PluginAudioProcessor<'_, shared::SvfMixerShared, main_thread::SvfMixerMainThread> for SvfMixerProcessor {
     fn activate(
         host: HostAudioProcessorHandle<'_>,
         main_thread: &mut main_thread::SvfMixerMainThread,
@@ -46,35 +44,25 @@ impl PluginAudioProcessor<'_, shared::SvfMixerShared, main_thread::SvfMixerMainT
             )
             .with_saturator(sinh())
         });
-        Ok(Self {
-            params,
-            smoothers,
-            dsp,
-        })
+        Ok(Self { params, smoothers, dsp })
     }
 
-    fn process(
-        &mut self,
-        process: Process,
-        mut audio: Audio,
-        events: Events,
-    ) -> Result<ProcessStatus, PluginError> {
+    fn process(&mut self, process: Process, mut audio: Audio, events: Events) -> Result<ProcessStatus, PluginError> {
         use params::ParamId::*;
         let buffer_size = audio.frames_count() as usize;
         let mut port_pair = audio
             .port_pair(0)
             .ok_or(PluginError::Message("Audio port configuration incorrect"))?;
         let mut channels = port_pair.channels()?;
-        let channels = channels.as_f32_mut().ok_or(PluginError::Message(
-            "Cannot process: float data unavailable",
-        ))?;
+        let channels = channels
+            .as_f32_mut()
+            .ok_or(PluginError::Message("Cannot process: float data unavailable"))?;
 
         for batch in events.input.batch() {
             for event in batch.events() {
                 self.update_from_event(event);
             }
-            let range =
-                batch.first_sample()..batch.next_batch_first_sample().unwrap_or(buffer_size);
+            let range = batch.first_sample()..batch.next_batch_first_sample().unwrap_or(buffer_size);
             for i in range {
                 for (mut channel_pair, svf) in channels.iter_mut().zip(&mut self.dsp) {
                     svf.set_resonance_no_update(self.smoothers[Resonance].next_value());
@@ -92,12 +80,7 @@ impl PluginAudioProcessor<'_, shared::SvfMixerShared, main_thread::SvfMixerMainT
 }
 
 impl PluginAudioProcessorParams for SvfMixerProcessor {
-    fn flush(
-        &mut self,
-        input_parameter_changes: &InputEvents,
-        output_parameter_changes: &mut OutputEvents,
-    ) {
-    }
+    fn flush(&mut self, input_parameter_changes: &InputEvents, output_parameter_changes: &mut OutputEvents) {}
 }
 
 impl SvfMixerProcessor {

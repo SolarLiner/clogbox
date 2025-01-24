@@ -1,10 +1,10 @@
 use crate::module::{RawModule, SocketType};
+use crate::ScheduleSerialized;
 use clogbox_enum::enum_iter;
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_graph::{EdgeId, GraphBase, NodeId, OwnedGraph};
 use slotmap::SecondaryMap;
 use std::collections::HashSet;
-use crate::ScheduleSerialized;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Node {
@@ -128,8 +128,12 @@ impl<T> ScheduleBuilder<T> {
 
         Ok(self.graph.add_edge(input, module_input.id))
     }
-    
-    pub fn connect_output(&mut self, Output(output): Output, module_output: OutputConnection) -> Result<EdgeId, ConnectionTypeMismatch> {
+
+    pub fn connect_output(
+        &mut self,
+        Output(output): Output,
+        module_output: OutputConnection,
+    ) -> Result<EdgeId, ConnectionTypeMismatch> {
         if !self.outputs[module_output.conn_type].contains(&output) {
             let output_type = [SocketType::Audio, SocketType::Param, SocketType::Note]
                 .into_iter()
@@ -140,10 +144,10 @@ impl<T> ScheduleBuilder<T> {
                 output_type,
             });
         }
-        
+
         Ok(self.graph.add_edge(output, module_output.id))
     }
-    
+
     pub fn compile(&self) -> Result<ScheduleSerialized<T>, ()> {
         todo!()
     }

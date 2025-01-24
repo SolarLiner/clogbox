@@ -113,16 +113,11 @@ impl<T: Float + CastFrom<f64> + Cast<usize>> InterpolateSingle<T> for Cubic {
     }
 
     #[replace_float_literals(T::cast_from(literal))]
-    fn interpolate_single(
-        &self,
-        p: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>,
-        x: T,
-    ) -> T {
+    fn interpolate_single(&self, p: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>, x: T) -> T {
         p[1] + x
             * 0.5
             * (p[2] - p[0]
-                + x * (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3]
-                    + x * (3.0 * (p[1] - p[2]) + p[3] - p[0])))
+                + x * (2.0 * p[0] - 5.0 * p[1] + 4.0 * p[2] - p[3] + x * (3.0 * (p[1] - p[2]) + p[3] - p[0])))
     }
 }
 

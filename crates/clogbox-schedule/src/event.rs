@@ -133,9 +133,7 @@ impl<T: PartialOrd> EventBuffer<T> {
     ///
     /// * `timestamp`: Timestamp to check
     pub fn has_event(&self, timestamp: usize) -> bool {
-        self.data
-            .binary_search_by_key(&timestamp, |t| t.sample)
-            .is_ok()
+        self.data.binary_search_by_key(&timestamp, |t| t.sample).is_ok()
     }
 
     /// Returns the event at the given timestamp, if any.
@@ -159,7 +157,7 @@ pub struct OrderedTimestampCombinator<I: Iterator, J: Iterator<Item = I::Item>> 
 }
 
 impl<T: Ord, I: Iterator<Item = Timestamped<T>>, J: Iterator<Item = I::Item>> Iterator
-for OrderedTimestampCombinator<I, J>
+    for OrderedTimestampCombinator<I, J>
 {
     type Item = I::Item;
 

@@ -19,7 +19,7 @@ pub(crate) fn audio<T: Copy + Zero + ops::AddAssign + az::Cast<usize>>(
 }
 
 pub(crate) fn events<T: Copy + PartialOrd>(
-    inputs: impl SharedStorage<Value=EventBuffer<T>>,
+    inputs: impl SharedStorage<Value = EventBuffer<T>>,
     output: &mut EventBuffer<T>,
 ) -> Result<(), BufferOverflow> {
     output.clear();

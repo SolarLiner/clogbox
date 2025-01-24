@@ -1,5 +1,5 @@
-use crate::ParamBuffer;
 use crate::storage::StorageBorrow;
+use crate::ParamBuffer;
 
 pub trait ParamStorage {
     fn get_param_buffer_in(&self, index: usize) -> StorageBorrow<&ParamBuffer>;

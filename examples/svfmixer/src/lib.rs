@@ -26,9 +26,7 @@ impl DefaultPluginFactory for SvfMixer {
         _: HostMainThreadHandle<'a>,
         shared: &'a Self::Shared<'a>,
     ) -> Result<Self::MainThread<'a>, PluginError> {
-        Ok(main_thread::SvfMixerMainThread {
-            shared: shared.clone(),
-        })
+        Ok(main_thread::SvfMixerMainThread { shared: shared.clone() })
     }
 }
 

@@ -89,13 +89,17 @@ pub trait SharedStorage {
     fn len(&self) -> usize;
     fn get(&self, index: usize) -> StorageBorrow<&Self::Value>;
     fn get_mut(&self, index: usize) -> StorageBorrow<&mut Self::Value>;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<'a, S: ?Sized + SharedStorage> SharedStorage for &'a S {
     type Value = S::Value;
-    
-    fn len(&self) -> usize { (**self).len() }
+
+    fn len(&self) -> usize {
+        (**self).len()
+    }
 
     fn get(&self, index: usize) -> StorageBorrow<&Self::Value> {
         (**self).get(index)
@@ -146,7 +150,7 @@ impl<T: ?Sized> Storage<T> {
 
 impl<T> SharedStorage for Storage<[T]> {
     type Value = [T];
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }
@@ -162,11 +166,11 @@ impl<T> SharedStorage for Storage<[T]> {
 
 impl SharedStorage for Storage<ParamBuffer> {
     type Value = ParamBuffer;
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }
-    
+
     fn get(&self, index: usize) -> StorageBorrow<&ParamBuffer> {
         self.get_buffer(index)
     }
@@ -178,7 +182,7 @@ impl SharedStorage for Storage<ParamBuffer> {
 
 impl SharedStorage for Storage<NoteBuffer> {
     type Value = NoteBuffer;
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }

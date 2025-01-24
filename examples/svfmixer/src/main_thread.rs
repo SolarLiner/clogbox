@@ -1,8 +1,6 @@
 use crate::params::ParamId;
 use crate::shared;
-use clack_extensions::audio_ports::{
-    AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, PluginAudioPortsImpl,
-};
+use clack_extensions::audio_ports::{AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, PluginAudioPortsImpl};
 use clack_extensions::params::{ParamDisplayWriter, ParamInfoWriter, PluginMainThreadParams};
 use clack_extensions::state::PluginStateImpl;
 use clack_plugin::prelude::*;
@@ -39,12 +37,7 @@ impl PluginMainThreadParams for SvfMixerMainThread {
         Some(self.shared.params.get_param_normalized(id))
     }
 
-    fn value_to_text(
-        &mut self,
-        param_id: ClapId,
-        value: f64,
-        writer: &mut ParamDisplayWriter,
-    ) -> std::fmt::Result {
+    fn value_to_text(&mut self, param_id: ClapId, value: f64, writer: &mut ParamDisplayWriter) -> std::fmt::Result {
         let index = param_id.get() as usize;
         if index >= count::<ParamId>() {
             return Ok(());
@@ -63,12 +56,7 @@ impl PluginMainThreadParams for SvfMixerMainThread {
         Some(id.clamp_value(value))
     }
 
-    fn flush(
-        &mut self,
-        input_parameter_changes: &InputEvents,
-        output_parameter_changes: &mut OutputEvents,
-    ) {
-    }
+    fn flush(&mut self, input_parameter_changes: &InputEvents, output_parameter_changes: &mut OutputEvents) {}
 }
 
 impl PluginMainThread<'_, shared::SvfMixerShared> for SvfMixerMainThread {}
@@ -83,11 +71,7 @@ impl PluginAudioPortsImpl for SvfMixerMainThread {
             return;
         }
 
-        let name = if is_input {
-            b"Input" as &[u8]
-        } else {
-            b"Output"
-        };
+        let name = if is_input { b"Input" as &[u8] } else { b"Output" };
         let flags = AudioPortFlags::IS_MAIN;
         writer.set(&AudioPortInfo {
             id: ClapId::new(index as _),

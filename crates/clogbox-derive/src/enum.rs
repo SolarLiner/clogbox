@@ -49,7 +49,7 @@ impl DeriveEnum {
                     ident.span(),
                     "Cannot derive Enum for enum with variants having more than 1 field",
                 )
-                    .into_compile_error(),
+                .into_compile_error(),
             });
         quote! {
             fn from_usize(mut i: usize) -> Self {
@@ -91,13 +91,10 @@ impl DeriveEnum {
 
     fn impl_enum(&self, ident: &syn::Ident, fields: &[EnumVariant]) -> TokenStream {
         let (ty_generics, impl_generics) = self.generics_for_impl(quote! { ::clogbox_enum::Enum });
-        let (unit, variant) = fields
-            .iter()
-            .partition::<Vec<_>, _>(|field| field.fields.is_empty());
-        let unit_count_ty =
-            syn::parse_str::<syn::Type>(&format!("::clogbox_enum::typenum::U{}", unit.len()))
-                .unwrap()
-                .to_token_stream();
+        let (unit, variant) = fields.iter().partition::<Vec<_>, _>(|field| field.fields.is_empty());
+        let unit_count_ty = syn::parse_str::<syn::Type>(&format!("::clogbox_enum::typenum::U{}", unit.len()))
+            .unwrap()
+            .to_token_stream();
         let count_ty = Self::count_ty(&variant, unit_count_ty.clone());
         let where_clause = self.where_clause(&variant, unit_count_ty);
 
@@ -176,28 +173,37 @@ impl DeriveEnum {
     }
 
     fn impl_name(fields: &[EnumVariant]) -> TokenStream {
-        let arms = fields.iter().map(|EnumVariant { ident, name, fields, prefix }| {
-            let name = name
-                .clone()
-                .unwrap_or_else(|| ident.to_string());
-            match fields.len() {
-                0 => quote! { Self::#ident => ::std::borrow::Cow::from(#name) },
-                1 => {
-                    let borrow = if let Some(prefix) = prefix {
-                        let format_string = format!("{prefix} {{}}");
-                        quote! { ::std::borrow::Cow::Owned(format!(#format_string, inner.name())) }
-                    } else {
-                        quote! { inner.name() }
-                    };
-                    quote! {
-                        Self::#ident(inner) => {
-                            #borrow
+        let arms = fields.iter().map(
+            |EnumVariant {
+                 ident,
+                 name,
+                 fields,
+                 prefix,
+             }| {
+                let name = name.clone().unwrap_or_else(|| ident.to_string());
+                match fields.len() {
+                    0 => quote! { Self::#ident => ::std::borrow::Cow::from(#name) },
+                    1 => {
+                        let borrow = if let Some(prefix) = prefix {
+                            let format_string = format!("{prefix} {{}}");
+                            quote! { ::std::borrow::Cow::Owned(format!(#format_string, inner.name())) }
+                        } else {
+                            quote! { inner.name() }
+                        };
+                        quote! {
+                            Self::#ident(inner) => {
+                                #borrow
+                            }
                         }
                     }
+                    _ => syn::Error::new(
+                        ident.span(),
+                        "Cannot derive Enum for enum with variants having more than 1 field",
+                    )
+                    .into_compile_error(),
                 }
-                _ => syn::Error::new(ident.span(), "Cannot derive Enum for enum with variants having more than 1 field").into_compile_error(),
-            }
-        });
+            },
+        );
 
         let name = quote! {
             fn name(&self) -> ::std::borrow::Cow<str> {
@@ -211,15 +217,12 @@ impl DeriveEnum {
 
     fn generics_for_impl(&self, bound: TokenStream) -> (TypeGenerics, TokenStream) {
         let (_, ty_generics, _) = self.generics.split_for_impl();
-        let generics = self
-            .generics
-            .type_params()
-            .map(|syn::TypeParam { ident, .. }| {
-                quote! {
-                    #ident:
-                    #bound
-                }
-            });
+        let generics = self.generics.type_params().map(|syn::TypeParam { ident, .. }| {
+            quote! {
+                #ident:
+                #bound
+            }
+        });
         let generics = self
             .generics
             .lifetimes()
@@ -241,10 +244,7 @@ impl quote::ToTokens for DeriveEnum {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let Self { ident, data, .. } = self;
         let ast::Data::Enum(fields) = data else {
-            tokens.extend(
-                syn::Error::new(ident.span(), "Cannot derive Enum for non enum types")
-                    .to_compile_error(),
-            );
+            tokens.extend(syn::Error::new(ident.span(), "Cannot derive Enum for non enum types").to_compile_error());
             return;
         };
 

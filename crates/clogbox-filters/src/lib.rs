@@ -50,11 +50,7 @@ pub trait Saturator {
         for (i, buf) in buffer.iter_mut().enumerate() {
             if let Some((param, ev)) = params
                 .iter()
-                .filter_map(|(param, buf)| {
-                    buf.next_event(i)
-                        .filter(|ev| ev.sample == i)
-                        .map(|ev| (param, ev))
-                })
+                .filter_map(|(param, buf)| buf.next_event(i).filter(|ev| ev.sample == i).map(|ev| (param, ev)))
                 .min_by_key(|(_, ev)| ev.sample)
             {
                 self.set_param(param, *ev.value);
@@ -116,8 +112,7 @@ where
     fn process(&mut self, graph_context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
         let input = graph_context.get_audio_input(SaturatorInputs::AudioInput)?;
         let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| graph_context.get_control_input(SaturatorInputs::Params(p)))
-                .transpose()?;
+            EnumMapArray::new(|p| graph_context.get_control_input(SaturatorInputs::Params(p))).transpose()?;
         let params = EnumMapArray::new(|p| params[p].data);
         let mut output = graph_context.get_audio_output(Mono)?;
         self.0.saturate_buffer(params.to_ref(), &input, &mut output);

@@ -5,9 +5,9 @@
 
 use crate::{Linear, Saturator};
 use az::{Cast, CastFrom};
-use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{Enum, Mono};
+use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use num_traits::{Float, FloatConst, Num, Zero};
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
@@ -185,9 +185,7 @@ impl<Sat: Saturator<Sample: Float + CastFrom<f64>>> Svf<Sat> {
     }
 }
 
-impl<
-        Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>,
-    > Module for Svf<Mode>
+impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>> Module for Svf<Mode>
 where
     SvfInput<Mode::Params>: Slots,
 {
@@ -201,11 +199,9 @@ where
         let mut buf_bp = graph_context.get_audio_output(SvfOutput::Bandpass)?;
         let mut buf_hp = graph_context.get_audio_output(SvfOutput::Highpass)?;
         let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p: SvfParams| graph_context.get_control_input(p.into()))
-                .transpose()?;
+            EnumMapArray::new(|p: SvfParams| graph_context.get_control_input(p.into())).transpose()?;
         let sat_params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| graph_context.get_control_input(SvfInput::SaturatorParams(p)))
-                .transpose()?;
+            EnumMapArray::new(|p| graph_context.get_control_input(SvfInput::SaturatorParams(p))).transpose()?;
 
         for i in 0..graph_context.stream_data().block_size {
             params
@@ -227,10 +223,7 @@ where
     }
 }
 
-impl<
-        Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>,
-    > Svf<Mode>
-{
+impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>> Svf<Mode> {
     /// Process the next sample of this filter, with the given input sample.
     ///
     /// The output samples are `(LP, BP, HP)`
@@ -303,10 +296,7 @@ pub enum FilterType {
 impl FilterType {
     /// Computes the mixing coefficients for the filter type based on the provided amplitude.
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn mix_coefficients<T: ops::Neg<Output = T> + ops::Sub<Output = T> + CastFrom<f64>>(
-        &self,
-        amp: T,
-    ) -> [T; 4] {
+    pub fn mix_coefficients<T: ops::Neg<Output = T> + ops::Sub<Output = T> + CastFrom<f64>>(&self, amp: T) -> [T; 4] {
         let g = amp - 1.0;
         match self {
             Self::Bypass => [1.0, 0.0, 0.0, 0.0],
@@ -354,8 +344,7 @@ pub struct SvfMixer<T> {
     __sample: PhantomData<T>,
 }
 
-impl<T: 'static + Copy + Send + Zero + Num + ops::Neg<Output = T> + CastFrom<f64>> Module
-    for SvfMixer<T>
+impl<T: 'static + Copy + Send + Zero + Num + ops::Neg<Output = T> + CastFrom<f64>> Module for SvfMixer<T>
 where
     ExpSmoother<T>: Smoother<T>,
 {
@@ -367,11 +356,9 @@ where
         use SvfMixerInput::*;
         use SvfMixerParams::*;
 
-        let inputs: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| context.get_audio_input(p)).transpose()?;
+        let inputs: EnumMapArray<_, _> = EnumMapArray::new(|p| context.get_audio_input(p)).transpose()?;
         let mut output = context.get_audio_output(Mono)?;
-        let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| context.get_control_input(Params(p))).transpose()?;
+        let params: EnumMapArray<_, _> = EnumMapArray::new(|p| context.get_control_input(Params(p))).transpose()?;
 
         for i in 0..context.stream_data().block_size {
             for (p, value) in params

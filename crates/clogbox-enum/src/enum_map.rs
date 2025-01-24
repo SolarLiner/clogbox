@@ -9,6 +9,7 @@
 //! values of type `V` indexed by enum keys of type `K`. This module also
 //! includes iterators and utility methods for working with such maps.
 
+use std::hash::{Hash, Hasher};
 use crate::{count, Enum};
 use numeric_array::generic_array::{GenericArray, IntoArrayLength};
 use numeric_array::ArrayLength;
@@ -191,6 +192,12 @@ pub type EnumMapMut<'a, E, T> = EnumMap<E, &'a mut [T]>;
 pub struct EnumMap<E, D> {
     pub(crate) data: D,
     pub(crate) __enum: PhantomData<E>, // <!> This needs to stay PhantomData for the unsafe blocks below!
+}
+
+impl<E, D: Hash> Hash for EnumMap<E, D> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.data.hash(state);
+    }
 }
 
 impl<E, D: Clone> Clone for EnumMap<E, D> {

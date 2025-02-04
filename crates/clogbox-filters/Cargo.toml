@@ -12,6 +12,7 @@ keywords.workspace = true
 [dependencies]
 clogbox-enum.workspace = true
 clogbox-params.workspace = true
+clogbox-schedule.workspace = true
 
 az.workspace = true
 generic-array.workspace = true

@@ -1,3 +1,5 @@
+mod compile;
+
 use crate::module::{RawModule, SocketType};
 use clogbox_enum::enum_iter;
 use clogbox_enum::enum_map::EnumMapArray;

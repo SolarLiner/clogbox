@@ -69,17 +69,33 @@ impl AtomicBitset {
 
 /// Represents a borrowed reference to storage, along with metadata for managing borrowing.
 ///
-/// [`StorageBorrow`] is a wrapper around a data reference, which is used in conjunction with
+/// [`SRef`] is a wrapper around a data reference, which is used in conjunction with
+/// an [`AtomicBitset`] to manage and track borrowing state.
+///
+/// # Generic Parameters
+///
+/// - `T`: The type of the borrowed data (e.g. `&[f32]`).
+#[derive(Debug, Deref)]
+pub struct SRef<'a, T: ?Sized> {
+    #[deref]
+    pub data: &'a T,
+    pub(crate) index: usize,
+    pub(crate) borrow_marker: AtomicBitset,
+}
+
+/// Represents a borrowed reference to storage, along with metadata for managing borrowing.
+///
+/// [`SRef`] is a wrapper around a data reference, which is used in conjunction with
 /// an [`AtomicBitset`] to manage and track borrowing state.
 ///
 /// # Generic Parameters
 ///
 /// - `T`: The type of the borrowed data (e.g. `&[f32]`).
 #[derive(Debug, Deref, DerefMut)]
-pub struct StorageBorrow<T> {
+pub struct SMut<'a, T: ?Sized> {
     #[deref]
     #[deref_mut]
-    pub data: T,
+    pub data: &'a mut T,
     pub(crate) index: usize,
     pub(crate) borrow_marker: AtomicBitset,
 }
@@ -87,21 +103,25 @@ pub struct StorageBorrow<T> {
 pub trait SharedStorage {
     type Value: ?Sized;
     fn len(&self) -> usize;
-    fn get(&self, index: usize) -> StorageBorrow<&Self::Value>;
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut Self::Value>;
-    fn is_empty(&self) -> bool { self.len() == 0 }
+    fn get(&self, index: usize) -> SRef<Self::Value>;
+    fn get_mut(&self, index: usize) -> SMut<Self::Value>;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<'a, S: ?Sized + SharedStorage> SharedStorage for &'a S {
     type Value = S::Value;
-    
-    fn len(&self) -> usize { (**self).len() }
 
-    fn get(&self, index: usize) -> StorageBorrow<&Self::Value> {
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    fn get(&self, index: usize) -> SRef<Self::Value> {
         (**self).get(index)
     }
 
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut Self::Value> {
+    fn get_mut(&self, index: usize) -> SMut<Self::Value> {
         (**self).get_mut(index)
     }
 }
@@ -146,54 +166,54 @@ impl<T: ?Sized> Storage<T> {
 
 impl<T> SharedStorage for Storage<[T]> {
     type Value = [T];
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }
 
-    fn get(&self, index: usize) -> StorageBorrow<&[T]> {
+    fn get(&self, index: usize) -> SRef<Self::Value> {
         self.get_buffer(index)
     }
 
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut [T]> {
+    fn get_mut(&self, index: usize) -> SMut<Self::Value> {
         self.get_buffer_mut(index)
     }
 }
 
 impl SharedStorage for Storage<ParamBuffer> {
     type Value = ParamBuffer;
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }
-    
-    fn get(&self, index: usize) -> StorageBorrow<&ParamBuffer> {
+
+    fn get(&self, index: usize) -> SRef<Self::Value> {
         self.get_buffer(index)
     }
 
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut ParamBuffer> {
+    fn get_mut(&self, index: usize) -> SMut<Self::Value> {
         self.get_buffer_mut(index)
     }
 }
 
 impl SharedStorage for Storage<NoteBuffer> {
     type Value = NoteBuffer;
-    
+
     fn len(&self) -> usize {
         self.buffers.len()
     }
 
-    fn get(&self, index: usize) -> StorageBorrow<&NoteBuffer> {
+    fn get(&self, index: usize) -> SRef<Self::Value> {
         self.get_buffer(index)
     }
 
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut NoteBuffer> {
+    fn get_mut(&self, index: usize) -> SMut<Self::Value> {
         self.get_buffer_mut(index)
     }
 }
 
 impl<T: ?Sized> Storage<T> {
-    fn get_buffer(&self, index: usize) -> StorageBorrow<&T> {
+    fn get_buffer(&self, index: usize) -> SRef<T> {
         assert!(index < self.buffers.len());
         assert!(
             !self.borrow_marker_mut.get(index),
@@ -204,14 +224,14 @@ impl<T: ?Sized> Storage<T> {
         let ptr = self.buffers[index].get();
         let slice = unsafe { &**ptr };
 
-        StorageBorrow {
+        SRef {
             data: slice,
             borrow_marker: self.borrow_marker.clone(),
             index,
         }
     }
 
-    fn get_buffer_mut(&self, index: usize) -> StorageBorrow<&mut T> {
+    fn get_buffer_mut(&self, index: usize) -> SMut<T> {
         assert!(index < self.buffers.len());
         assert!(
             !self.borrow_marker_mut.get(index),
@@ -223,7 +243,7 @@ impl<T: ?Sized> Storage<T> {
         let ptr = self.buffers[index].get();
         let slice = unsafe { &mut **ptr };
 
-        StorageBorrow {
+        SMut {
             data: slice,
             borrow_marker: self.borrow_marker.clone(),
             index,
@@ -243,12 +263,12 @@ impl<S: SharedStorage> SharedStorage for MappedStorage<'_, S> {
         self.storage.len()
     }
 
-    fn get(&self, index: usize) -> StorageBorrow<&Self::Value> {
+    fn get(&self, index: usize) -> SRef<Self::Value> {
         let index = self.index_map[index];
         self.storage.get(index)
     }
 
-    fn get_mut(&self, index: usize) -> StorageBorrow<&mut Self::Value> {
+    fn get_mut(&self, index: usize) -> SMut<Self::Value> {
         let index = self.index_map[index];
         self.storage.get_mut(index)
     }

@@ -2,7 +2,7 @@
 pub mod path;
 pub mod traversal;
 
-use crate::{AdjacencyList, FromGraph, Graph, NodeId};
+use crate::{AdjacencyList, Edge, EdgeId, FromGraph, Graph, NodeId};
 use slotmap::SecondaryMap;
 
 pub use path::*;
@@ -54,7 +54,7 @@ pub fn has_cycle(graph: &impl Graph) -> bool {
 /// This algorithm does not necessarily find the optimal (minimum number of colors)
 /// solution. Instead, it uses a simple greedy strategy and assigns the smallest possible
 /// color to each node based on the colors of its neighbors.
-pub fn coloring(graph: &impl Graph) -> SecondaryMap<NodeId, usize> {
+pub fn color_nodes(graph: &impl Graph) -> SecondaryMap<NodeId, usize> {
     let mut out = SecondaryMap::new();
     let adj = AdjacencyList::from_graph(graph);
     let min_color = |out: &SecondaryMap<NodeId, usize>, node| {
@@ -65,6 +65,43 @@ pub fn coloring(graph: &impl Graph) -> SecondaryMap<NodeId, usize> {
     };
     for node in graph.nodes() {
         out.insert(node, min_color(&out, node));
+    }
+    out
+}
+
+/// Assigns a color to each edge in the graph such that no two edges incident on the same node share the same color.
+///
+/// This function implements a greedy edge coloring algorithm for assigning colors (represented as integers)
+/// to the edges of a graph. The algorithm ensures that all edges incident on the same node are assigned different colors.
+///
+/// # Arguments
+///
+/// - `graph`: A reference to a graph implementing the [`Graph`] trait.
+///
+/// # Returns
+///
+/// A [`SecondaryMap<EdgeId, usize>`] where:
+/// - The keys are the edge IDs.
+/// - The values are the assigned colors (as [`usize`] integers).
+///
+/// # Notes
+///
+/// - This algorithm does not necessarily compute the optimal (minimum number of colors) edge coloring.
+///   Instead, it focuses on a fast and simple assignment.
+/// - The result is dependent on the order of edges visited during the iteration.
+pub fn color_edges(graph: &impl Graph) -> SecondaryMap<EdgeId, usize> {
+    let mut out = SecondaryMap::new();
+    let adj = AdjacencyList::from_graph(graph);
+    let min_color = |out: &SecondaryMap<EdgeId, usize>, edge| {
+        let Edge { from, to } = adj.edges[edge];
+        adj.incoming(from)
+            .chain(adj.outgoing(to))
+            .filter_map(|e| out.get(e).copied())
+            .min()
+            .unwrap_or(0)
+    };
+    for edge in graph.edges() {
+        out.insert(edge, min_color(&out, edge));
     }
     out
 }

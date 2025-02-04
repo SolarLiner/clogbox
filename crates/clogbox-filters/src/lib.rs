@@ -61,10 +61,34 @@ pub trait Saturator {
     }
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SaturatorInputs<P> {
-    AudioInput,
-    Params(P),
+impl<S: Saturator> Saturator for &mut S {
+    type Sample = S::Sample;
+    type Params = S::Params;
+
+    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
+        (**self).saturate(value)
+    }
+
+    fn set_param(&mut self, param: Self::Params, value: f32) {
+        (**self).set_param(param, value)
+    }
+
+    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample])
+    where
+        Self::Sample: Copy,
+    {
+        (**self).saturate_buffer_in_place(buffer)
+    }
+
+    fn saturate_buffer(
+        &mut self,
+        input: &[Self::Sample],
+        output: &mut [Self::Sample],
+    ) where
+        Self::Sample: Copy,
+    {
+        (**self).saturate_buffer(input, output)
+    }
 }
 
 /// A "no-op" saturator. This saturator does not modify the input signal.

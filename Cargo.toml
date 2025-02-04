@@ -20,22 +20,19 @@ clogbox-filters = { path = "crates/clogbox-filters" }
 clogbox-graph = { path = "crates/clogbox-graph" }
 clogbox-math = { path = "crates/clogbox-math" }
 clogbox-params = { path = "crates/clogbox-params" }
+clogbox-schedule = { path = "crates/clogbox-schedule" }
 
 az = "1.2.1"
 derive_more = "1.0.0"
 generic-array = "1.1.0"
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git" }
-nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 num-complex = "0.4.6"
 num-traits = "0.2.18"
 numeric-array = "0.6.1"
 numeric_literals = "0.2.0"
-nalgebra = "0.33.0"
 profiling = "1.0.15"
 slotmap = "1.0.7"
 thiserror = "2.0.3"
 typenum = "1.17.0"
-typenum-consts = "0.1.5"
 
 # Dev dependencies
 approx = "0.5.1"

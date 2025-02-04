@@ -14,34 +14,20 @@ use std::ops;
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
-pub enum SvfParams {
-    /// Cutoff frequency (Hz)
-    Cutoff,
-    /// Resonance
-    Resonance,
-}
-
-/// Represents the different inputs for the SVF (state variable filter).
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SvfInput<SatParams> {
-    /// Audio input for the SVF.
-    AudioInput,
-    // SVF Parameters repeated because of a limitation of the enum derive macro
+pub enum SvfParams<SatParams> {
     /// Cutoff frequency (Hz)
     Cutoff,
     /// Resonance
     Resonance,
     /// Inner saturator parameters
-    SaturatorParams(SatParams),
+    Saturator(SatParams),
 }
 
-impl<SatParams> From<SvfParams> for SvfInput<SatParams> {
-    fn from(value: SvfParams) -> Self {
-        match value {
-            SvfParams::Cutoff => Self::Cutoff,
-            SvfParams::Resonance => Self::Resonance,
-        }
-    }
+/// Represents the different inputs for the SVF (state variable filter).
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
+pub enum SvfInput {
+    /// Audio input for the SVF.
+    AudioInput,
 }
 
 /// Represents the output types of a State Variable Filter (SVF).
@@ -194,15 +180,12 @@ impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastF
         })
     }
 
-    pub fn set_param(&mut self, param: SvfParams, value: f32) {
+    pub fn set_param(&mut self, param: SvfParams<Mode::Params>, value: f32) {
         match param {
             SvfParams::Cutoff => self.set_cutoff(Mode::Sample::cast_from(value as _)),
             SvfParams::Resonance => self.set_resonance(Mode::Sample::cast_from(value as _)),
+            SvfParams::Saturator(s) => self.saturator.set_param(s, value),
         }
-    }
-
-    pub fn set_saturator_param(&mut self, param: Mode::Params, value: f32) {
-        self.saturator.set_param(param, value);
     }
 }
 

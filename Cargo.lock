@@ -163,6 +163,7 @@ dependencies = [
  "az",
  "clogbox-enum",
  "clogbox-params",
+ "clogbox-schedule",
  "generic-array 1.1.0",
  "num-complex",
  "num-traits",

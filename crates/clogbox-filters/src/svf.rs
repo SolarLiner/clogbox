@@ -6,8 +6,10 @@
 use crate::{Linear, Saturator};
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{Enum, Mono};
+use clogbox_enum::{count, Enum, Mono};
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
+use clogbox_schedule::module::{ExecutionContext, ProcessStatus, RawModule, SocketCount, SocketType, Sockets};
+use clogbox_schedule::storage::SharedStorage;
 use num_traits::{Float, FloatConst, Num, Zero};
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
@@ -15,47 +17,13 @@ use std::ops;
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
-pub enum SvfParams {
+pub enum SvfParams<SatParams> {
     /// Cutoff frequency (Hz)
     Cutoff,
     /// Resonance
     Resonance,
-}
-
-/// Represents the different inputs for the SVF (state variable filter).
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SvfInput<SatParams> {
-    /// Audio input for the SVF.
-    AudioInput,
-    // SVF Parameters repeated because of a limitation of the enum derive macro
-    /// Cutoff frequency (Hz)
-    Cutoff,
-    /// Resonance
-    Resonance,
-    /// Inner saturator parameters
-    SaturatorParams(SatParams),
-}
-
-impl<SatParams> From<SvfParams> for SvfInput<SatParams> {
-    fn from(value: SvfParams) -> Self {
-        match value {
-            SvfParams::Cutoff => Self::Cutoff,
-            SvfParams::Resonance => Self::Resonance,
-        }
-    }
-}
-
-impl<SatParams> Slots for SvfInput<SatParams>
-where
-    Self: Enum,
-{
-    fn slot_type(&self) -> SlotType {
-        match self {
-            Self::AudioInput => SlotType::Audio,
-            Self::SaturatorParams(_) => SlotType::Control,
-            _ => SlotType::Control, // SVF Parameters
-        }
-    }
+    /// Saturator parameter
+    Saturator(SatParams),
 }
 
 /// Represents the output types of a State Variable Filter (SVF).
@@ -67,12 +35,6 @@ pub enum SvfOutput {
     Bandpass,
     /// Highpass filter output.
     Highpass,
-}
-
-impl Slots for SvfOutput {
-    fn slot_type(&self) -> SlotType {
-        SlotType::Audio
-    }
 }
 
 /// SVF topology filter, with optional non-linearities.
@@ -185,41 +147,50 @@ impl<Sat: Saturator<Sample: Float + CastFrom<f64>>> Svf<Sat> {
     }
 }
 
-impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>> Module for Svf<Mode>
+impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastFrom<f64> + Float>> RawModule
+    for Svf<Mode>
 where
-    SvfInput<Mode::Params>: Slots,
+    SvfParams<Mode::Params>: Enum,
 {
-    type Sample = Mode::Sample;
-    type Inputs = SvfInput<Mode::Params>;
-    type Outputs = SvfOutput;
+    type Scalar = Mode::Sample;
 
-    fn process(&mut self, graph_context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
-        let input = graph_context.get_audio_input(SvfInput::AudioInput)?;
-        let mut buf_lp = graph_context.get_audio_output(SvfOutput::Lowpass)?;
-        let mut buf_bp = graph_context.get_audio_output(SvfOutput::Bandpass)?;
-        let mut buf_hp = graph_context.get_audio_output(SvfOutput::Highpass)?;
+    fn sockets(&self) -> Sockets {
+        Sockets {
+            inputs: SocketCount::new(|t| match t {
+                SocketType::Audio => 2,
+                SocketType::Param => count::<SvfParams<Mode::Params>>(),
+                SocketType::Note => 0,
+            }),
+            outputs: SocketCount::new(|t| match t {
+                SocketType::Audio => count::<SvfOutput>(),
+                SocketType::Param => 0,
+                SocketType::Note => 0,
+            }),
+        }
+    }
+
+    fn process(&mut self, ctx: &ExecutionContext<Self::Scalar>) -> ProcessStatus {
+        let input = ctx.audio_storage.get(0);
+        let mut buf_lp = ctx.audio_storage.get_mut(0);
+        let mut buf_bp = ctx.audio_storage.get_mut(1);
+        let mut buf_hp = ctx.audio_storage.get_mut(2);
+
         let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p: SvfParams| graph_context.get_control_input(p.into())).transpose()?;
-        let sat_params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| graph_context.get_control_input(SvfInput::SaturatorParams(p))).transpose()?;
+            EnumMapArray::new(|p: SvfParams<Mode::Params>| ctx.param_storage.get(p.to_usize()));
 
-        for i in 0..graph_context.stream_data().block_size {
+        for i in 0..ctx.stream_data.buffer_size {
             params
                 .iter()
                 .filter_map(|(p, buf)| buf.event_at(i).copied().map(|ev| (p, ev)))
                 .for_each(|(p, value)| {
                     self.set_param(p, value);
                 });
-            sat_params
-                .iter()
-                .filter_map(|(p, buf)| buf.event_at(i).copied().map(|ev| (p, ev)))
-                .for_each(|(p, value)| self.set_saturator_param(p, value));
             let (lp, bp, hp) = self.next_sample(input[i]);
             buf_lp[i] = lp;
             buf_bp[i] = bp;
             buf_hp[i] = hp;
         }
-        Ok(ProcessStatus::Tail(2))
+        ProcessStatus::Continue
     }
 }
 
@@ -248,15 +219,12 @@ impl<Mode: 'static + Send + Saturator<Sample: 'static + Send + Cast<f64> + CastF
         (lp, bp, hp)
     }
 
-    pub fn set_param(&mut self, param: SvfParams, value: f32) {
+    pub fn set_param(&mut self, param: SvfParams<Mode::Params>, value: f32) {
         match param {
             SvfParams::Cutoff => self.set_cutoff(Mode::Sample::cast_from(value as _)),
             SvfParams::Resonance => self.set_resonance(Mode::Sample::cast_from(value as _)),
+            SvfParams::Saturator(s) => self.saturator.set_param(s, value),
         }
-    }
-
-    pub fn set_saturator_param(&mut self, param: Mode::Params, value: f32) {
-        self.saturator.set_param(param, value);
     }
 }
 
@@ -327,15 +295,6 @@ pub enum SvfMixerInput {
     Params(SvfMixerParams),
 }
 
-impl Slots for SvfMixerInput {
-    fn slot_type(&self) -> SlotType {
-        match self {
-            Self::AudioInput | Self::SvfOutput(_) => SlotType::Audio,
-            Self::Params(_) => SlotType::Control,
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct SvfMixer<T> {
     filter_type: FilterType,
@@ -344,23 +303,36 @@ pub struct SvfMixer<T> {
     __sample: PhantomData<T>,
 }
 
-impl<T: 'static + Copy + Send + Zero + Num + ops::Neg<Output = T> + CastFrom<f64>> Module for SvfMixer<T>
+impl<T: 'static + Copy + Send + Zero + Num + ops::Neg<Output = T> + CastFrom<f64>> RawModule for SvfMixer<T>
 where
     ExpSmoother<T>: Smoother<T>,
 {
-    type Sample = T;
-    type Inputs = SvfMixerInput;
-    type Outputs = Mono;
+    type Scalar = T;
 
-    fn process(&mut self, context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
+    fn sockets(&self) -> Sockets {
+        Sockets {
+            inputs: SocketCount::new(|t| match t {
+                SocketType::Audio => 1,
+                SocketType::Param => count::<SvfMixerParams>(),
+                SocketType::Note => 0,
+            }),
+            outputs: SocketCount::new(|t| match t {
+                SocketType::Audio => 1,
+                SocketType::Param => 0,
+                SocketType::Note => 0,
+            }),
+        }
+    }
+
+    fn process(&mut self, context: &ExecutionContext<T>) -> ProcessStatus {
         use SvfMixerInput::*;
         use SvfMixerParams::*;
 
-        let inputs: EnumMapArray<_, _> = EnumMapArray::new(|p| context.get_audio_input(p)).transpose()?;
-        let mut output = context.get_audio_output(Mono)?;
-        let params: EnumMapArray<_, _> = EnumMapArray::new(|p| context.get_control_input(Params(p))).transpose()?;
+        let inputs: EnumMapArray<_, _> = EnumMapArray::new(|p: SvfMixerInput| context.audio_storage.get(p.to_usize()));
+        let mut output = context.audio_storage.get_mut(0);
+        let params: EnumMapArray<_, _> = EnumMapArray::new(|p: SvfMixerParams| context.param_storage.get(p.to_usize()));
 
-        for i in 0..context.stream_data().block_size {
+        for i in 0..context.stream_data.buffer_size {
             for (p, value) in params
                 .iter()
                 .filter_map(|(p, buf)| buf.event_at(i).copied().map(|ev| (p, ev)))
@@ -389,6 +361,6 @@ where
                 .map(|(x, k)| x * k)
                 .fold(T::zero(), ops::Add::add);
         }
-        Ok(ProcessStatus::Running)
+        ProcessStatus::Continue
     }
 }

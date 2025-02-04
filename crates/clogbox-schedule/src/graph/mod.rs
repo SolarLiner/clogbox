@@ -1,3 +1,5 @@
+mod compile;
+
 use crate::module::{RawModule, SocketType};
 use crate::ScheduleSerialized;
 use clogbox_enum::enum_iter;

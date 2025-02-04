@@ -43,5 +43,5 @@ pub trait RawModule {
 
     fn sockets(&self) -> Sockets;
 
-    fn process(&self, ctx: &ExecutionContext<Self::Scalar>) -> ProcessStatus;
+    fn process(&mut self, ctx: &ExecutionContext<Self::Scalar>) -> ProcessStatus;
 }

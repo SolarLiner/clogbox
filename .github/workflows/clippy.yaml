@@ -22,7 +22,7 @@ jobs:
             target/
           key: ${{ matrix.name }}-${{ matrix.cross-target }}
       - name: Set up Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
       - name: Run clippy
         uses: clechasseur/rs-clippy-check@v3
         with:

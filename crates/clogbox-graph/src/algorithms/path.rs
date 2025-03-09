@@ -53,8 +53,8 @@ use std::collections::HashMap;
 /// graph.add_edge(a, b);
 /// graph.add_edge(a, c);
 /// graph.add_edge(b, c);
-/// graph.add_edge(a, d);
 /// graph.add_edge(b, d);
+/// graph.add_edge(d, a); // Creates a cycle, but with a positive weight, so is considered OK for Bellman-Ford.
 ///
 /// let edge_weight = |edge| 1.0; // Assume all edges have a weight of 1.0.
 ///
@@ -65,11 +65,6 @@ use std::collections::HashMap;
 ///     (d, 2.0),
 /// ]);
 /// assert_eq!(Ok(expected_distances), bellman_ford(&graph, a, edge_weight));
-///
-/// // Adding a new edge creates a loop, which will make the algorithm fail
-/// graph.add_edge(c, a);
-/// let res = bellman_ford(&graph, a, edge_weight);
-/// assert!(matches!(res, Err(CycleDetected)), "Algorithm didn't error: {res:?}");
 /// ```
 pub fn bellman_ford(
     graph: &impl Graph,

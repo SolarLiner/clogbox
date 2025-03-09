@@ -9,6 +9,7 @@
 //! or data processing.
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::Collection;
+use clogbox_enum::generic_array::sequence::GenericSequence;
 use num_traits::{Float, Num};
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;
@@ -51,12 +52,15 @@ pub trait InterpolateSingle<T> {
 
 impl<T: Float, I: InterpolateSingle<T>> Interpolation<T> for I {
     fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T {
-        let min = self.offset_index(index).floor().to_usize().unwrap();
-        let max = values
-            .len()
-            .min(min + <<I as InterpolateSingle<T>>::Count as IntoArrayLength>::ArrayLength::USIZE);
-        let array = NumericArray::from_slice(&values[min..max]);
-        self.interpolate_single(array, index.fract())
+        let min = self.offset_index(index);
+        let array = NumericArray::generate(|i| {
+            let Some(i) = T::from(i) else {
+                return values[min.to_usize().unwrap_or(0)];
+            };
+            let i = (min + i).clamp(T::zero(), T::from(values.len() - 1).unwrap_or(T::zero()));
+            values[i.to_usize().unwrap_or(0)]
+        });
+        self.interpolate_single(&array, index.fract())
     }
 }
 
@@ -97,7 +101,7 @@ impl<T: Copy + Float + Cast<usize>> InterpolateSingle<T> for Linear {
 /// use clogbox_math::interpolation::Interpolation;
 /// use clogbox_math::interpolation::Cubic;
 ///
-/// let values = vec![0.0, 1.0, 4.0, 9.0];
+/// let values = vec![0f32, 1.0, 4.0, 9.0, 9.0];
 /// let index = 1.5;
 ///
 /// // Cubic interpolation
@@ -167,10 +171,10 @@ mod tests {
 
         // When index is slightly before the start
         let result = cubic.interpolate(&values, -0.5);
-        assert_abs_diff_eq!(result, 0.0);
+        assert_abs_diff_eq!(result, -0.1875);
 
         // When index is slightly after the end
         let result = cubic.interpolate(&values, 3.5);
-        assert_abs_diff_eq!(result, 9.0);
+        assert_abs_diff_eq!(result, 9.3125);
     }
 }

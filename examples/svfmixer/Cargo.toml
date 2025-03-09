@@ -13,10 +13,8 @@ keywords.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+clogbox-clap.workspace = true
 clogbox-enum.workspace = true
 clogbox-filters.workspace = true
 clogbox-math.workspace = true
 clogbox-params.workspace = true
-
-clack-plugin.workspace = true
-clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }

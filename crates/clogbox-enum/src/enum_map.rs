@@ -238,10 +238,7 @@ impl<E: Enum, D: IntoIterator> IntoIterator for EnumMap<E, D> {
     type IntoIter = Map<Enumerate<D::IntoIter>, fn((usize, D::Item)) -> (E, D::Item)>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.data
-            .into_iter()
-            .enumerate()
-            .map(|(i, v)| (E::from_usize(i), v))
+        self.data.into_iter().enumerate().map(|(i, v)| (E::from_usize(i), v))
     }
 }
 
@@ -481,11 +478,7 @@ impl<E, D: CollectionMut> EnumMap<E, D> {
 impl<E: Enum, D: Collection + FromIterator<D::Item>> FromIterator<D::Item> for EnumMap<E, D> {
     fn from_iter<T: IntoIterator<Item = D::Item>>(iter: T) -> Self {
         let data = D::from_iter(iter);
-        assert_eq!(
-            data.len(),
-            count::<E>(),
-            "Invalid number of elements for EnumMap"
-        );
+        assert_eq!(data.len(), count::<E>(), "Invalid number of elements for EnumMap");
         Self {
             data,
             __enum: PhantomData,
@@ -638,10 +631,7 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
     /// Blue: 3
     /// ```
     pub fn iter(&self) -> impl Iterator<Item = (E, &D::Item)> {
-        self.data
-            .iter()
-            .enumerate()
-            .map(|(i, v)| (E::from_usize(i), v))
+        self.data.iter().enumerate().map(|(i, v)| (E::from_usize(i), v))
     }
 
     pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T>
@@ -701,10 +691,7 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
     /// Blue: 13
     /// ```
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (E, &mut D::Item)> {
-        self.data
-            .iter_mut()
-            .enumerate()
-            .map(|(i, v)| (E::from_usize(i), v))
+        self.data.iter_mut().enumerate().map(|(i, v)| (E::from_usize(i), v))
     }
 
     pub fn items_as_deref_mut(&mut self) -> EnumMapArray<E, &mut <D::Item as Deref>::Target>
@@ -722,16 +709,10 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
     }
 }
 
-impl<
-        E: Enum,
-        T,
-        Err,
-        C: IntoIterator<Item = <C as Collection>::Item> + Collection<Item = Result<T, Err>>,
-    > EnumMap<E, C>
+impl<E: Enum, T, Err, C: IntoIterator<Item = <C as Collection>::Item> + Collection<Item = Result<T, Err>>>
+    EnumMap<E, C>
 {
-    pub fn transpose<D: Collection<Item = T> + FromIterator<T>>(
-        self,
-    ) -> Result<EnumMap<E, D>, Err> {
+    pub fn transpose<D: Collection<Item = T> + FromIterator<T>>(self) -> Result<EnumMap<E, D>, Err> {
         let mut data = EnumMapArray::new(|_| MaybeUninit::uninit());
         for (k, v) in self.into_iter() {
             match v {

@@ -1,0 +1,18 @@
+[package]
+name = "clogbox-clap"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-enum.workspace = true
+
+clack-plugin.workspace = true
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }
+
+bincode = "2.0.0"

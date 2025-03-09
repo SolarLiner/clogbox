@@ -57,9 +57,9 @@ pub struct Edge {
 /// ```
 pub trait Graph {
     /// Returns the edge data (source and target node id) for this id, if it exists.
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// - `id`: Edge ID
     fn get_edge(&self, id: EdgeId) -> Option<Edge>;
 
@@ -143,8 +143,7 @@ pub trait Graph {
     ///
     /// Panics if the [`NodeId`] does not exist in the graph.
     fn incoming(&self, node: NodeId) -> impl '_ + Iterator<Item = EdgeId> {
-        self.edges()
-            .filter(move |id| self.get_edge(*id).unwrap().to == node)
+        self.edges().filter(move |id| self.get_edge(*id).unwrap().to == node)
     }
 
     /// Returns an iterator over all outgoing edges for a given node.
@@ -157,8 +156,7 @@ pub trait Graph {
     ///
     /// Panics if the [`NodeId`] does not exist in the graph.
     fn outgoing(&self, node: NodeId) -> impl '_ + Iterator<Item = EdgeId> {
-        self.edges()
-            .filter(move |id| self.get_edge(*id).unwrap().from == node)
+        self.edges().filter(move |id| self.get_edge(*id).unwrap().from == node)
     }
 
     /// Returns an iterator over all unique neighbors of a given node.
@@ -327,8 +325,8 @@ pub trait FromGraph: Sized {
 }
 
 /// Type which wraps both an owning graph type and a secondary graph, to keep them in sync.
-/// 
-/// This is also a way to augment any [`SecondaryGraph`] and make it [`OwnedGraph`]. 
+///
+/// This is also a way to augment any [`SecondaryGraph`] and make it [`OwnedGraph`].
 pub struct Attached<OG, SG> {
     /// Owning graph. All IDs are generated here. This is also the graph used as source of truth in
     /// the [`Graph`] methods.
@@ -349,7 +347,7 @@ impl<OS: Graph, SG> Graph for Attached<OS, SG> {
     fn get_edge(&self, id: EdgeId) -> Option<Edge> {
         self.owning.get_edge(id)
     }
-    
+
     fn nodes(&self) -> impl '_ + Iterator<Item = NodeId> {
         self.owning.nodes()
     }

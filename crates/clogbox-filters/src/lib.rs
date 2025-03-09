@@ -4,12 +4,8 @@
 //! This module provides a number of non-linear filters that can be used to modify the
 //! amplitude of audio signals.
 use az::CastFrom;
-use clogbox_core::graph::context::GraphContext;
-use clogbox_core::graph::module::{Module, ModuleError, ProcessStatus};
-use clogbox_core::graph::slots::Slots;
-use clogbox_core::graph::{ControlBuffer, SlotType};
-use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
-use clogbox_enum::{Empty, Enum, Mono};
+use clogbox_enum::enum_map::EnumMapArray;
+use clogbox_enum::{Empty, Enum};
 use num_traits::{Float, Num};
 use std::marker::PhantomData;
 
@@ -40,25 +36,11 @@ pub trait Saturator {
     /// - `buffer`: The buffer containing the values to be saturated.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer_in_place(
-        &mut self,
-        params: EnumMapRef<Self::Params, &ControlBuffer>,
-        buffer: &mut [Self::Sample],
-    ) where
+    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample])
+    where
         Self::Sample: Copy,
     {
-        for (i, buf) in buffer.iter_mut().enumerate() {
-            if let Some((param, ev)) = params
-                .iter()
-                .filter_map(|(param, buf)| {
-                    buf.next_event(i)
-                        .filter(|ev| ev.sample == i)
-                        .map(|ev| (param, ev))
-                })
-                .min_by_key(|(_, ev)| ev.sample)
-            {
-                self.set_param(param, *ev.value);
-            }
+        for buf in buffer.iter_mut() {
             *buf = self.saturate(*buf);
         }
     }
@@ -70,16 +52,12 @@ pub trait Saturator {
     /// - `output`: The output buffer where the saturated values will be stored.
     #[inline]
     #[profiling::function]
-    fn saturate_buffer(
-        &mut self,
-        params: EnumMapRef<Self::Params, &ControlBuffer>,
-        input: &[Self::Sample],
-        output: &mut [Self::Sample],
-    ) where
+    fn saturate_buffer(&mut self, input: &[Self::Sample], output: &mut [Self::Sample])
+    where
         Self::Sample: Copy,
     {
         output.copy_from_slice(input);
-        self.saturate_buffer_in_place(params, output);
+        self.saturate_buffer_in_place(output);
     }
 }
 
@@ -88,46 +66,6 @@ pub enum SaturatorInputs<P> {
     AudioInput,
     Params(P),
 }
-
-impl<P> Slots for SaturatorInputs<P>
-where
-    Self: Enum,
-{
-    fn slot_type(&self) -> SlotType {
-        match self {
-            Self::AudioInput => SlotType::Audio,
-            Self::Params(_) => SlotType::Control,
-        }
-    }
-}
-
-/// A module that encapsulates a saturator.
-#[derive(Debug, Copy, Clone)]
-pub struct SaturatorModule<S: Saturator>(pub S);
-
-impl<Sat: 'static + Send + Saturator<Sample: Copy>> Module for SaturatorModule<Sat>
-where
-    SaturatorInputs<Sat::Params>: Slots,
-{
-    type Sample = Sat::Sample;
-    type Inputs = SaturatorInputs<Sat::Params>;
-    type Outputs = Mono;
-
-    fn process(&mut self, graph_context: GraphContext<Self>) -> Result<ProcessStatus, ModuleError> {
-        let input = graph_context.get_audio_input(SaturatorInputs::AudioInput)?;
-        let params: EnumMapArray<_, _> =
-            EnumMapArray::new(|p| graph_context.get_control_input(SaturatorInputs::Params(p)))
-                .transpose()?;
-        let params = EnumMapArray::new(|p| params[p].data);
-        let mut output = graph_context.get_audio_output(Mono)?;
-        self.0.saturate_buffer(params.to_ref(), &input, &mut output);
-        Ok(ProcessStatus::Running)
-    }
-}
-
-/// A [`SampleModule`] that holds a saturator which implements the [`Saturator`] trait.
-#[derive(Debug, Copy, Clone)]
-pub struct SaturatorSampleModule<S: Saturator>(pub S);
 
 /// A "no-op" saturator. This saturator does not modify the input signal.
 #[derive(Debug, Copy, Clone)]

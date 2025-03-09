@@ -1,48 +1,32 @@
-mod main_thread;
+mod dsp;
 mod params;
-mod processor;
-mod shared;
 
-use clack_extensions::audio_ports::PluginAudioPorts;
-use clack_extensions::params::PluginParams;
-use clack_extensions::state::PluginState;
-use clack_plugin::plugin::features::{AUDIO_EFFECT, FILTER, STEREO};
-use clack_plugin::prelude::*;
+use clogbox_clap::main_thread::{Plugin, PortLayout};
+use clogbox_clap::processor::{HostSharedHandle, PluginDsp, PluginError};
+use clogbox_clap::{export_plugin, features, PluginMeta};
+use std::ffi::CStr;
 
 struct SvfMixer;
 
-impl DefaultPluginFactory for SvfMixer {
-    fn get_descriptor() -> PluginDescriptor {
-        PluginDescriptor::new("dev.solarliner.clogbox.SvfMixer", "SVF Mixer")
-            .with_version(env!("CARGO_PKG_VERSION"))
-            .with_features([AUDIO_EFFECT, STEREO, FILTER])
-    }
-
-    fn new_shared(host: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
-        Ok(shared::SvfMixerShared::default())
-    }
-
-    fn new_main_thread<'a>(
-        _: HostMainThreadHandle<'a>,
-        shared: &'a Self::Shared<'a>,
-    ) -> Result<Self::MainThread<'a>, PluginError> {
-        Ok(main_thread::SvfMixerMainThread {
-            shared: shared.clone(),
-        })
-    }
+impl PluginMeta for SvfMixer {
+    const ID: &'static str = "dev.solarliner.clogbox.SvfMixer";
+    const NAME: &'static str = "SVF Mixer";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const FEATURES: &'static [&'static CStr] = &[features::AUDIO_EFFECT, features::STEREO, features::FILTER];
 }
 
 impl Plugin for SvfMixer {
-    type AudioProcessor<'a> = processor::SvfMixerProcessor;
-    type Shared<'a> = shared::SvfMixerShared;
-    type MainThread<'a> = main_thread::SvfMixerMainThread;
+    type Dsp = dsp::Dsp;
+    type Params = params::Param;
 
-    fn declare_extensions(builder: &mut PluginExtensions<Self>, shared: Option<&Self::Shared<'_>>) {
-        builder
-            .register::<PluginAudioPorts>()
-            .register::<PluginParams>()
-            .register::<PluginState>();
+    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Inputs>] =
+        &[PortLayout::STEREO.main().named("Input")];
+    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Outputs>] =
+        &[PortLayout::STEREO.main().named("Output")];
+
+    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+        Ok(Self)
     }
 }
 
-clack_export_entry!(SinglePluginEntry<SvfMixer>);
+export_plugin!(SvfMixer);

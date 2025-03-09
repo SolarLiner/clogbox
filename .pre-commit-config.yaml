@@ -1,0 +1,5 @@
+repos:
+  - repo: https://github.com/berquist/pre-commit-rust
+    rev: main
+    hooks:
+      - id: cargo-fmt

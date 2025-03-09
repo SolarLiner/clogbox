@@ -1,8 +1,9 @@
 use clogbox_math::interpolation::{InterpolateSingle, Linear};
-use num_traits::{Float, Num, NumAssign, NumOps, One, Zero};
+use num_traits::{Float, NumAssign, NumOps, One, Zero};
 use numeric_array::NumericArray;
 
 pub trait Smoother<T> {
+    fn current_value(&self) -> T;
     fn next_value(&mut self) -> T;
     fn has_converged(&self) -> bool;
     fn set_target(&mut self, target: T);
@@ -19,11 +20,11 @@ pub struct InterpSmoother<T, Interp> {
     interp: Interp,
 }
 
-impl<T: Copy + Zero + Num, Interp> InterpSmoother<T, Interp> {
+impl<T: Copy + Float, Interp> InterpSmoother<T, Interp> {
     pub fn new(interp: Interp, samplerate: T, time: T, initial: T, target: T) -> Self {
         Self {
             f: T::zero(),
-            step: samplerate / time,
+            step: (time * samplerate).recip(),
             initial,
             target,
             time,
@@ -33,18 +34,17 @@ impl<T: Copy + Zero + Num, Interp> InterpSmoother<T, Interp> {
     }
 }
 
-impl<T: Copy + Float + az::Cast<usize>, Interp: InterpolateSingle<T>> Smoother<T>
-    for InterpSmoother<T, Interp>
-{
+impl<T: Copy + Float + az::Cast<usize>, Interp: InterpolateSingle<T>> Smoother<T> for InterpSmoother<T, Interp> {
+    fn current_value(&self) -> T {
+        self.interp
+            .interpolate_single(NumericArray::from_slice(&[self.initial, self.target]), self.f)
+    }
+
     fn next_value(&mut self) -> T {
         if self.has_converged() {
             self.target
         } else {
-            let x = self
-                .interp
-                .interpolate_single(NumericArray::from_slice(&[T::zero(), T::one()]), self.f);
-            let out = Linear
-                .interpolate_single(NumericArray::from_slice(&[self.initial, self.target]), x);
+            let out = Linear.interpolate_single(NumericArray::from_slice(&[self.initial, self.target]), self.f);
             self.f = T::clamp(self.f + self.step, T::zero(), T::one());
             out
         }
@@ -85,6 +85,10 @@ impl<T: Copy + NumOps> ExpSmoother<T> {
 }
 
 impl<T: az::CastFrom<f64> + Float + NumAssign> Smoother<T> for ExpSmoother<T> {
+    fn current_value(&self) -> T {
+        self.last
+    }
+
     fn next_value(&mut self) -> T {
         self.last += self.tau * (self.target - self.last);
         self.last

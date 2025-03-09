@@ -177,7 +177,7 @@ pub fn bfs(graph: &impl Graph, node: NodeId, mut on_edge: impl FnMut(EdgeId, Edg
 /// assert!(result.is_ok());
 /// assert_eq!(vec![node1, node2, node4, node3], sorted);
 /// ```
-/// 
+///
 pub fn topological_sort(
     graph: &impl Graph,
     start: NodeId,

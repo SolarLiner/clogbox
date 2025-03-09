@@ -14,30 +14,28 @@ pub use traversal::*;
 /// by leveraging the `bellman_ford` algorithm.
 ///
 /// ### Arguments
-/// 
+///
 /// - `graph`: A reference to a graph implementing the [`Graph`] trait.
 ///
 /// ### Returns
-/// 
+///
 /// - `true` if no cycles are detected in the graph;
 /// - `false` if a cycle exists in the graph.
 ///
 /// ### Notes
-/// 
+///
 /// The function iterates through all nodes in the graph, running the
 /// `bellman_ford` function with a zero-weight edge cost function. If
 /// the `bellman_ford` algorithm completes successfully for all nodes,
 /// the graph is considered to be acyclic.
 pub fn has_cycle(graph: &impl Graph) -> bool {
-    graph
-        .nodes()
-        .all(|n| bellman_ford(graph, n, |_| 0.0).is_ok())
+    graph.nodes().all(|n| bellman_ford(graph, n, |_| 0.0).is_ok())
 }
 
 /// Assigns a color to each node in the graph such that adjacent nodes have different colors.
 ///
 /// This function implements a greedy graph coloring algorithm for assigning colors (represented
-/// as integers) to the nodes of a graph. The color of each node is determined based on the 
+/// as integers) to the nodes of a graph. The color of each node is determined based on the
 /// colors assigned to its neighbors, ensuring no two adjacent nodes have the same color.
 ///
 /// ### Arguments
@@ -53,7 +51,7 @@ pub fn has_cycle(graph: &impl Graph) -> bool {
 ///
 /// ### Notes
 ///
-/// This algorithm does not necessarily find the optimal (minimum number of colors) 
+/// This algorithm does not necessarily find the optimal (minimum number of colors)
 /// solution. Instead, it uses a simple greedy strategy and assigns the smallest possible
 /// color to each node based on the colors of its neighbors.
 pub fn coloring(graph: &impl Graph) -> SecondaryMap<NodeId, usize> {

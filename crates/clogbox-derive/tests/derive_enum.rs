@@ -50,9 +50,7 @@ fn test_inner_from_usize() {
 }
 #[test]
 fn test_outer_enum_iter() {
-    let expected = enum_iter::<Outer>()
-        .map(|e| e.name().to_string())
-        .collect::<Vec<_>>();
+    let expected = enum_iter::<Outer>().map(|e| e.name().to_string()).collect::<Vec<_>>();
     insta::assert_csv_snapshot!(expected);
 }
 

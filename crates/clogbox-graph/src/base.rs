@@ -1,6 +1,5 @@
-use crate::{Edge, EdgeId, Graph, OwnedGraph, NodeId};
+use crate::{Edge, EdgeId, Graph, NodeId, OwnedGraph};
 use slotmap::SlotMap;
-use std::ops::Index;
 
 /// "Default" owned graph
 #[derive(Debug, Default, Clone)]
@@ -20,11 +19,11 @@ impl Graph for GraphBase {
     fn get_edge(&self, id: EdgeId) -> Option<Edge> {
         self.edges.get(id).copied()
     }
-    
+
     fn nodes(&self) -> impl '_ + Iterator<Item = NodeId> {
         self.nodes.keys()
     }
-    
+
     fn edges(&self) -> impl '_ + Iterator<Item = EdgeId> {
         self.edges.keys()
     }
@@ -46,7 +45,7 @@ impl OwnedGraph for GraphBase {
     fn add_node(&mut self) -> NodeId {
         self.nodes.insert(())
     }
-    
+
     fn add_edge(&mut self, from: NodeId, to: NodeId) -> EdgeId {
         self.edges.insert(Edge { from, to })
     }

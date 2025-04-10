@@ -18,6 +18,7 @@ clogbox-derive = { path = "crates/clogbox-derive" }
 clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
 clogbox-math = { path = "crates/clogbox-math" }
+clogbox-module = { path = "crates/clogbox-module" }
 clogbox-params = { path = "crates/clogbox-params" }
 
 az = "1.2.1"

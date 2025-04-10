@@ -198,6 +198,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "clogbox-module"
+version = "0.1.0"
+dependencies = [
+ "clogbox-enum",
+ "clogbox-math",
+]
+
+[[package]]
 name = "clogbox-params"
 version = "0.1.0"
 dependencies = [

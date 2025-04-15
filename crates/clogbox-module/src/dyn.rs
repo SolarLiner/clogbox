@@ -2,17 +2,16 @@ use clogbox_enum::{count, Enum};
 use std::marker::PhantomData;
 use std::ops;
 use std::borrow::Cow;
-use crate::{Module, PrepareResult, ProcessContext, ProcessResult, Samplerate};
+use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
 
 pub struct DynProcessContext<'a, T> {
     pub audio_in: &'a dyn ops::Index<usize, Output = [T]>,
     pub audio_out: &'a mut dyn ops::IndexMut<usize, Output = [T]>,
-    pub params_in: &'a dyn ops::Index<usize, Output = [T]>,
-    pub params_out: &'a mut dyn ops::IndexMut<usize, Output = [T]>,
-    pub note_in: &'a dyn ops::Index<usize, Output = [T]>,
-    pub note_out: &'a mut dyn ops::IndexMut<usize, Output = [T]>,
-    pub sample_rate: Samplerate,
-    pub block_size: usize,
+    pub params_in: &'a dyn ops::Index<usize, Output = ParamSlice>,
+    pub params_out: &'a mut dyn ops::IndexMut<usize, Output = ParamSlice>,
+    pub note_in: &'a dyn ops::Index<usize, Output = NoteSlice>,
+    pub note_out: &'a mut dyn ops::IndexMut<usize, Output = NoteSlice>,
+    pub stream_context: &'a StreamContext,
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -114,8 +113,7 @@ impl<M: Module> DynModule<M::Sample> for M {
             params_out: &mut params_out,
             note_in: &note_in,
             note_out: &mut note_out,
-            sample_rate: context.sample_rate,
-            block_size: context.block_size,
+            stream_context: context.stream_context,
             __phantom: PhantomData,
         };
         <M as Module>::process(self, context)

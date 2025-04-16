@@ -1,62 +1,133 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::params::{ParamId, ParamStorage};
+use crate::params::ParamId;
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::ParamValueEvent;
-use clack_plugin::events::io::InputEventsIter;
 use clack_plugin::host::HostAudioProcessorHandle;
 pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
-use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
-use clogbox_enum::{count, Enum};
+use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clogbox_enum::{count, Empty, Enum};
+use clogbox_module::eventbuffer::{EventBuffer, EventSlice};
+use clogbox_module::{Module, ProcessContext, Samplerate, StreamContext};
+use std::marker::PhantomData;
+use std::num::NonZeroU32;
 use std::ops;
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,
     pub processor_main_thread: &'p mut P::Plugin,
-    pub params: EnumMapRef<'p, P::Params, f32>,
+    pub params: EnumMapRef<'p, P::ParamsIn, f32>,
     pub audio_config: PluginAudioConfiguration,
 }
 
-pub trait PluginDsp: Send {
-    type Plugin: Plugin<Dsp = Self, Params = Self::Params>;
-    type Params: ParamId;
-    type Inputs: Enum;
-    type Outputs: Enum;
+/// A DSP module that can also be used as the audio processor for a plugin.
+///
+/// TODO: Note support
+pub trait PluginDsp: Send + Module<ParamsIn: ParamId, ParamsOut=Empty, NoteIn=Empty, NoteOut=Empty> {
+    type Plugin: Plugin<Dsp=Self, Params=Self::ParamsIn>;
 
     fn create(context: PluginCreateContext<Self>) -> Self;
+}
 
-    fn set_param(&mut self, id: Self::Params, value: f32);
+#[derive(Debug, Clone)]
+struct AudioStorage<E: Enum, T> {
+    storage: EnumMapArray<E, Box<[T]>>,
+}
 
-    fn process<In: ops::Deref<Target = [f32]>, Out: ops::DerefMut<Target = [f32]>>(
-        &mut self,
-        frame_count: usize,
-        inputs: EnumMapRef<Self::Inputs, In>,
-        outputs: EnumMapMut<Self::Outputs, Out>,
-    ) -> Result<ProcessStatus, PluginError>;
+impl<E: Enum, T> AudioStorage<E, T> {
+    pub fn new(fill: impl Fn(E) -> Box<[T]>) -> Self {
+        Self {
+            storage: EnumMapArray::new(fill),
+        }
+    }
+
+    pub fn default(capacity: usize) -> Self
+    where
+        T: Default,
+    {
+        Self::new(|_| Box::from_iter(std::iter::repeat_with(T::default).take(capacity)))
+    }
+}
+
+impl<E: Enum, T> ops::Index<E> for AudioStorage<E, T> {
+    type Output = [T];
+
+    fn index(&self, index: E) -> &Self::Output {
+        &self.storage[index][..]
+    }
+}
+
+impl<E: Enum, T> ops::IndexMut<E> for AudioStorage<E, T> {
+    fn index_mut(&mut self, index: E) -> &mut Self::Output {
+        &mut self.storage[index][..]
+    }
+}
+
+struct EventStorage<E: Enum, T> {
+    storage: EnumMapArray<E, EventBuffer<T>>,
+}
+
+impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
+    type Output = EventSlice<T>;
+
+    fn index(&self, index: E) -> &Self::Output {
+        &self.storage[index].as_slice()
+    }
+}
+
+impl<E: Enum, T> ops::IndexMut<E> for EventStorage<E, T> {
+    fn index_mut(&mut self, index: E) -> &mut Self::Output {
+        &mut self.storage[index].as_mut_slice()
+    }
+}
+
+impl<E: Enum, T> EventStorage<E, T> {
+    pub fn new() -> Self {
+        Self {
+            storage: EnumMapArray::new(|_| EventBuffer::new()),
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self
+    where
+        T: Default,
+    {
+        Self {
+            storage: EnumMapArray::new(|_| EventBuffer::with_capacity(capacity)),
+        }
+    }
+}
+
+impl<T> EventStorage<Empty, T> {
+    pub const fn empty() -> Self {
+        Self {
+            storage: EnumMapArray::CONST_DEFAULT,
+        }
+    }
 }
 
 pub struct Processor<P: PluginDsp> {
-    params: ParamStorage<P::Params>,
     dsp: P,
-    inputs: EnumMapArray<P::Inputs, Box<[f32]>>,
-    outputs: EnumMapArray<P::Outputs, Box<[f32]>>,
+    audio_in: AudioStorage<P::AudioIn, P::Sample>,
+    audio_out: AudioStorage<P::AudioOut, P::Sample>,
+    params: EventStorage<P::ParamsIn, f32>,
+    sample_rate: Samplerate,
+    tail: Option<NonZeroU32>,
 }
 
-impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::Params>, MainThread<P::Plugin>> for Processor<P> {
+impl<'a, P: 'a + PluginDsp<Sample=f32>> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>>
+for Processor<P>
+{
     fn activate(
         host: HostAudioProcessorHandle<'a>,
         main_thread: &mut MainThread<P::Plugin>,
-        shared: &'a Shared<P::Params>,
+        shared: &'a Shared<P::ParamsIn>,
         audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
         let params = shared.params.read_all_values();
-        let inputs =
-            EnumMapArray::new(|_| Box::from_iter(std::iter::repeat_n(0.0, audio_config.max_frames_count as usize)));
-        let outputs =
-            EnumMapArray::new(|_| Box::from_iter(std::iter::repeat_n(0.0, audio_config.max_frames_count as usize)));
         let audio_config = PluginAudioConfiguration {
             min_frames_count: 1,
             ..audio_config
@@ -68,25 +139,28 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::Params>, MainThre
             audio_config,
         };
         let dsp = P::create(context);
+        let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
+        let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
+        let params = EventStorage::with_capacity(512);
         Ok(Self {
-            params: shared.params.clone(),
             dsp,
-            inputs,
-            outputs,
+            audio_in,
+            audio_out,
+            params,
+            sample_rate: Samplerate::new(audio_config.sample_rate),
+            tail: None,
         })
     }
 
     fn process(&mut self, _process: Process, mut audio: Audio, events: Events) -> Result<ProcessStatus, PluginError> {
         self.copy_inputs(&audio)?;
-        let mut status = ProcessStatus::ContinueIfNotQuiet;
-        for batch in events.input.batch() {
-            self.process_events(batch.events());
-            status = status.combined_with(self.process_audio(
-                batch.first_sample()..batch.next_batch_first_sample().unwrap_or(audio.frames_count() as _),
-            )?);
-        }
+        self.copy_events(&events)?;
+        let process_status = self.process_audio(&StreamContext {
+            block_size: audio.frames_count() as _,
+            sample_rate: self.sample_rate,
+        })?;
         self.copy_outputs(&mut audio)?;
-        Ok(status)
+        Ok(process_status)
     }
 }
 
@@ -97,13 +171,13 @@ impl<P: PluginDsp> Processor<P> {
             if let Some(channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter().enumerate() {
                     let index = P::Plugin::INPUT_LAYOUT[i].channel_map[j];
-                    self.inputs[index][..channel.len()].copy_from_slice(channel);
+                    self.audio_in[index][..channel.len()].copy_from_slice(channel);
                 }
             } else if let Some(channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter().enumerate() {
                     let index = P::Plugin::INPUT_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
-                        self.inputs[index][i] = channel[i] as f32;
+                        self.audio_in[index][i] = channel[i] as f32;
                     }
                 }
             } else {
@@ -113,18 +187,41 @@ impl<P: PluginDsp> Processor<P> {
         Ok(())
     }
 
+    fn copy_events(&mut self, events: &Events) -> Result<(), PluginError> {
+        for buf in self.params.storage.values_mut() {
+            buf.clear();
+        }
+        for event in events.input.iter() {
+            let Some(ev) = event.as_event::<ParamValueEvent>() else {
+                continue;
+            };
+            let Some(index) = ev.param_id().and_then(|id| {
+                let index = id.get() as usize;
+                if index < count::<P::ParamsIn>() {
+                    Some(P::ParamsIn::from_usize(index))
+                } else {
+                    None
+                }
+            }) else {
+                continue;
+            };
+            self.params.storage[index].push(ev.time() as _, ev.value() as _);
+        }
+        Ok(())
+    }
+
     fn copy_outputs(&mut self, audio: &mut Audio) -> Result<(), PluginError> {
         for (i, mut port) in audio.output_ports().enumerate() {
             if let Some(mut channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
-                    channel.copy_from_slice(&self.outputs[index][..channel.len()]);
+                    channel.copy_from_slice(&self.audio_out[index][..channel.len()]);
                 }
             } else if let Some(mut channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
-                        channel[i] = self.outputs[index][i] as f64;
+                        channel[i] = self.audio_out[index][i] as f64;
                     }
                 }
             }
@@ -132,30 +229,24 @@ impl<P: PluginDsp> Processor<P> {
         Ok(())
     }
 
-    fn process_events(&mut self, events: InputEventsIter) {
-        for event in events {
-            if let Some(ev) = event.as_event::<ParamValueEvent>() {
-                let Some(index) = ev.param_id().and_then(|id| {
-                    let index = id.get() as usize;
-                    if index < count::<P::Params>() {
-                        Some(P::Params::from_usize(index))
-                    } else {
-                        None
-                    }
-                }) else {
-                    continue;
-                };
-                self.dsp.set_param(index, ev.value() as _);
-            }
+    fn process_audio(&mut self, stream_context: &StreamContext) -> Result<ProcessStatus, PluginError> {
+        let ctx = ProcessContext {
+            audio_in: &self.audio_in,
+            audio_out: &mut self.audio_out,
+            params_in: &self.params,
+            params_out: &EventStorage::empty(),
+            note_in: &EventStorage::empty(),
+            note_out: &EventStorage::empty(),
+            stream_context,
+            __phantom: PhantomData,
+        };
+        let result = self.dsp.process(ctx);
+        self.tail = result.tail;
+        if self.tail.is_some() {
+            Ok(ProcessStatus::Tail)
+        } else {
+            Ok(ProcessStatus::ContinueIfNotQuiet)
         }
-    }
-
-    fn process_audio(&mut self, index: ops::Range<usize>) -> Result<ProcessStatus, PluginError> {
-        let inputs = EnumMapArray::new(|i| &self.inputs[i][index.clone()]);
-        // Safety: self.outputs is not aliased in this scope (self is already exclusively borrowed, and self.outputs
-        // is not accessed anywhere else)
-        let mut outputs = EnumMapArray::new(|i| unsafe { Indexed::new(&self.outputs[i], index.clone()) });
-        self.dsp.process(index.len(), inputs.to_ref(), outputs.to_mut())
     }
 }
 

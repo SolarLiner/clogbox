@@ -52,7 +52,7 @@ impl PortLayout<Stereo> {
 }
 
 pub trait Plugin: 'static + Sized {
-    type Dsp: PluginDsp<Plugin = Self, Params = Self::Params>;
+    type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Inputs>];

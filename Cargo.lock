@@ -128,6 +128,7 @@ dependencies = [
  "clack-extensions",
  "clack-plugin",
  "clogbox-enum",
+ "clogbox-module",
 ]
 
 [[package]]
@@ -824,6 +825,7 @@ dependencies = [
  "clogbox-enum",
  "clogbox-filters",
  "clogbox-math",
+ "clogbox-module",
  "clogbox-params",
 ]
 

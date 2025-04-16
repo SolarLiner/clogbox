@@ -1,12 +1,14 @@
 use crate::params;
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp, PluginError, ProcessStatus};
-use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
-use clogbox_enum::{enum_iter, Stereo};
+use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
+use clogbox_enum::enum_map::EnumMapArray;
+use clogbox_enum::{enum_iter, Empty, Stereo};
 use clogbox_filters::svf::{Svf, SvfOutput};
 use clogbox_filters::{sinh, SimpleSaturator};
 use clogbox_math::interpolation::Linear;
+use clogbox_module::eventbuffer::Timestamped;
+use clogbox_module::{Module, PrepareResult, ProcessContext, ProcessResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
-use std::ops;
+use std::num::NonZeroU32;
 
 pub(crate) struct Dsp {
     smoothers: EnumMapArray<params::Param, LinearSmoother<f32>>,
@@ -14,11 +16,52 @@ pub(crate) struct Dsp {
     buffer: EnumMapArray<Stereo, f32>,
 }
 
+impl Module for Dsp {
+    type Sample = f32;
+    type AudioIn = Stereo;
+    type AudioOut = Stereo;
+    type ParamsIn = params::Param;
+    type ParamsOut = Empty;
+    type NoteIn = Empty;
+    type NoteOut = Empty;
+
+    fn prepare(&mut self, _sample_rate: Samplerate, _block_size: usize) -> PrepareResult {
+        PrepareResult { latency: 2.0 }
+    }
+
+    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
+        let mut start = 0;
+        let end = context.stream_context.block_size;
+        while start < end {
+            let end = enum_iter::<params::Param>()
+                .filter_map(|e| context.params_in[e].first().map(|t| t.timestamp))
+                .min()
+                .unwrap_or(context.stream_context.block_size);
+            if start == end {
+                for param in enum_iter::<params::Param>() {
+                    let Some(&Timestamped { data, .. }) = context.params_in[param].at(start) else {
+                        continue;
+                    };
+                    self.set_param(param, data);
+                }
+                start += 1;
+            } else {
+                for i in start..end {
+                    let output = self.process_sample(EnumMapArray::new(|ch| context.audio_in[ch][i]));
+                    context.audio_out[Stereo::Left][i] = output[Stereo::Left];
+                    context.audio_out[Stereo::Right][i] = output[Stereo::Right];
+                }
+                start = end;
+            }
+        }
+        ProcessResult {
+            tail: NonZeroU32::new(2),
+        }
+    }
+}
+
 impl PluginDsp for Dsp {
     type Plugin = super::SvfMixer;
-    type Params = params::Param;
-    type Inputs = Stereo;
-    type Outputs = Stereo;
 
     fn create(context: PluginCreateContext<Self>) -> Self {
         use params::Param::*;
@@ -34,34 +77,23 @@ impl PluginDsp for Dsp {
             buffer: EnumMapArray::new(|_| 0.0),
         }
     }
-
-    fn set_param(&mut self, id: Self::Params, value: f32) {
-        self.smoothers[id].set_target(value);
-    }
-
-    fn process<In: ops::Deref<Target = [f32]>, Out: ops::DerefMut<Target = [f32]>>(
-        &mut self,
-        frame_count: usize,
-        inputs: EnumMapRef<Self::Inputs, In>,
-        mut outputs: EnumMapMut<Self::Outputs, Out>,
-    ) -> Result<ProcessStatus, PluginError> {
-        use params::Param::*;
-        for i in 0..frame_count {
-            let params = EnumMapArray::new(|p| self.smoothers[p].next_value());
-            for dsp in self.dsp.values_mut() {
-                dsp.set_cutoff_no_update(params[Cutoff]);
-                dsp.set_resonance(params[Resonance]);
-            }
-            for ch in enum_iter::<Stereo>() {
-                let x = inputs[ch][i].clamp(-0.95, 0.95);
-                outputs[ch][i] = self.next_sample(ch, x);
-            }
-        }
-        Ok(ProcessStatus::ContinueIfNotQuiet)
-    }
 }
 
 impl Dsp {
+    fn set_param(&mut self, id: params::Param, value: f32) {
+        self.smoothers[id].set_target(value);
+    }
+
+    fn process_sample(&mut self, input: EnumMapArray<Stereo, f32>) -> EnumMapArray<Stereo, f32> {
+        use params::Param::*;
+        let params = EnumMapArray::new(|p| self.smoothers[p].next_value());
+        for dsp in self.dsp.values_mut() {
+            dsp.set_cutoff_no_update(params[Cutoff]);
+            dsp.set_resonance(params[Resonance]);
+        }
+        EnumMapArray::new(|ch| self.next_sample(ch, input[ch]))
+    }
+
     fn next_sample(&mut self, channel: Stereo, sample: f32) -> f32 {
         // Crude 2x oversampling to decramp
         let a = self.next_sample_inner(channel, self.buffer[channel]);

@@ -4,15 +4,14 @@ use crate::shared::Shared;
 use clack_extensions::audio_ports::PluginAudioPorts;
 use clack_extensions::params::PluginParams;
 use clack_extensions::state::PluginState;
+pub use clack_plugin::clack_export_entry;
+pub use clack_plugin::entry::SinglePluginEntry;
 use clack_plugin::host::{HostMainThreadHandle, HostSharedHandle};
+pub use clack_plugin::plugin::features;
 use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
-
-pub use clack_plugin::clack_export_entry;
-pub use clack_plugin::entry::SinglePluginEntry;
-pub use clack_plugin::plugin::features;
 pub mod main_thread;
 pub mod params;
 pub mod processor;

@@ -82,7 +82,7 @@ impl<'a, T> Iterator for IterMut<'a, T> {
         // This is safe because we ensure the lifetime is tied to the IterMut lifetime
         // and each item is yielded only once.
         let events = unsafe { std::mem::transmute::<&mut Vec<Timestamped<T>>, &mut Vec<Timestamped<T>>>(self.events) };
-        
+
         if self.index < events.len() {
             let item = &mut events[self.index];
             self.index += 1;
@@ -134,7 +134,27 @@ impl<T> EventSlice<T> {
     pub fn from_slice(events: &[Timestamped<T>]) -> &Self {
         // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
         // due to the #[repr(transparent)] attribute
-        unsafe { std::mem::transmute(events) }
+        unsafe { std::mem::transmute::<&[Timestamped<T>], &Self>(events) }
+    }
+
+    /// Creates a reference to an [`EventSlice`] from a mutable slice of timestamped events.
+    ///
+    /// This conversion is safe because [`EventSlice<T>`] is marked with `#[repr(transparent)]`,
+    /// guaranteeing that its memory layout is identical to `[Timestamped<T>]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventSlice, Timestamped};
+    /// let mut events = vec![Timestamped { timestamp: 1, data: "a" }];
+    /// let slice = EventSlice::from_mut_slice(&mut events);
+    /// slice[1].data = "b";
+    /// assert_eq!("b", events[1].data); // Mutated the original slice
+    /// ```
+    pub fn from_mut_slice(events: &mut [Timestamped<T>]) -> &mut Self {
+        // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
+        // due to the #[repr(transparent)] attribute
+        unsafe { std::mem::transmute::<&mut [Timestamped<T>], &mut Self>(events) }
     }
 
     /// Returns the number of events in the slice.
@@ -143,21 +163,28 @@ impl<T> EventSlice<T> {
     pub fn len(&self) -> usize {
         self.events.len()
     }
-    
+
     /// Returns `true` if the slice contains no events.
     ///
     /// This is equivalent to the [`is_empty`](slice::is_empty) method on slices.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
-    
+
     /// Returns a reference to the event at the specified index, if it exists.
     ///
     /// Returns `None` if the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&Timestamped<T>> {
         self.events.get(index)
     }
-    
+
+    pub fn at(&self, timestamp: usize) -> Option<&Timestamped<T>> {
+        self.events
+            .binary_search_by_key(&timestamp, |e| e.timestamp)
+            .ok()
+            .map(|idx| &self.events[idx])
+    }
+
     /// Returns a reference to the first event, if it exists.
     ///
     /// The first event is the one with the earliest timestamp, since
@@ -165,7 +192,7 @@ impl<T> EventSlice<T> {
     pub fn first(&self) -> Option<&Timestamped<T>> {
         self.events.first()
     }
-    
+
     /// Returns a reference to the last event, if it exists.
     ///
     /// The last event is the one with the latest timestamp, since
@@ -173,12 +200,22 @@ impl<T> EventSlice<T> {
     pub fn last(&self) -> Option<&Timestamped<T>> {
         self.events.last()
     }
-    
+
     /// Returns an iterator over the events.
     ///
     /// Events are yielded in chronological order (by timestamp).
     pub fn iter(&self) -> impl Iterator<Item = &Timestamped<T>> {
         self.events.iter()
+    }
+
+    /// Returns an iterator over the events.
+    ///
+    /// Events are yielded in chronological order (by timestamp).
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Timestamped<T>> {
+        IterMut {
+            events: &mut self.events,
+            index: 0,
+        }
     }
 
     /// Returns a subslice of this [`EventSlice`] based on the provided timestamp range.
@@ -212,16 +249,57 @@ impl<T> EventSlice<T> {
             ops::Bound::Excluded(&t) => t + 1, // Convert exclusive to inclusive
             ops::Bound::Unbounded => 0,
         };
-        
+
         let end_bound = match range.end_bound() {
             ops::Bound::Included(&t) => t + 1, // Convert inclusive to exclusive
             ops::Bound::Excluded(&t) => t,
             ops::Bound::Unbounded => usize::MAX,
         };
-        
+
         self.in_range(start_bound, end_bound)
     }
-    
+
+    /// Returns a mutable subslice of this [`EventSlice`] based on the provided timestamp range.
+    ///
+    /// This creates a view of all events whose timestamps fall within the provided range.
+    /// The range can be specified using Rust's range syntax (`a..b`, `a..=b`, `..b`, etc.).
+    ///
+    /// Note that the range is interpreted as timestamps, not indices:
+    /// - Start bound (inclusive or exclusive) refers to the timestamp, not array position
+    /// - End bound (inclusive or exclusive) refers to the timestamp, not array position
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventBuffer, Timestamped};
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(10, "a");
+    /// buffer.push(20, "b");
+    /// buffer.push(30, "c");
+    ///
+    /// // Get events with timestamps in range 10..30 (includes 10, excludes 30)
+    /// let slice = buffer.as_slice().slice(10..30);
+    /// assert_eq!(slice.len(), 2); // Contains events with timestamps 10 and 20
+    /// ```
+    pub fn slice_mut<R>(&mut self, range: R) -> &mut Self
+    where
+        R: ops::RangeBounds<usize>,
+    {
+        let start_bound = match range.start_bound() {
+            ops::Bound::Included(&t) => t,
+            ops::Bound::Excluded(&t) => t + 1, // Convert exclusive to inclusive
+            ops::Bound::Unbounded => 0,
+        };
+
+        let end_bound = match range.end_bound() {
+            ops::Bound::Included(&t) => t + 1, // Convert inclusive to exclusive
+            ops::Bound::Excluded(&t) => t,
+            ops::Bound::Unbounded => usize::MAX,
+        };
+
+        self.in_range_mut(start_bound, end_bound)
+    }
+
     /// Returns a subslice of this [`EventSlice`] based on the provided index range.
     ///
     /// This creates a view into the underlying events by array indices rather than timestamps.
@@ -250,13 +328,41 @@ impl<T> EventSlice<T> {
         unsafe { std::mem::transmute(&self.events[range]) }
     }
 
+    /// Returns a mutable subslice of this [`EventSlice`] based on the provided index range.
+    ///
+    /// This creates a view into the underlying events by array indices rather than timestamps.
+    /// Use this method when you need to slice by position rather than timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventBuffer, Timestamped};
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(100, "a");
+    /// buffer.push(200, "b");
+    /// buffer.push(300, "c");
+    ///
+    /// // Get second event by index (regardless of its timestamp)
+    /// let slice = buffer.as_slice().slice_by_index(1..2);
+    /// assert_eq!(slice.len(), 1);
+    /// assert_eq!(slice.first().unwrap().timestamp, 200);
+    /// ```
+    pub fn slice_by_index_mut<R>(&mut self, range: R) -> &mut Self
+    where
+        R: std::slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
+    {
+        // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
+        // due to the #[repr(transparent)] attribute
+        unsafe { std::mem::transmute::<&mut [Timestamped<T>], &mut Self>(&mut self.events[range]) }
+    }
+
     /// Returns a reference to the entire underlying slice.
     ///
     /// This provides direct access to the array of [`Timestamped<T>`] events.
-    pub fn as_slice(&self) -> &[Timestamped<T>] {
+    pub fn as_raw_slice(&self) -> &[Timestamped<T>] {
         &self.events
     }
-    
+
     /// Returns the minimum timestamp in this event slice, if any.
     ///
     /// Returns `None` if the slice is empty. Otherwise, returns the timestamp
@@ -264,7 +370,7 @@ impl<T> EventSlice<T> {
     pub fn min_timestamp(&self) -> Option<usize> {
         self.first().map(|event| event.timestamp)
     }
-    
+
     /// Returns the maximum timestamp in this event slice, if any.
     ///
     /// Returns `None` if the slice is empty. Otherwise, returns the timestamp
@@ -272,7 +378,7 @@ impl<T> EventSlice<T> {
     pub fn max_timestamp(&self) -> Option<usize> {
         self.last().map(|event| event.timestamp)
     }
-    
+
     /// Returns the range of timestamps in this event slice as (min, max),
     /// or `None` if the slice is empty.
     ///
@@ -284,7 +390,7 @@ impl<T> EventSlice<T> {
             Some((self.min_timestamp().unwrap(), self.max_timestamp().unwrap()))
         }
     }
-    
+
     /// Returns a reference to all events with timestamps less than the specified timestamp.
     ///
     /// This efficiently uses binary search to find all events that occurred before
@@ -308,7 +414,31 @@ impl<T> EventSlice<T> {
             Ok(idx) | Err(idx) => Self::from_slice(&self.events[..idx]),
         }
     }
-    
+
+    /// Returns a mutable reference to all events with timestamps less than the specified timestamp.
+    ///
+    /// This efficiently uses binary search to find all events that occurred before
+    /// the given timestamp. The returned slice excludes any event with the exact
+    /// timestamp provided.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventBuffer, Timestamped};
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(10, "a");
+    /// buffer.push(20, "b");
+    /// buffer.push(30, "c");
+    ///
+    /// let early_events = buffer.as_slice().before(25);
+    /// assert_eq!(early_events.len(), 2); // Contains events with timestamps 10 and 20
+    /// ```
+    pub fn before_mut(&mut self, timestamp: usize) -> &mut Self {
+        match self.events.binary_search_by_key(&timestamp, |e| e.timestamp) {
+            Ok(idx) | Err(idx) => Self::from_mut_slice(&mut self.events[..idx]),
+        }
+    }
+
     /// Returns a reference to all events with timestamps greater than or equal to the specified timestamp.
     ///
     /// This efficiently uses binary search to find all events that occurred at or after
@@ -333,7 +463,32 @@ impl<T> EventSlice<T> {
             Err(idx) => Self::from_slice(&self.events[idx..]),
         }
     }
-    
+
+    /// Returns a mutable reference to all events with timestamps greater than or equal to the specified timestamp.
+    ///
+    /// This efficiently uses binary search to find all events that occurred at or after
+    /// the given timestamp. The returned slice includes any event with the exact
+    /// timestamp provided.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventBuffer, Timestamped};
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(10, "a");
+    /// buffer.push(20, "b");
+    /// buffer.push(30, "c");
+    ///
+    /// let later_events = buffer.as_slice().after(20);
+    /// assert_eq!(later_events.len(), 2); // Contains events with timestamps 20 and 30
+    /// ```
+    pub fn after_mut(&mut self, timestamp: usize) -> &mut Self {
+        match self.events.binary_search_by_key(&timestamp, |e| e.timestamp) {
+            Ok(idx) => Self::from_mut_slice(&mut self.events[idx..]),
+            Err(idx) => Self::from_mut_slice(&mut self.events[idx..]),
+        }
+    }
+
     /// Returns a reference to all events with timestamps in the specified range.
     ///
     /// This returns events with timestamps in the range [start, end).
@@ -354,6 +509,28 @@ impl<T> EventSlice<T> {
     /// ```
     pub fn in_range(&self, start: usize, end: usize) -> &Self {
         self.after(start).before(end)
+    }
+
+    /// Returns a mutable reference to all events with timestamps in the specified range.
+    ///
+    /// This returns events with timestamps in the range [start, end).
+    /// That is, it includes the start timestamp but excludes the end timestamp.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::{EventBuffer, Timestamped};
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(10, "a");
+    /// buffer.push(20, "b");
+    /// buffer.push(30, "c");
+    /// buffer.push(40, "d");
+    ///
+    /// let mid_events = buffer.as_slice().in_range(15, 35);
+    /// assert_eq!(mid_events.len(), 2); // Contains events with timestamps 20 and 30
+    /// ```
+    pub fn in_range_mut(&mut self, start: usize, end: usize) -> &mut Self {
+        self.after_mut(start).before_mut(end)
     }
 }
 
@@ -445,16 +622,16 @@ impl<T, R: slice::SliceIndex<[Timestamped<T>]>> ops::Index<ByIndex<R>> for Event
 /// # use clogbox_module::eventbuffer::EventBuffer;
 /// // Create a buffer of timestamped strings
 /// let mut buffer = EventBuffer::new();
-/// 
+///
 /// // Add events with timestamps (automatically sorted)
 /// buffer.push(100, "event at t=100");
 /// buffer.push(50, "event at t=50");   // Will be inserted at the beginning
 /// buffer.push(200, "event at t=200");
-/// 
+///
 /// // Access events
 /// assert_eq!(buffer.len(), 3);
 /// assert_eq!(buffer.first().unwrap().data, "event at t=50");
-/// 
+///
 /// // Filter events by time
 /// let recent_events = buffer.after(100);
 /// assert_eq!(recent_events.len(), 2); // Events at t=100 and t=200
@@ -462,6 +639,20 @@ impl<T, R: slice::SliceIndex<[Timestamped<T>]>> ops::Index<ByIndex<R>> for Event
 #[derive(Debug, Clone)]
 pub struct EventBuffer<T> {
     events: Vec<Timestamped<T>>,
+}
+
+impl<T> ops::Deref for EventBuffer<T> {
+    type Target = EventSlice<T>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
+impl<T> ops::DerefMut for EventBuffer<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_slice()
+    }
 }
 
 impl<T> Default for EventBuffer<T> {
@@ -474,7 +665,7 @@ impl<T> EventBuffer<T> {
     /// Creates a new, empty [`EventBuffer`].
     ///
     /// The buffer is initially created with no allocated memory.
-    /// 
+    ///
     /// # Examples
     ///
     /// ```
@@ -485,7 +676,13 @@ impl<T> EventBuffer<T> {
     pub fn new() -> Self {
         Self { events: Vec::new() }
     }
-    
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            events: Vec::with_capacity(capacity),
+        }
+    }
+
     /// Returns a reference to an [`EventSlice`] that provides a view into the entire buffer.
     ///
     /// This slice can be used to efficiently query and filter events without copying them.
@@ -504,27 +701,39 @@ impl<T> EventBuffer<T> {
     pub fn as_slice(&self) -> &EventSlice<T> {
         EventSlice::from_slice(&self.events)
     }
-    
-    pub fn is_empty(&self) -> bool {
-        self.events.is_empty()
+
+    /// Returns a mutable reference to an [`EventSlice`] that provides a view into the entire buffer.
+    ///
+    /// This slice can be used to efficiently query and filter events without copying them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use clogbox_module::eventbuffer::EventBuffer;
+    /// let mut buffer = EventBuffer::new();
+    /// buffer.push(1, "a");
+    /// buffer.push(2, "b");
+    ///
+    /// let slice = buffer.as_slice();
+    /// assert_eq!(slice.len(), 2);
+    /// ```
+    pub fn as_mut_slice(&mut self) -> &mut EventSlice<T> {
+        EventSlice::from_mut_slice(&mut self.events)
     }
-    
-    pub fn len(&self) -> usize {
-        self.events.len()
+
+    /// Clears the events contained in this buffer. This effectively sets the length to zero while keeping the
+    /// allocation intact.
+    pub fn clear(&mut self) {
+        self.events.clear();
     }
-    
-    pub fn capacity(&self) -> usize {
-        self.events.capacity()
-    }
-    
+
     /// Creates a new [`EventBuffer`] with the specified capacity.
     ///
-
     /// Adds an event with the specified timestamp to the buffer,
     /// maintaining sorted order by timestamp.
     pub fn push(&mut self, timestamp: usize, data: T) {
         let event = Timestamped { timestamp, data };
-        
+
         // Find the insertion position using binary search
         match self.events.binary_search_by_key(&timestamp, |e| e.timestamp) {
             Ok(idx) => {
@@ -538,65 +747,37 @@ impl<T> EventBuffer<T> {
         }
     }
 
-    /// Returns a reference to the event at the specified index, if it exists.
-    pub fn get(&self, index: usize) -> Option<&Timestamped<T>> {
-        self.events.get(index)
-    }
-
-    /// Returns a reference to the first event in the buffer, if it exists.
-    pub fn first(&self) -> Option<&Timestamped<T>> {
-        self.events.first()
-    }
-
-    /// Returns a reference to the last event in the buffer, if it exists.
-    pub fn last(&self) -> Option<&Timestamped<T>> {
-        self.events.last()
-    }
-
-    /// Returns an iterator over the events in the buffer.
-    pub fn iter(&self) -> impl Iterator<Item = &Timestamped<T>> {
-        self.events.iter()
-    }
-    
-    /// Returns a mutable iterator over the events in the buffer.
-    /// The buffer will be automatically re-sorted when the iterator is dropped,
-    /// to account for any timestamp changes made during iteration.
-    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
-        IterMut {
-            events: &mut self.events,
-            index: 0,
-        }
-    }
-    
     /// Removes all events with timestamps less than the specified timestamp.
     pub fn trim_before(&mut self, timestamp: usize) {
-        let idx = self.events.binary_search_by_key(&timestamp, |e| e.timestamp)
+        let idx = self
+            .events
+            .binary_search_by_key(&timestamp, |e| e.timestamp)
             .unwrap_or_else(|idx| idx);
         self.events.drain(0..idx);
     }
-    
+
     /// Removes all events with timestamps greater than the specified timestamp.
     pub fn trim_after(&mut self, timestamp: usize) {
         let idx = self.events.binary_search_by_key(&timestamp, |e| e.timestamp);
         let idx = idx.map(|idx| idx + 1).unwrap_or_else(|idx| idx);
         self.events.truncate(idx);
     }
-    
+
     /// Returns a reference to an `EventSlice` containing all events with timestamps less than the specified timestamp.
     pub fn before(&self, timestamp: usize) -> &EventSlice<T> {
         self.as_slice().before(timestamp)
     }
-    
+
     /// Returns a reference to an `EventSlice` containing all events with timestamps greater than or equal to the specified timestamp.
     pub fn after(&self, timestamp: usize) -> &EventSlice<T> {
         self.as_slice().after(timestamp)
     }
-    
+
     /// Returns a reference to an `EventSlice` containing all events with timestamps in the specified range.
     pub fn in_range(&self, start: usize, end: usize) -> &EventSlice<T> {
         self.as_slice().in_range(start, end)
     }
-    
+
     /// Returns a reference to an `EventSlice` based on the provided timestamp range.
     ///
     /// This creates a view of all events whose timestamps fall within the provided range.
@@ -607,7 +788,7 @@ impl<T> EventBuffer<T> {
     {
         self.as_slice().slice(range)
     }
-    
+
     /// Returns a reference to an `EventSlice` based on the provided index range.
     ///
     /// This creates a view into the underlying events by raw indices rather than timestamps.
@@ -616,6 +797,16 @@ impl<T> EventBuffer<T> {
         R: slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
     {
         EventSlice::from_slice(&self.events[range])
+    }
+
+    /// Returns a mutable reference to an `EventSlice` based on the provided index range.
+    ///
+    /// This creates a view into the underlying events by raw indices rather than timestamps.
+    pub fn slice_by_index_mut<R>(&mut self, range: R) -> &mut EventSlice<T>
+    where
+        R: slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
+    {
+        EventSlice::from_mut_slice(&mut self.events[range])
     }
 }
 
@@ -645,12 +836,12 @@ mod tests {
     #[test]
     fn test_push_maintains_order() {
         let mut buffer = EventBuffer::new();
-        
+
         buffer.push(3, "c");
         buffer.push(1, "a");
         buffer.push(2, "b");
         buffer.push(4, "d");
-        
+
         let result: Vec<_> = buffer.iter().map(|e| (e.timestamp, e.data)).collect();
         assert_eq!(result, vec![(1, "a"), (2, "b"), (3, "c"), (4, "d")]);
     }
@@ -658,12 +849,12 @@ mod tests {
     #[test]
     fn test_push_with_duplicate_timestamps() {
         let mut buffer = EventBuffer::new();
-        
+
         buffer.push(1, "a");
         buffer.push(2, "b1");
         buffer.push(2, "b2");
         buffer.push(3, "c");
-        
+
         let result: Vec<_> = buffer.iter().map(|e| (e.timestamp, e.data)).collect();
         assert_eq!(result, vec![(1, "a"), (2, "b1"), (2, "b2"), (3, "c")]);
     }
@@ -671,30 +862,30 @@ mod tests {
     #[test]
     fn test_trim_operations() {
         let mut buffer = EventBuffer::new();
-        
+
         buffer.push(1, "a");
         buffer.push(2, "b");
         buffer.push(3, "c");
         buffer.push(4, "d");
         buffer.push(5, "e");
-        
+
         buffer.trim_before(3);
         let result1: Vec<_> = buffer.iter().map(|e| (e.timestamp, e.data)).collect();
         assert_eq!(result1, vec![(3, "c"), (4, "d"), (5, "e")]);
-        
+
         buffer.trim_after(4);
         let result2: Vec<_> = buffer.iter().map(|e| (e.timestamp, e.data)).collect();
         assert_eq!(result2, vec![(3, "c"), (4, "d")]);
     }
-    
+
     #[test]
     fn test_iter_mut_resorts() {
         let mut buffer = EventBuffer::new();
-        
+
         buffer.push(1, "a");
         buffer.push(3, "c");
         buffer.push(5, "e");
-        
+
         // Modify timestamps during iteration
         {
             let mut iter = buffer.iter_mut();
@@ -704,26 +895,26 @@ mod tests {
             }
             // Buffer will be re-sorted when iter goes out of scope
         }
-        
+
         // Check that the buffer was re-sorted
         let result: Vec<_> = buffer.iter().map(|e| (e.timestamp, e.data)).collect();
         assert_eq!(result, vec![(1, "e"), (3, "c"), (5, "a")]);
     }
-    
+
     #[test]
-        fn test_event_slice() {
-            let mut buffer = EventBuffer::new();
-            
-            buffer.push(1, "a");
-            buffer.push(2, "b");
-            buffer.push(3, "c");
-            buffer.push(4, "d");
-            buffer.push(5, "e");
-            
-            // Test as_slice and basic operations
-            let event_slice = buffer.as_slice();
-            assert_eq!(event_slice.len(), 5);
-            assert_eq!(event_slice.get(2).unwrap().data, "c");
-            assert_eq!(event_slice.first().unwrap().data, "a");
+    fn test_event_slice() {
+        let mut buffer = EventBuffer::new();
+
+        buffer.push(1, "a");
+        buffer.push(2, "b");
+        buffer.push(3, "c");
+        buffer.push(4, "d");
+        buffer.push(5, "e");
+
+        // Test as_slice and basic operations
+        let event_slice = buffer.as_slice();
+        assert_eq!(event_slice.len(), 5);
+        assert_eq!(event_slice.get(2).unwrap().data, "c");
+        assert_eq!(event_slice.first().unwrap().data, "a");
     }
 }

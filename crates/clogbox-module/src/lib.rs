@@ -28,7 +28,7 @@ pub struct ProcessContext<'a, M: ?Sized + Module> {
     pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteSlice>,
     pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteSlice>,
     pub stream_context: &'a StreamContext,
-    __phantom: PhantomData<&'a M>,
+    pub __phantom: PhantomData<&'a M>,
 }
 
 #[derive(Debug, Copy, Clone)]

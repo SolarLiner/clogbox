@@ -17,4 +17,5 @@ clogbox-clap.workspace = true
 clogbox-enum.workspace = true
 clogbox-filters.workspace = true
 clogbox-math.workspace = true
+clogbox-module.workspace = true
 clogbox-params.workspace = true

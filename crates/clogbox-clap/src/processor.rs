@@ -26,8 +26,10 @@ pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
 /// A DSP module that can also be used as the audio processor for a plugin.
 ///
 /// TODO: Note support
-pub trait PluginDsp: Send + Module<ParamsIn: ParamId, ParamsOut=Empty, NoteIn=Empty, NoteOut=Empty> {
-    type Plugin: Plugin<Dsp=Self, Params=Self::ParamsIn>;
+pub trait PluginDsp:
+    Send + Module<Sample = f32, ParamsIn: ParamId, ParamsOut = Empty, NoteIn = Empty, NoteOut = Empty>
+{
+    type Plugin: Plugin<Dsp = Self, Params = Self::ParamsIn>;
 
     fn create(context: PluginCreateContext<Self>) -> Self;
 }
@@ -80,7 +82,7 @@ impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
 
 impl<E: Enum, T> ops::IndexMut<E> for EventStorage<E, T> {
     fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        &mut self.storage[index].as_mut_slice()
+        self.storage[index].as_mut_slice()
     }
 }
 
@@ -118,9 +120,7 @@ pub struct Processor<P: PluginDsp> {
     tail: Option<NonZeroU32>,
 }
 
-impl<'a, P: 'a + PluginDsp<Sample=f32>> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>>
-for Processor<P>
-{
+impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>> for Processor<P> {
     fn activate(
         host: HostAudioProcessorHandle<'a>,
         main_thread: &mut MainThread<P::Plugin>,
@@ -234,9 +234,9 @@ impl<P: PluginDsp> Processor<P> {
             audio_in: &self.audio_in,
             audio_out: &mut self.audio_out,
             params_in: &self.params,
-            params_out: &EventStorage::empty(),
+            params_out: &mut EventStorage::empty(),
             note_in: &EventStorage::empty(),
-            note_out: &EventStorage::empty(),
+            note_out: &mut EventStorage::empty(),
             stream_context,
             __phantom: PhantomData,
         };
@@ -251,8 +251,8 @@ impl<P: PluginDsp> Processor<P> {
 }
 
 impl<P: PluginDsp> PluginAudioProcessorParams for Processor<P> {
-    fn flush(&mut self, input_parameter_changes: &InputEvents, _: &mut OutputEvents) {
-        self.process_events(input_parameter_changes.iter());
+    fn flush(&mut self, input_parameter_changes: &InputEvents, output_parameter_changes: &mut OutputEvents) {
+        output_parameter_changes.extend(input_parameter_changes);
     }
 }
 

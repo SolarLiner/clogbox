@@ -17,6 +17,7 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum, Mono, Stereo};
 use std::ffi::CStr;
 use std::fmt::Write;
+use clogbox_module::Module;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
@@ -55,8 +56,8 @@ pub trait Plugin: 'static + Sized {
     type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Inputs>];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Outputs>];
+    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
+    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
 }

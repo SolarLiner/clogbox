@@ -1,4 +1,5 @@
 use std::{ops, slice};
+use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 
 /// A wrapper for data with an associated timestamp.
 ///
@@ -66,7 +67,7 @@ impl<T> Ord for Timestamped<T> {
 /// When the iterator goes out of scope (is dropped), the underlying buffer is
 /// automatically re-sorted by timestamp to maintain chronological order.
 pub struct IterMut<'a, T> {
-    events: &'a mut Vec<Timestamped<T>>,
+    events: &'a mut [Timestamped<T>],
     index: usize,
 }
 
@@ -81,7 +82,7 @@ impl<'a, T> Iterator for IterMut<'a, T> {
         // Mangle lifetime of the buffer.
         // This is safe because we ensure the lifetime is tied to the IterMut lifetime
         // and each item is yielded only once.
-        let events = unsafe { std::mem::transmute::<&mut Vec<Timestamped<T>>, &mut Vec<Timestamped<T>>>(self.events) };
+        let events = unsafe { std::mem::transmute::<&mut [Timestamped<T>], &mut [Timestamped<T>]>(self.events) };
 
         if self.index < events.len() {
             let item = &mut events[self.index];
@@ -149,9 +150,10 @@ impl<T> EventSlice<T> {
     /// let mut events = vec![Timestamped { timestamp: 1, data: "a" }];
     /// let slice = EventSlice::from_mut_slice(&mut events);
     /// slice[1].data = "b";
-    /// assert_eq!("b", events[1].data); // Mutated the original slice
+    /// assert_eq!("b", events[0].data); // Mutated the original slice
     /// ```
     pub fn from_mut_slice(events: &mut [Timestamped<T>]) -> &mut Self {
+        events.sort();
         // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
         // due to the #[repr(transparent)] attribute
         unsafe { std::mem::transmute::<&mut [Timestamped<T>], &mut Self>(events) }
@@ -183,6 +185,13 @@ impl<T> EventSlice<T> {
             .binary_search_by_key(&timestamp, |e| e.timestamp)
             .ok()
             .map(|idx| &self.events[idx])
+    }
+
+    pub fn at_mut(&mut self, timestamp: usize) -> Option<&mut Timestamped<T>> {
+        let Some(index) = self.events
+            .binary_search_by_key(&timestamp, |e| e.timestamp)
+            .ok() else { return None; };
+        Some(&mut self.events[index])
     }
 
     /// Returns a reference to the first event, if it exists.
@@ -285,19 +294,8 @@ impl<T> EventSlice<T> {
     where
         R: ops::RangeBounds<usize>,
     {
-        let start_bound = match range.start_bound() {
-            ops::Bound::Included(&t) => t,
-            ops::Bound::Excluded(&t) => t + 1, // Convert exclusive to inclusive
-            ops::Bound::Unbounded => 0,
-        };
-
-        let end_bound = match range.end_bound() {
-            ops::Bound::Included(&t) => t + 1, // Convert inclusive to exclusive
-            ops::Bound::Excluded(&t) => t,
-            ops::Bound::Unbounded => usize::MAX,
-        };
-
-        self.in_range_mut(start_bound, end_bound)
+        let range = self.index_range(range);
+        self.in_range_mut(range.start, range.end)
     }
 
     /// Returns a subslice of this [`EventSlice`] based on the provided index range.
@@ -532,13 +530,44 @@ impl<T> EventSlice<T> {
     pub fn in_range_mut(&mut self, start: usize, end: usize) -> &mut Self {
         self.after_mut(start).before_mut(end)
     }
+
+    fn index_range<R>(&self, range: R) -> Range<usize>
+    where
+        R: ops::RangeBounds<usize>
+    {
+        let start_bound = match range.start_bound() {
+            ops::Bound::Included(&t) => t,
+            ops::Bound::Excluded(&t) => t + 1, // Convert exclusive to inclusive
+            ops::Bound::Unbounded => 0,
+        };
+
+        let end_bound = match range.end_bound() {
+            ops::Bound::Included(&t) => t + 1, // Convert inclusive to exclusive
+            ops::Bound::Excluded(&t) => t,
+            ops::Bound::Unbounded => self.len(),
+        };
+        let range = start_bound..end_bound;
+        range
+    }
 }
 
 impl<T> ops::Index<usize> for EventSlice<T> {
     type Output = Timestamped<T>;
 
     fn index(&self, index: usize) -> &Self::Output {
-        &self.events[index]
+        match self.at(index) {
+            Some(event) => event,
+            None => panic!("No event at timestamp {index}"),
+        }
+    }
+}
+
+impl<T> ops::IndexMut<usize> for EventSlice<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match self.at_mut(index) {
+            Some(event) => event,
+            None => panic!("No event at timestamp {index}"),
+        }
     }
 }
 
@@ -547,7 +576,7 @@ impl<T> ops::Index<ops::Range<usize>> for EventSlice<T> {
 
     fn index(&self, range: ops::Range<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
-        self.slice(range).as_slice()
+        &self.slice(range).events
     }
 }
 
@@ -556,7 +585,16 @@ impl<T> ops::Index<ops::RangeTo<usize>> for EventSlice<T> {
 
     fn index(&self, range: ops::RangeTo<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
-        self.slice(range).as_slice()
+        let range = self.index_range(range);
+        &self.events[range]
+    }
+}
+
+impl<T> ops::IndexMut<ops::RangeTo<usize>> for EventSlice<T> {
+    fn index_mut(&mut self, range: RangeTo<usize>) -> &mut Self::Output {
+        // By default, use timestamp-based indexing
+        let range = self.index_range(range);
+        &mut self.events[range]
     }
 }
 
@@ -565,7 +603,16 @@ impl<T> ops::Index<ops::RangeFrom<usize>> for EventSlice<T> {
 
     fn index(&self, range: ops::RangeFrom<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
-        self.slice(range).as_slice()
+        let range = self.index_range(range);
+        &self.events[range]
+    }
+}
+
+impl<T> ops::IndexMut<ops::RangeFrom<usize>> for EventSlice<T> {
+    fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut Self::Output {
+        // By default, use timestamp-based indexing
+        let range = self.index_range(range);
+        &mut self.events[range]
     }
 }
 
@@ -574,6 +621,12 @@ impl<T> ops::Index<ops::RangeFull> for EventSlice<T> {
 
     fn index(&self, range: ops::RangeFull) -> &Self::Output {
         &self.events[range]
+    }
+}
+
+impl<T> ops::IndexMut<ops::RangeFull> for EventSlice<T> {
+    fn index_mut(&mut self, range: RangeFull) -> &mut Self::Output {
+        &mut self.events[range]
     }
 }
 
@@ -605,6 +658,12 @@ impl<T, R: slice::SliceIndex<[Timestamped<T>]>> ops::Index<ByIndex<R>> for Event
 
     fn index(&self, index: ByIndex<R>) -> &Self::Output {
         &self.events[index.0]
+    }
+}
+
+impl<T, R: slice::SliceIndex<[Timestamped<T>]>> ops::IndexMut<ByIndex<R>> for EventSlice<T> {
+    fn index_mut(&mut self, index: ByIndex<R>) -> &mut Self::Output {
+        &mut self.events[index.0]
     }
 }
 

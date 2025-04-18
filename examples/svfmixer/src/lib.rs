@@ -4,8 +4,8 @@ mod params;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginDsp, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
-use std::ffi::CStr;
 use clogbox_module::Module;
+use std::ffi::CStr;
 
 struct SvfMixer;
 

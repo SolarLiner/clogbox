@@ -34,25 +34,21 @@ impl Module for Dsp {
         let end = context.stream_context.block_size;
         while start < end {
             let end = enum_iter::<params::Param>()
-                .filter_map(|e| context.params_in[e].first().map(|t| t.timestamp))
+                .filter_map(|e| context.params_in[e].after(start + 1).first().map(|t| t.timestamp))
                 .min()
                 .unwrap_or(context.stream_context.block_size);
-            if start == end {
-                for param in enum_iter::<params::Param>() {
-                    let Some(&Timestamped { data, .. }) = context.params_in[param].at(start) else {
-                        continue;
-                    };
-                    self.set_param(param, data);
-                }
-                start += 1;
-            } else {
-                for i in start..end {
-                    let output = self.process_sample(EnumMapArray::new(|ch| context.audio_in[ch][i]));
-                    context.audio_out[Stereo::Left][i] = output[Stereo::Left];
-                    context.audio_out[Stereo::Right][i] = output[Stereo::Right];
-                }
-                start = end;
+            for param in enum_iter::<params::Param>() {
+                let Some(&Timestamped { data, .. }) = context.params_in[param].at(start) else {
+                    continue;
+                };
+                self.set_param(param, data);
             }
+            for i in start..end {
+                let output = self.process_sample(EnumMapArray::new(|ch| context.audio_in[ch][i]));
+                context.audio_out[Stereo::Left][i] = output[Stereo::Left];
+                context.audio_out[Stereo::Right][i] = output[Stereo::Right];
+            }
+            start = end;
         }
         ProcessResult {
             tail: NonZeroU32::new(2),
@@ -104,12 +100,8 @@ impl Dsp {
 
     fn next_sample_inner(&mut self, channel: Stereo, sample: f32) -> f32 {
         use params::Param::*;
-        let params = if channel == Stereo::Left {
-            EnumMapArray::new(|i| self.smoothers[i].next_value())
-        } else {
-            EnumMapArray::new(|i| self.smoothers[i].current_value())
-        };
-        let out = self.dsp[channel].next_sample(sample);
+        let params = EnumMapArray::new(|i| self.smoothers[i].current_value());
+        let out = self.dsp[channel].next_sample(sample.tanh());
         let y = params[Lowpass] * out[SvfOutput::Lowpass]
             + params[Bandpass] * out[SvfOutput::Bandpass]
             + params[Highpass] * out[SvfOutput::Highpass];

@@ -7,7 +7,7 @@ use clogbox_clap::{export_plugin, features, PluginMeta};
 use clogbox_module::Module;
 use std::ffi::CStr;
 
-struct SvfMixer;
+pub struct SvfMixer;
 
 impl PluginMeta for SvfMixer {
     const ID: &'static str = "dev.solarliner.clogbox.SvfMixer";

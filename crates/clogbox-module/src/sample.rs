@@ -46,7 +46,7 @@ impl<SM: SampleModule<Sample: Copy>> Module for SampleModuleWrapper<SM> {
         let mut result = ProcessResult { tail: None };
         while start < context.stream_context.block_size {
             let end = enum_iter::<Self::ParamsIn>()
-                .filter_map(|i| context.params_in[i].first().map(|t| t.timestamp))
+                .filter_map(|i| context.params_in[i].after(start + 1).first().map(|t| t.timestamp))
                 .min()
                 .unwrap_or(context.stream_context.block_size);
 
@@ -57,17 +57,25 @@ impl<SM: SampleModule<Sample: Copy>> Module for SampleModuleWrapper<SM> {
                         .process(context.stream_context, inputs, self.params.to_ref());
                 result.tail = tail;
                 for (e, out) in output {
-                    context.audio_out[e][i] = out;   
+                    context.audio_out[e][i] = out;
                 }
             }
 
             // Update params
             for (p, x) in self.params.iter_mut() {
-                let Some(value) = context.params_in[p].slice(end..=end).last() else { continue; };
+                let Some(value) = context.params_in[p].slice(end..=end).last() else {
+                    continue;
+                };
                 *x = value.data;
             }
             start = end;
         }
         result
+    }
+}
+
+impl<SM: SampleModule> SampleModuleWrapper<SM> {
+    pub fn new(sample_module: SM, params: EnumMapArray<SM::Params, f32>) -> Self {
+        Self { params, sample_module }
     }
 }

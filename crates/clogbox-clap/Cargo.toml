@@ -11,6 +11,7 @@ keywords.workspace = true
 
 [dependencies]
 clogbox-enum.workspace = true
+clogbox-module.workspace = true
 
 clack-plugin.workspace = true
 clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }

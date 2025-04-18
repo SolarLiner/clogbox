@@ -10,13 +10,13 @@ use clack_extensions::audio_ports::{
 use clack_extensions::params::{ParamDisplayWriter, ParamInfo, ParamInfoWriter, PluginMainThreadParams};
 use clack_extensions::state::PluginStateImpl;
 use clack_plugin::events::event_types::ParamValueEvent;
-use clack_plugin::events::io::InputEventBuffer;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum, Mono, Stereo};
 use std::ffi::CStr;
 use std::fmt::Write;
+use clogbox_module::Module;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
@@ -52,11 +52,11 @@ impl PortLayout<Stereo> {
 }
 
 pub trait Plugin: 'static + Sized {
-    type Dsp: PluginDsp<Plugin = Self, Params = Self::Params>;
+    type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Inputs>];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as PluginDsp>::Outputs>];
+    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
+    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
 }
@@ -85,7 +85,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_index as usize;
         if index < count::<P::Params>() {
             let p = P::Params::from_usize(index);
-            let range = p.mapping().range();
+            let range = 0.0..1.0;
             let name = p.name();
             info.set(&ParamInfo {
                 id: ClapId::new(param_index),
@@ -104,7 +104,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
             let id = P::Params::from_usize(index);
-            Some(self.shared.params.get(id) as _)
+            Some(self.shared.params.get_normalized(id) as _)
         } else {
             None
         }
@@ -113,7 +113,9 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
     fn value_to_text(&mut self, param_id: ClapId, value: f64, writer: &mut ParamDisplayWriter) -> std::fmt::Result {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
-            P::Params::from_usize(index).value_to_text(writer, value as _)
+            let param = P::Params::from_usize(index);
+            let mapping = param.mapping();
+            param.value_to_text(writer, mapping.denormalize(value as _))
         } else {
             writer.write_str("ERROR: Invalid parameter index")
         }
@@ -123,7 +125,9 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
             let text = text.to_string_lossy();
-            P::Params::from_usize(index).text_to_value(&text).map(|v| v as _)
+            let param = P::Params::from_usize(index);
+            let mapping = param.mapping();
+            param.text_to_value(&text).map(|v| mapping.normalize(v) as _)
         } else {
             None
         }
@@ -138,7 +142,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
                 });
                 if let Some(id) = id {
                     let value = event.value() as _;
-                    self.shared.params.set(id, value);
+                    self.shared.params.set_normalized(id, value);
                 }
             }
         }

@@ -4,7 +4,7 @@ members = ["crates/*", "examples/*"]
 
 [workspace.package]
 version = "0.1.0"
-rust-version = "1.83"
+rust-version = "1.84"
 authors = ["Nathan Graule <me@solarliner.dev>"]
 edition = "2021"
 license = "GPL-3.0-or-later"

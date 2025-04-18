@@ -195,7 +195,7 @@ impl<P: PluginDsp> Processor<P> {
             let Some(ev) = event.as_event::<ParamValueEvent>() else {
                 continue;
             };
-            let Some(index) = ev.param_id().and_then(|id| {
+            let Some(param) = ev.param_id().and_then(|id| {
                 let index = id.get() as usize;
                 if index < count::<P::ParamsIn>() {
                     Some(P::ParamsIn::from_usize(index))
@@ -205,7 +205,8 @@ impl<P: PluginDsp> Processor<P> {
             }) else {
                 continue;
             };
-            self.params.storage[index].push(ev.time() as _, ev.value() as _);
+            let mapping = param.mapping();
+            self.params.storage[param].push(ev.time() as _, mapping.denormalize(ev.value() as _));
         }
         Ok(())
     }

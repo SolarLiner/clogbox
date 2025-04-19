@@ -85,6 +85,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_index as usize;
         if index < count::<P::Params>() {
             let p = P::Params::from_usize(index);
+            let mapping = p.mapping();
             let range = 0.0..1.0;
             let name = p.name();
             info.set(&ParamInfo {
@@ -95,7 +96,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
                 module: b"",
                 min_value: range.start as _,
                 max_value: range.end as _,
-                default_value: p.default_value() as _,
+                default_value: mapping.normalize(p.default_value()) as _,
             });
         }
     }

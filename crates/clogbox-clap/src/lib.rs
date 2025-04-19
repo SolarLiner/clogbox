@@ -27,7 +27,7 @@ pub trait PluginMeta {
 pub struct PluginEntry<P: Plugin>(PhantomData<P>);
 
 impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
-    type AudioProcessor<'a> = Processor<P::Dsp>;
+    type AudioProcessor<'a> = Processor<'a, P::Dsp>;
     type Shared<'a> = Shared<P::Params>;
     type MainThread<'a> = MainThread<P>;
 

@@ -9,8 +9,8 @@ pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
-use clogbox_enum::{count, Empty, Enum};
-use clogbox_module::eventbuffer::{EventBuffer, EventSlice};
+use clogbox_enum::{count, enum_iter, Empty, Enum};
+use clogbox_module::eventbuffer::{EventBuffer, EventSlice, Timestamped};
 use clogbox_module::{Module, ProcessContext, Samplerate, StreamContext};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
@@ -111,7 +111,8 @@ impl<T> EventStorage<Empty, T> {
     }
 }
 
-pub struct Processor<P: PluginDsp> {
+pub struct Processor<'a, P: PluginDsp> {
+    shared: &'a Shared<P::ParamsIn>,
     dsp: P,
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
@@ -120,7 +121,7 @@ pub struct Processor<P: PluginDsp> {
     tail: Option<NonZeroU32>,
 }
 
-impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>> for Processor<P> {
+impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>> for Processor<'a, P> {
     fn activate(
         host: HostAudioProcessorHandle<'a>,
         main_thread: &mut MainThread<P::Plugin>,
@@ -143,6 +144,7 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
         Ok(Self {
+            shared,
             dsp,
             audio_in,
             audio_out,
@@ -165,7 +167,7 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
 }
 
 #[allow(clippy::needless_range_loop)]
-impl<P: PluginDsp> Processor<P> {
+impl<P: PluginDsp> Processor<'_, P> {
     fn copy_inputs(&mut self, audio: &Audio) -> Result<(), PluginError> {
         for (i, port) in audio.input_ports().enumerate() {
             if let Some(channels) = port.channels()?.into_f32() {
@@ -207,6 +209,11 @@ impl<P: PluginDsp> Processor<P> {
             };
             let mapping = param.mapping();
             self.params.storage[param].push(ev.time() as _, mapping.denormalize(ev.value() as _));
+        }
+        // Send last param values to the shared state
+        for param in enum_iter::<P::ParamsIn>() {
+            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else { continue; };
+            self.shared.params.set(param, value);
         }
         Ok(())
     }
@@ -251,9 +258,24 @@ impl<P: PluginDsp> Processor<P> {
     }
 }
 
-impl<P: PluginDsp> PluginAudioProcessorParams for Processor<P> {
-    fn flush(&mut self, input_parameter_changes: &InputEvents, output_parameter_changes: &mut OutputEvents) {
-        output_parameter_changes.extend(input_parameter_changes);
+impl<P: PluginDsp> PluginAudioProcessorParams for Processor<'_, P> {
+    fn flush(&mut self, input_parameter_changes: &InputEvents, _: &mut OutputEvents) {
+        for event in input_parameter_changes {
+            let Some(ev) = event.as_event::<ParamValueEvent>() else {
+                continue;
+            };
+            let Some(param) = ev.param_id().and_then(|id| {
+                let index = id.get() as usize;
+                if index < count::<P::ParamsIn>() {
+                    Some(P::ParamsIn::from_usize(index))
+                } else {
+                    None
+                }
+            }) else {
+                continue;
+            };
+            self.shared.params.set_normalized(param, ev.value() as _);
+        }
     }
 }
 

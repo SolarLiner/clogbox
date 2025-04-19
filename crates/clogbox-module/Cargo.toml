@@ -12,3 +12,8 @@ keywords.workspace = true
 [dependencies]
 clogbox-enum.workspace = true
 clogbox-math.workspace = true
+
+fundsp = { version = "0.20", optional = true }
+
+[features]
+fundsp = ["dep:fundsp"]

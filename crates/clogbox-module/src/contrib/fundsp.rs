@@ -6,7 +6,7 @@ use fundsp::prelude::*;
 
 pub struct FundspModule<N: AudioNode, Params: Enum = Empty> {
     params: EnumMapArray<Params, Shared>,
-    node: N,
+    node: An<N>,
 }
 
 impl<N: AudioNode, Params: Enum> SampleModule for FundspModule<N, Params> {
@@ -40,11 +40,11 @@ impl<N: AudioNode, Params: Enum> SampleModule for FundspModule<N, Params> {
 }
 
 impl<N: AudioNode, Params: Enum> FundspModule<N, Params> {
-    pub fn new(node: N, params: EnumMapArray<Params, Shared>) -> Self {
+    pub fn new(node: An<N>, params: EnumMapArray<Params, Shared>) -> Self {
         Self { params, node }
     }
 
-    pub fn create(gen: impl FnOnce(EnumMapMut<Params, Shared>) -> N) -> Self {
+    pub fn create(gen: impl FnOnce(EnumMapMut<Params, Shared>) -> An<N>) -> Self {
         let mut params = EnumMapArray::new(|_| shared(0.0));
         let node = gen(params.to_mut());
         Self::new(node, params)

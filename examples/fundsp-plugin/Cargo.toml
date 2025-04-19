@@ -1,0 +1,20 @@
+[package]
+name = "fundsp-plugin"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clogbox-clap.workspace = true
+clogbox-enum.workspace = true
+clogbox-module = { workspace = true, features = ["fundsp"] }
+
+fundsp = "0.20.0"

@@ -10,6 +10,7 @@ pub mod r#dyn;
 pub mod sample;
 pub mod eventbuffer;
 pub mod note;
+mod macros;
 
 pub type Samplerate = Recip<f64>;
 pub type ParamSlice = EventSlice<f32>;

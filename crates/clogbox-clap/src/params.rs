@@ -1,6 +1,6 @@
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::Enum;
-use std::fmt::Formatter;
+use clogbox_enum::{Empty, Enum};
+use std::fmt::{Formatter, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{fmt, ops};
@@ -232,5 +232,27 @@ impl<E: Enum> ParamStorage<E> {
         for (id, value) in values.iter() {
             self.0[id].set(*value);
         }
+    }
+}
+
+impl ParamId for Empty {
+    fn text_to_value(&self, _text: &str) -> Option<f32> {
+        None
+    }
+
+    fn default_value(&self) -> f32 {
+        unreachable!()
+    }
+
+    fn mapping(&self) -> DynMapping {
+        unreachable!()
+    }
+
+    fn value_to_text(&self, _f: &mut dyn Write, _denormalized: f32) -> fmt::Result {
+        unreachable!()
+    }
+
+    fn flags(&self) -> ParamInfoFlags {
+        unreachable!()
     }
 }

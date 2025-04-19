@@ -18,7 +18,7 @@ class BundleClap:
 
     @cached_property
     def output(self) -> Path:
-        return self.input.with_stem(self.input.stem.removeprefix("lib")).with_suffix(".clap")
+        return self.input.with_stem(self.name).with_suffix(".clap")
 
     @classmethod
     def from_args(cls, args: Optional[str] = None):
@@ -60,7 +60,7 @@ class BundleClap:
 
         macos_dir = contents_dir / "MacOS"
         macos_dir.mkdir()
-        module = macos_dir / self.output.stem
+        module = macos_dir / self.name
         shutil.copyfile(self.input, module)
 
     def codesign(self) -> bool:

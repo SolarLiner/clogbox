@@ -6,7 +6,7 @@ use clogbox_filters::svf::{Svf, SvfOutput};
 use clogbox_filters::{sinh, SimpleSaturator};
 use clogbox_math::interpolation::Linear;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
-use clogbox_module::{Module, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
+use clogbox_module::{module_wrapper, Module, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 pub struct DspPerSample {
@@ -42,8 +42,6 @@ impl SampleModule for DspPerSample {
     }
 }
 
-type MW = SampleModuleWrapper<DspPerSample>;
-
 impl DspPerSample {
     fn set_param(&mut self, id: params::Param, value: f32) {
         self.smoothers[id].set_target(value);
@@ -78,35 +76,7 @@ impl DspPerSample {
     }
 }
 
-pub struct Dsp(MW);
-
-impl Module for Dsp {
-    type Sample = <MW as Module>::Sample;
-    type AudioIn = <MW as Module>::AudioIn;
-    type AudioOut = <MW as Module>::AudioOut;
-    type ParamsIn = <MW as Module>::ParamsIn;
-    type ParamsOut = <MW as Module>::ParamsOut;
-    type NoteIn = <MW as Module>::NoteIn;
-    type NoteOut = <MW as Module>::NoteOut;
-
-    fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
-        self.0.prepare(sample_rate, block_size)
-    }
-
-    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        let context: ProcessContext<MW> = ProcessContext {
-            audio_in: context.audio_in,
-            audio_out: context.audio_out,
-            params_in: context.params_in,
-            params_out: context.params_out,
-            note_in: context.note_in,
-            note_out: context.note_out,
-            stream_context: context.stream_context,
-            __phantom: Default::default(),
-        };
-        self.0.process(context)
-    }
-}
+module_wrapper!(Dsp: SampleModuleWrapper<DspPerSample>);
 
 impl PluginDsp for Dsp {
     type Plugin = super::SvfMixer;

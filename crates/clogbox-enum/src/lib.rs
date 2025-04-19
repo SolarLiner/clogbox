@@ -254,7 +254,7 @@ impl Enum for Stereo {
 /// This type is typically used for iterating over enum variants or indexing into
 /// fixed-size collections in a type-safe manner.
 #[derive(Debug, Copy, Clone)]
-pub struct Sequential<N: Unsigned>(N, usize);
+pub struct Sequential<N: Unsigned>(PhantomData<N>, usize);
 
 impl<N: Unsigned> From<usize> for Sequential<N> {
     fn from(value: usize) -> Self {
@@ -282,9 +282,9 @@ impl<N: Unsigned> From<usize> for Sequential<N> {
 /// let valid_index = seq::<U3>(2); // Valid index within bounds for a size 3 array
 /// // let invalid_index = seq::<U3>(3); // Panics because 3 is out of bounds
 /// ```
-pub fn seq<N: Unsigned>(n: usize) -> Sequential<N> {
+pub const fn seq<N: Unsigned>(n: usize) -> Sequential<N> {
     assert!(n < N::USIZE);
-    Sequential(N::default(), n)
+    Sequential(PhantomData, n)
 }
 
 impl<N: Unsigned> PartialEq<Self> for Sequential<N> {
@@ -312,7 +312,7 @@ impl<N: Send + Unsigned + ArrayLength> Enum for Sequential<N> {
 
     fn from_usize(value: usize) -> Self {
         assert!(value < N::USIZE);
-        Sequential(N::default(), value)
+        Sequential(PhantomData, value)
     }
 
     fn to_usize(self) -> usize {

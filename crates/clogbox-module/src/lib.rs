@@ -5,16 +5,19 @@ use std::num::NonZeroU32;
 use std::ops;
 use crate::eventbuffer::EventSlice;
 
+pub mod contrib;
 pub mod r#dyn;
 pub mod sample;
 pub mod eventbuffer;
 pub mod note;
+mod macros;
 
 pub type Samplerate = Recip<f64>;
 pub type ParamSlice = EventSlice<f32>;
 
 pub type NoteSlice = EventSlice<note::NoteEvent>;
 
+#[derive(Debug, Copy, Clone)]
 pub struct StreamContext {
     pub sample_rate: Samplerate,
     pub block_size: usize,

@@ -13,10 +13,6 @@ pub enum Param {
     Highpass,
 }
 
-static CUTOFF_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(20.0, 20e3, 10.0).into_dyn());
-static RESO_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(0.0, 1.0, 0.1).into_dyn());
-static ATTENUVERTER_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| linear(-1.0, 1.0).into_dyn());
-
 impl ParamId for Param {
     fn text_to_value(&self, text: &str) -> Option<f32> {
         text.parse().ok()
@@ -33,6 +29,10 @@ impl ParamId for Param {
     }
 
     fn mapping(&self) -> DynMapping {
+        static CUTOFF_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(20.0, 20e3, 4.0).into_dyn());
+        static RESO_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(0.0, 1.0, 0.5).into_dyn());
+        static ATTENUVERTER_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| linear(-1.0, 1.0).into_dyn());
+
         match self {
             Self::Cutoff => CUTOFF_MAPPING.clone(),
             Self::Resonance => RESO_MAPPING.clone(),

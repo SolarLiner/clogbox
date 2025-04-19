@@ -2,7 +2,7 @@
 <module type="EMPTY_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="Poetry (valib)" />
+      <configuration sdkName="Python 3.13 (clogbox)" />
     </facet>
   </component>
   <component name="NewModuleRootManager">
@@ -19,9 +19,12 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-params/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-schedule/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-module/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/fundsp-plugin/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="library" name="Python 3.13 (clogbox) interpreter library" level="application" />
   </component>
 </module>

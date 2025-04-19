@@ -149,9 +149,14 @@ impl<Sat: Saturator<Sample: Cast<f64> + CastFrom<f64> + Float>> Svf<Sat> {
     /// processing the next sample.
     #[replace_float_literals(Sat::Sample::cast_from(literal))]
     pub fn set_resonance_no_update(&mut self, r: Sat::Sample) {
-        let r = 1. - r;
+        let r = 1. - r * resonance_compensation(self.fc / self.sample_rate);
         self.r = 2. * r;
     }
+}
+
+#[replace_float_literals(T::cast_from(literal))]
+fn resonance_compensation<T: CastFrom<f64> + Float>(x: T) -> T {
+    (0.99 + x.tan()).recip()
 }
 
 impl<Sat: Saturator<Sample: Float + CastFrom<f64>>> Svf<Sat> {

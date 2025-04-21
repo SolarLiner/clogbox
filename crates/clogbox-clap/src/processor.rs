@@ -139,10 +139,11 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
             processor_main_thread: &mut main_thread.processor_main_thread,
             audio_config,
         };
-        let dsp = P::create(context);
+        let mut dsp = P::create(context);
         let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
+        dsp.prepare(Samplerate::new(audio_config.sample_rate), audio_config.max_frames_count as _);
         Ok(Self {
             shared,
             dsp,

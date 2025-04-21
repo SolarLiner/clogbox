@@ -231,6 +231,7 @@ dependencies = [
  "numeric-array",
  "numeric_literals",
  "proptest",
+ "thiserror 1.0.64",
  "typenum",
 ]
 

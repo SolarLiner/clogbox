@@ -1,0 +1,23 @@
+[package]
+name = "nr-clipper"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clogbox-clap.workspace = true
+clogbox-enum.workspace = true
+clogbox-math.workspace = true
+clogbox-module.workspace = true
+clogbox-params.workspace = true
+
+az.workspace = true
+num-traits.workspace = true

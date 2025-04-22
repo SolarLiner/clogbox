@@ -20,6 +20,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-schedule/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-module/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/fundsp-plugin/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/nr-clipper/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/python/clogbox/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

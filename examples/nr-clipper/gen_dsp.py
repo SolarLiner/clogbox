@@ -20,8 +20,10 @@ def main() -> None:
     integrator = lambda x: g * x + s
     y = integrator(x - u)
     eq = sp.Eq(sat(u), y)
+    s = sp.factor(g*(x-u) + y)
+
     rust_equ_u = generate_differentiable(eq, u, "EqU")
-    rust_fns = generate_functions(("y", y), ("s", sp.solve(eq, s)[0]))
+    rust_fns = generate_functions(("y", y), ("s", s))
     dest.write_text(
         "\n".join([DIFFERENTIABLE_CODE_PREAMBLE, *rust_equ_u, "", *rust_fns]))
 

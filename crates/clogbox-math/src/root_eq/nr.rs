@@ -5,6 +5,7 @@ use num_traits::Float;
 pub struct NewtonRaphson<T> {
     pub max_iterations: usize,
     pub tolerance: T,
+    pub over_relaxation: T,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,7 +25,7 @@ impl<T> NewtonRaphson<T> {
 
         for i in 0..self.max_iterations {
             let (fx, dfx) = function.eval_with_derivative(x);
-            let delta = fx / dfx;
+            let delta = self.over_relaxation * fx / dfx;
 
             x = x - delta;
 
@@ -87,6 +88,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
         
         // Starting from positive values should find the positive root
@@ -105,6 +107,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
         
         // Test finding each of the three roots based on initial guess
@@ -126,6 +129,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
         
         // Find the root at x = 0
@@ -149,6 +153,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
 
         let result = nr.solve(&Atanh { x: 0. }, 0.5);
@@ -172,6 +177,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 2,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
         
         // This should hit the iteration limit
@@ -182,6 +188,7 @@ mod tests {
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
+            over_relaxation: 1.0,
         };
         
         let result = nr.solve(&Cubic, 5.0);
@@ -195,11 +202,13 @@ mod tests {
         let nr_loose = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-3,
+            over_relaxation: 1.0,
         };
         
         let nr_strict = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-12,
+            over_relaxation: 1.0,
         };
         
         let result_loose = nr_loose.solve(&Quadratic, 3.0);

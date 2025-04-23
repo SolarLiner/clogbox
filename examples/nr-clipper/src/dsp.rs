@@ -10,7 +10,7 @@ use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessRes
 use clogbox_module::{module_wrapper, PrepareResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use num_traits::Float;
-use std::f32::consts::TAU;
+use std::f32::consts::PI;
 use std::fmt::Write;
 use std::sync::LazyLock;
 
@@ -70,7 +70,7 @@ impl SampleModule for SampleDsp {
 
     fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
         self.z.as_slice_mut().fill(0.0);
-        self.wstep = TAU * sample_rate.recip().value() as f32;
+        self.wstep = 0.5 * sample_rate.recip().value() as f32;
         PrepareResult { latency: 0.0 }
     }
 
@@ -103,17 +103,18 @@ impl SampleDsp {
 
         const NR: NewtonRaphson<f32> = NewtonRaphson {
             tolerance: 1e-6,
-            max_iterations: 10,
+            max_iterations: 100,
+            over_relaxation: 1.0,
         };
         let eq = gen::EqU { x, g, s };
-        let u = NR.solve(&eq, x).value;
+        let u = NR.solve(&eq, x.asinh()).value;
         if !u.is_finite() {
             return gen::y(x, 0.0, s, g) / drive;
         }
         let y = gen::y(g, s, u, x);
-        let s = gen::s(g, u, x);
+        let s = gen::s(g, s, u, x);
         self.z[ch] = s;
-        y / drive
+        y / drive.asinh()
     }
 }
 

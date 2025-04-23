@@ -224,13 +224,20 @@ impl<P: PluginDsp> Processor<'_, P> {
             if let Some(mut channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
-                    channel.copy_from_slice(&self.audio_out[index][..channel.len()]);
+                    let slice = &mut self.audio_out[index][..channel.len()];
+                    for x in &mut *slice {
+                        if !x.is_finite() {
+                            *x = 0.0;
+                        }
+                    }
+                    channel.copy_from_slice(slice);
                 }
             } else if let Some(mut channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
-                        channel[i] = self.audio_out[index][i] as f64;
+                        let y = self.audio_out[index][i] as f64;
+                        channel[i] = if y.is_finite() { y } else { 0.0 };
                     }
                 }
             }

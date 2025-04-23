@@ -18,16 +18,15 @@ use clogbox_math::root_eq::Differentiable;
 
 
 class ClogboxRustCodePrinter(RustCodePrinter):
-    def _print_Pow(self, expr, **kwargs):
-        base_code = self.doprint(expr.base)
+    def _print_Pow(self, expr):
+        base_code = self._print(expr.base)
         exp = expr.exp
         if isinstance(exp, sp.Integer):
             return f"{base_code}.powi({int(exp)})"
         else:
-            exp_code = self.doprint(exp)
-            return f"{base_code}.powf({exp_code})"
+            return super()._print_Pow(expr)
 
-    def _print_Integer(self, expr, **kwargs):
+    def _print_Integer(self, expr, _type=False):
         return f"T::cast_from({float(expr)})"
 
     def _print_Float(self, expr, **kwargs):
@@ -37,7 +36,7 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         p, q = tuple(self._print(sp.Integer(x)) for x in (expr.p, expr.q))
         return f"{p}/{q}"
 
-    def _print_NaN(self, expr, **kwargs):
+    def _print_NaN(self, expr, _type=False):
         return "T::nan()"
 
     def _print_Exp1(self, expr, _type=False):
@@ -67,7 +66,7 @@ def generate_statements(*exprs: Tuple[str, sp.Expr], printer: Optional[RustCodeP
     if not printer:
         printer = ClogboxRustCodePrinter()
     extra_bindings, return_values = sp.cse([v for _, v in exprs])
-    for expr, name in extra_bindings:
+    for name, expr in extra_bindings:
         yield f"let {name} = {printer.doprint(expr)};"
     for name, expr in zip((k for k, _ in exprs), return_values):
         yield f"let {name} = {printer.doprint(expr)};"
@@ -88,7 +87,7 @@ def generate_function(name: str, *exprs: sp.Expr, printer: Optional[RustCodePrin
         printer = ClogboxRustCodePrinter()
     bindings, return_expr = sp.cse(exprs)
 
-    free_args = functools.reduce(operator.or_, (e.free_symbols for e in exprs), set())
+    free_args = sorted(functools.reduce(operator.or_, (e.free_symbols for e in exprs), set()), key=lambda s: s.name)
     args = ", ".join(f"{name}: T" for name in free_args)
     if len(exprs) == 1:
         rtype = "T"
@@ -154,7 +153,7 @@ def generate_differentiable(expr: Union[sp.Expr, sp.Eq], variable: sp.Symbol, st
 
     diff = sp.diff(expr, variable)
 
-    fields = expr.free_symbols - {variable}
+    fields = sorted(expr.free_symbols - {variable}, key=lambda s: s.name)
 
     yield f"pub struct {struct_name}<T> {{"
     for field in fields:

@@ -6,7 +6,7 @@ use clogbox_filters::svf::{Svf, SvfOutput};
 use clogbox_filters::{sinh, SimpleSaturator};
 use clogbox_math::interpolation::Linear;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
-use clogbox_module::{module_wrapper, Module, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
+use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 pub struct DspPerSample {
@@ -69,10 +69,10 @@ impl DspPerSample {
         use params::Param::*;
         let params = EnumMapArray::new(|i| self.smoothers[i].current_value());
         let out = self.dsp[channel].next_sample(sample.tanh());
-        let y = params[Lowpass] * out[SvfOutput::Lowpass]
+
+        params[Lowpass] * out[SvfOutput::Lowpass]
             + params[Bandpass] * out[SvfOutput::Bandpass]
-            + params[Highpass] * out[SvfOutput::Highpass];
-        y
+            + params[Highpass] * out[SvfOutput::Highpass]
     }
 }
 

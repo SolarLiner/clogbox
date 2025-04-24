@@ -231,6 +231,7 @@ dependencies = [
  "numeric-array",
  "numeric_literals",
  "proptest",
+ "thiserror 1.0.64",
  "typenum",
 ]
 
@@ -632,6 +633,19 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+]
+
+[[package]]
+name = "nr-clipper"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "clogbox-clap",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "clogbox-params",
+ "num-traits",
 ]
 
 [[package]]

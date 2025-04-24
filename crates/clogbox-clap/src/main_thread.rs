@@ -14,9 +14,9 @@ use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum, Mono, Stereo};
+use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
-use clogbox_module::Module;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {

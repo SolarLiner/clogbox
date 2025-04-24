@@ -10,7 +10,7 @@
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::Collection;
 use clogbox_enum::generic_array::sequence::GenericSequence;
-use num_traits::{Float, Num};
+use num_traits::Float;
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;

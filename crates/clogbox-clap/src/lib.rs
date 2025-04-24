@@ -1,5 +1,5 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::processor::{PluginDsp, Processor};
+use crate::processor::Processor;
 use crate::shared::Shared;
 use clack_extensions::audio_ports::PluginAudioPorts;
 use clack_extensions::params::PluginParams;

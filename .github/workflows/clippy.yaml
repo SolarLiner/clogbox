@@ -23,6 +23,15 @@ jobs:
           key: ${{ matrix.name }}-${{ matrix.cross-target }}
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install cargo-make
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: --debug cargo-make
+      - name: Pre-build
+        run: cargo make pre-build
       - name: Run clippy
         uses: clechasseur/rs-clippy-check@v3
         with:

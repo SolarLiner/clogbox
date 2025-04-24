@@ -3,21 +3,21 @@ macro_rules! module_wrapper {
     ($output:ident: $base:ty) => {
 pub struct $output(pub $base);
 
-impl Module for $output {
-    type Sample = <$base as Module>::Sample;
-    type AudioIn = <$base as Module>::AudioIn;
-    type AudioOut = <$base as Module>::AudioOut;
-    type ParamsIn = <$base as Module>::ParamsIn;
-    type ParamsOut = <$base as Module>::ParamsOut;
-    type NoteIn = <$base as Module>::NoteIn;
-    type NoteOut = <$base as Module>::NoteOut;
+impl $crate::Module for $output {
+    type Sample = <$base as $crate::Module>::Sample;
+    type AudioIn = <$base as $crate::Module>::AudioIn;
+    type AudioOut = <$base as $crate::Module>::AudioOut;
+    type ParamsIn = <$base as $crate::Module>::ParamsIn;
+    type ParamsOut = <$base as $crate::Module>::ParamsOut;
+    type NoteIn = <$base as $crate::Module>::NoteIn;
+    type NoteOut = <$base as $crate::Module>::NoteOut;
 
-    fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
+    fn prepare(&mut self, sample_rate: $crate::Samplerate, block_size: usize) -> $crate::PrepareResult {
         self.0.prepare(sample_rate, block_size)
     }
 
-    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        let context: ProcessContext<$base> = ProcessContext {
+    fn process(&mut self, context: $crate::ProcessContext<Self>) -> $crate::ProcessResult {
+        let context = $crate::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
             params_in: context.params_in,
@@ -31,25 +31,25 @@ impl Module for $output {
     }
 }
     };
-    
+
     ($output:ident<$($targ:ident: $tbound:tt),+>: $base:ty) => {
 pub struct $output<$($targ: $tbound),*>(pub $base);
 
-impl<$($targ: $tbound),*> Module for $output<$($targ),*> {
-    type Sample = <$base as Module>::Sample;
-    type AudioIn = <$base as Module>::AudioIn;
-    type AudioOut = <$base as Module>::AudioOut;
-    type ParamsIn = <$base as Module>::ParamsIn;
-    type ParamsOut = <$base as Module>::ParamsOut;
-    type NoteIn = <$base as Module>::NoteIn;
-    type NoteOut = <$base as Module>::NoteOut;
+impl<$($targ: $tbound),*> $crate::Module for $output<$($targ),*> {
+    type Sample = <$base as $crate::Module>::Sample;
+    type AudioIn = <$base as $crate::Module>::AudioIn;
+    type AudioOut = <$base as $crate::Module>::AudioOut;
+    type ParamsIn = <$base as $crate::Module>::ParamsIn;
+    type ParamsOut = <$base as $crate::Module>::ParamsOut;
+    type NoteIn = <$base as $crate::Module>::NoteIn;
+    type NoteOut = <$base as $crate::Module>::NoteOut;
 
-    fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
+    fn prepare(&mut self, sample_rate: $crate::Samplerate, block_size: usize) -> $crate::PrepareResult {
         self.0.prepare(sample_rate, block_size)
     }
 
-    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        let context: ProcessContext<$base> = ProcessContext {
+    fn process(&mut self, context: $crate::ProcessContext<Self>) -> $crate::ProcessResult {
+        let context = $crate::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
             params_in: context.params_in,

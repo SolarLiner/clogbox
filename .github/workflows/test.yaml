@@ -23,7 +23,13 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.rust }}
-
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+    - name: Install cargo-make
+      uses: actions-rs/cargo@v1
+      with:
+        command: install
+        args: --debug cargo-make
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -32,8 +38,5 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-registry-
 
-    - name: Build
-      run: cargo build --workspace --verbose
-
-    - name: Run tests
-      run: cargo test --workspace --verbose
+    - name: Test
+      run: cargo make test

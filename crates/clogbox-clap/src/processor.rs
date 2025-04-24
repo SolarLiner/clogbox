@@ -76,7 +76,7 @@ impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
     type Output = EventSlice<T>;
 
     fn index(&self, index: E) -> &Self::Output {
-        &self.storage[index].as_slice()
+        self.storage[index].as_slice()
     }
 }
 
@@ -139,10 +139,14 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
             processor_main_thread: &mut main_thread.processor_main_thread,
             audio_config,
         };
-        let dsp = P::create(context);
+        let mut dsp = P::create(context);
         let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
+        dsp.prepare(
+            Samplerate::new(audio_config.sample_rate),
+            audio_config.max_frames_count as _,
+        );
         Ok(Self {
             shared,
             dsp,
@@ -212,7 +216,9 @@ impl<P: PluginDsp> Processor<'_, P> {
         }
         // Send last param values to the shared state
         for param in enum_iter::<P::ParamsIn>() {
-            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else { continue; };
+            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else {
+                continue;
+            };
             self.shared.params.set(param, value);
         }
         Ok(())
@@ -223,13 +229,20 @@ impl<P: PluginDsp> Processor<'_, P> {
             if let Some(mut channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
-                    channel.copy_from_slice(&self.audio_out[index][..channel.len()]);
+                    let slice = &mut self.audio_out[index][..channel.len()];
+                    for x in &mut *slice {
+                        if !x.is_finite() {
+                            *x = 0.0;
+                        }
+                    }
+                    channel.copy_from_slice(slice);
                 }
             } else if let Some(mut channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter_mut().enumerate() {
                     let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
-                        channel[i] = self.audio_out[index][i] as f64;
+                        let y = self.audio_out[index][i] as f64;
+                        channel[i] = if y.is_finite() { y } else { 0.0 };
                     }
                 }
             }

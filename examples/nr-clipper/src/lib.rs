@@ -1,24 +1,21 @@
-mod dsp;
-mod params;
-
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
-use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap::{export_plugin, PluginMeta};
 use clogbox_module::Module;
-use std::ffi::CStr;
 
-pub struct SvfMixer;
+mod dsp;
+mod gen;
 
-impl PluginMeta for SvfMixer {
-    const ID: &'static str = "dev.solarliner.clogbox.SvfMixer";
-    const NAME: &'static str = "SVF Mixer";
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const FEATURES: &'static [&'static CStr] = &[features::AUDIO_EFFECT, features::STEREO, features::FILTER];
+pub struct NrClipper;
+
+impl PluginMeta for NrClipper {
+    const ID: &'static str = "dev.solarliner.clogbox.nr-clipper";
+    const NAME: &'static str = "NR Clipper";
 }
 
-impl Plugin for SvfMixer {
+impl Plugin for NrClipper {
     type Dsp = dsp::Dsp;
-    type Params = params::Param;
+    type Params = dsp::Params;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
         &[PortLayout::STEREO.main().named("Input")];
@@ -30,4 +27,4 @@ impl Plugin for SvfMixer {
     }
 }
 
-export_plugin!(SvfMixer);
+export_plugin!(NrClipper);

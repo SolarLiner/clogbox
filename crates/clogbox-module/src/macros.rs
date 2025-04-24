@@ -31,7 +31,7 @@ impl $crate::Module for $output {
     }
 }
     };
-    
+
     ($output:ident<$($targ:ident: $tbound:tt),+>: $base:ty) => {
 pub struct $output<$($targ: $tbound),*>(pub $base);
 

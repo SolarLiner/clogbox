@@ -143,7 +143,10 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
         let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
-        dsp.prepare(Samplerate::new(audio_config.sample_rate), audio_config.max_frames_count as _);
+        dsp.prepare(
+            Samplerate::new(audio_config.sample_rate),
+            audio_config.max_frames_count as _,
+        );
         Ok(Self {
             shared,
             dsp,
@@ -213,7 +216,9 @@ impl<P: PluginDsp> Processor<'_, P> {
         }
         // Send last param values to the shared state
         for param in enum_iter::<P::ParamsIn>() {
-            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else { continue; };
+            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else {
+                continue;
+            };
             self.shared.params.set(param, value);
         }
         Ok(())

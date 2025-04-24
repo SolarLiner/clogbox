@@ -78,7 +78,8 @@ impl PluginDsp for Dsp {
                 shared.set_value(default[param])
             }
             let delay = || {
-                (pass() | var(&params[Params::DelayTime])) >> (tap(0.0, 10.0) * var(&params[Params::Feedback]))
+                (pass() | var(&params[Params::DelayTime]))
+                    >> (tap(0.0, 10.0) * var(&params[Params::Feedback]))
                     >> shape(Tanh(1.0))
             };
             let mono =

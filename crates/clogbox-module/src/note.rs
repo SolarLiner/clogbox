@@ -15,7 +15,7 @@ use std::fmt;
 pub struct NoteId {
     /// The channel number, typically in the range 0-15 for MIDI compatibility.
     pub channel: u8,
-    
+
     /// The note number, typically in the range 0-127 for MIDI compatibility.
     pub number: u8,
 }
@@ -63,7 +63,7 @@ impl fmt::Display for NoteId {
         const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
         let octave = (self.number / 12) as i32 - 1; // C0 is MIDI note 12
         let note_index = (self.number % 12) as usize;
-         
+
         write!(f, "{}{} (ch:{})", NOTE_NAMES[note_index], octave, self.channel)
     }
 }
@@ -80,22 +80,22 @@ pub enum NoteEvent {
     NoteOn {
         /// The note identification (number and channel)
         id: NoteId,
-        
+
         /// The frequency of the note in Hz
         frequency: f32,
-        
+
         /// The velocity of the note, in the range 0.0 to 1.0
         velocity: f32,
     },
-    
+
     /// A note-off event, indicating a note has stopped playing.
     NoteOff {
         /// The note identification (number and channel)
         id: NoteId,
-        
+
         /// The frequency of the note in Hz
         frequency: f32,
-        
+
         /// The release velocity, in the range 0.0 to 1.0 (often ignored)
         velocity: f32,
     },
@@ -114,7 +114,7 @@ impl NoteEvent {
     pub fn note_on(number: u8, channel: u8, velocity: f32) -> Self {
         let id = NoteId::new(number, channel);
         let frequency = id.to_frequency();
-        
+
         NoteEvent::NoteOn {
             id,
             frequency,
@@ -134,7 +134,7 @@ impl NoteEvent {
     pub fn note_off(number: u8, channel: u8, velocity: f32) -> Self {
         let id = NoteId::new(number, channel);
         let frequency = id.to_frequency();
-        
+
         NoteEvent::NoteOff {
             id,
             frequency,
@@ -222,27 +222,29 @@ mod tests {
         let fs2 = NoteId::new(42, 3);
         assert_eq!(fs2.to_string(), "F#2 (ch:3)");
     }
-    
+
     #[test]
     fn test_note_id_ordering() {
         // Channel has higher precedence than note number
         let c4_ch0 = NoteId::new(60, 0);
         let c3_ch1 = NoteId::new(48, 1);
         assert!(c4_ch0 < c3_ch1); // Channel 0 comes before channel 1
-        
+
         // When channels are the same, note numbers determine order
         let c4_ch1 = NoteId::new(60, 1);
         let e4_ch1 = NoteId::new(64, 1);
         assert!(c4_ch1 < e4_ch1); // C4 is lower than E4
-        
+
         // Verify that a collection of NoteIds gets sorted correctly
-        let mut notes = [NoteId::new(64, 1), // E4, ch 1
+        let mut notes = [
+            NoteId::new(64, 1), // E4, ch 1
             NoteId::new(60, 0), // C4, ch 0
             NoteId::new(67, 0), // G4, ch 0
-            NoteId::new(60, 1)];
-        
+            NoteId::new(60, 1),
+        ];
+
         notes.sort();
-        
+
         assert_eq!(notes[0], NoteId::new(60, 0)); // C4, ch 0
         assert_eq!(notes[1], NoteId::new(67, 0)); // G4, ch 0
         assert_eq!(notes[2], NoteId::new(60, 1)); // C4, ch 1

@@ -1,16 +1,16 @@
+use crate::eventbuffer::EventSlice;
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::ops;
-use crate::eventbuffer::EventSlice;
 
 pub mod contrib;
 pub mod r#dyn;
-pub mod sample;
 pub mod eventbuffer;
-pub mod note;
 mod macros;
+pub mod note;
+pub mod sample;
 
 pub type Samplerate = Recip<f64>;
 pub type ParamSlice = EventSlice<f32>;
@@ -57,4 +57,3 @@ pub trait Module {
 
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult;
 }
-

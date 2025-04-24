@@ -1,5 +1,5 @@
-use std::{ops, slice};
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
+use std::{ops, slice};
 
 /// A wrapper for data with an associated timestamp.
 ///
@@ -188,9 +188,9 @@ impl<T> EventSlice<T> {
     }
 
     pub fn at_mut(&mut self, timestamp: usize) -> Option<&mut Timestamped<T>> {
-        let Some(index) = self.events
-            .binary_search_by_key(&timestamp, |e| e.timestamp)
-            .ok() else { return None; };
+        let Some(index) = self.events.binary_search_by_key(&timestamp, |e| e.timestamp).ok() else {
+            return None;
+        };
         Some(&mut self.events[index])
     }
 
@@ -533,7 +533,7 @@ impl<T> EventSlice<T> {
 
     fn index_range<R>(&self, range: R) -> Range<usize>
     where
-        R: ops::RangeBounds<usize>
+        R: ops::RangeBounds<usize>,
     {
         let start_bound = match range.start_bound() {
             ops::Bound::Included(&t) => t,
@@ -546,7 +546,7 @@ impl<T> EventSlice<T> {
             ops::Bound::Excluded(&t) => t,
             ops::Bound::Unbounded => self.len(),
         };
-        
+
         start_bound..end_bound
     }
 }

@@ -69,7 +69,7 @@ impl DspPerSample {
         use params::Param::*;
         let params = EnumMapArray::new(|i| self.smoothers[i].current_value());
         let out = self.dsp[channel].next_sample(sample.tanh());
-        
+
         params[Lowpass] * out[SvfOutput::Lowpass]
             + params[Bandpass] * out[SvfOutput::Bandpass]
             + params[Highpass] * out[SvfOutput::Highpass]

@@ -1,8 +1,8 @@
+use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
 use clogbox_enum::{count, Enum};
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops;
-use std::borrow::Cow;
-use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
 
 pub struct DynProcessContext<'a, T> {
     pub audio_in: &'a dyn ops::Index<usize, Output = [T]>,
@@ -122,12 +122,15 @@ impl<M: Module> DynModule<M::Sample> for M {
 
 struct EnumIndexMapping<'a, T: ?Sized, E> {
     __enum: PhantomData<E>,
-    data: &'a dyn ops::Index<usize, Output=T>,
+    data: &'a dyn ops::Index<usize, Output = T>,
 }
 
 impl<'a, T: ?Sized, E> EnumIndexMapping<'a, T, E> {
-    fn new(data: &'a dyn ops::Index<usize, Output=T>) -> Self {
-        Self { __enum: PhantomData, data }
+    fn new(data: &'a dyn ops::Index<usize, Output = T>) -> Self {
+        Self {
+            __enum: PhantomData,
+            data,
+        }
     }
 }
 
@@ -141,12 +144,15 @@ impl<T: ?Sized, E: Enum> ops::Index<E> for EnumIndexMapping<'_, T, E> {
 
 struct EnumIndexMutMapping<'a, T: ?Sized, E> {
     __enum: PhantomData<E>,
-    data: &'a mut dyn ops::IndexMut<usize, Output=T>,
+    data: &'a mut dyn ops::IndexMut<usize, Output = T>,
 }
 
 impl<'a, T: ?Sized, E> EnumIndexMutMapping<'a, T, E> {
-    fn new(data: &'a mut dyn ops::IndexMut<usize, Output=T>) -> Self {
-        Self { __enum: PhantomData, data }
+    fn new(data: &'a mut dyn ops::IndexMut<usize, Output = T>) -> Self {
+        Self {
+            __enum: PhantomData,
+            data,
+        }
     }
 }
 

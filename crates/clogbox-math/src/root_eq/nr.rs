@@ -30,11 +30,19 @@ impl<T> NewtonRaphson<T> {
             x = x - delta;
 
             if delta.abs() < self.tolerance {
-                return SolveResult { value: x, delta, iterations: i };
+                return SolveResult {
+                    value: x,
+                    delta,
+                    iterations: i,
+                };
             }
         }
 
-        SolveResult { value: x, delta: T::zero(), iterations: self.max_iterations }
+        SolveResult {
+            value: x,
+            delta: T::zero(),
+            iterations: self.max_iterations,
+        }
     }
 }
 
@@ -49,7 +57,7 @@ mod tests {
         type Scalar = f64;
 
         fn eval_with_derivative(&self, x: Self::Scalar) -> (Self::Scalar, Self::Scalar) {
-            (x*x - 4.0, 2.0 * x)
+            (x * x - 4.0, 2.0 * x)
         }
     }
 
@@ -59,7 +67,10 @@ mod tests {
         type Scalar = f64;
 
         fn eval_with_derivative(&self, x: Self::Scalar) -> (Self::Scalar, Self::Scalar) {
-            (x.powi(3) - 2.0 * x.powi(2) - 11.0 * x + 12.0, 3.0 * x.powi(2) - 4.0 * x - 11.0)
+            (
+                x.powi(3) - 2.0 * x.powi(2) - 11.0 * x + 12.0,
+                3.0 * x.powi(2) - 4.0 * x - 11.0,
+            )
         }
     }
 
@@ -74,7 +85,9 @@ mod tests {
     }
 
     // Function with multiple closely spaced roots: f(x) = sin(10x) (roots at x = 0, ±π/10, ±2π/10, etc.)
-    struct Atanh { x: f64 }
+    struct Atanh {
+        x: f64,
+    }
     impl Differentiable for Atanh {
         type Scalar = f64;
 
@@ -90,12 +103,12 @@ mod tests {
             tolerance: 1e-10,
             over_relaxation: 1.0,
         };
-        
+
         // Starting from positive values should find the positive root
         let result = nr.solve(&Quadratic, 3.0);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value - 2.0).abs() < nr.tolerance);
-        
+
         // Starting from negative values should find the negative root
         let result = nr.solve(&Quadratic, -3.0);
         assert!(result.iterations < nr.max_iterations);
@@ -109,16 +122,16 @@ mod tests {
             tolerance: 1e-10,
             over_relaxation: 1.0,
         };
-        
+
         // Test finding each of the three roots based on initial guess
         let result = nr.solve(&Cubic, -4.0);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value + 3.0).abs() < nr.tolerance);
-        
+
         let result = nr.solve(&Cubic, 0.5);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value - 1.0).abs() < nr.tolerance);
-        
+
         let result = nr.solve(&Cubic, 3.0);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value - 4.0).abs() < nr.tolerance);
@@ -131,17 +144,17 @@ mod tests {
             tolerance: 1e-10,
             over_relaxation: 1.0,
         };
-        
+
         // Find the root at x = 0
         let result = nr.solve(&Sine, 0.1);
         assert!(result.iterations < nr.max_iterations);
         assert!(result.value.abs() < nr.tolerance);
-        
+
         // Find the root at x = π
         let result = nr.solve(&Sine, 3.0);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value - PI).abs() < nr.tolerance);
-        
+
         // Find the root at x = -π
         let result = nr.solve(&Sine, -3.0);
         assert!(result.iterations < nr.max_iterations);
@@ -161,14 +174,22 @@ mod tests {
         let delta = (expected - result.value).abs();
         println!("{result:?}");
         assert!(result.iterations < nr.max_iterations);
-        assert!(delta < nr.tolerance, "expected: {expected}, actual: {actual} (delta: {delta})", actual = result.value);
+        assert!(
+            delta < nr.tolerance,
+            "expected: {expected}, actual: {actual} (delta: {delta})",
+            actual = result.value
+        );
 
         let result = nr.solve(&Atanh { x: 0.5 }, 0.0);
         let expected = 0.5493061443;
         let delta = (expected - result.value).abs();
         println!("{result:?}");
         assert!(result.iterations < nr.max_iterations);
-        assert!(delta < nr.tolerance, "expected: {expected}, actual: {actual} (delta: {delta})", actual = result.value);
+        assert!(
+            delta < nr.tolerance,
+            "expected: {expected}, actual: {actual} (delta: {delta})",
+            actual = result.value
+        );
     }
 
     #[test]
@@ -179,18 +200,18 @@ mod tests {
             tolerance: 1e-10,
             over_relaxation: 1.0,
         };
-        
+
         // This should hit the iteration limit
         let result = nr.solve(&Cubic, 5.0);
         assert_eq!(result.iterations, nr.max_iterations);
-        
+
         // Check that we can still get close with enough iterations
         let nr = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-10,
             over_relaxation: 1.0,
         };
-        
+
         let result = nr.solve(&Cubic, 5.0);
         assert!(result.iterations < nr.max_iterations);
         assert!((result.value - 4.0).abs() < nr.tolerance);
@@ -204,19 +225,19 @@ mod tests {
             tolerance: 1e-3,
             over_relaxation: 1.0,
         };
-        
+
         let nr_strict = NewtonRaphson {
             max_iterations: 100,
             tolerance: 1e-12,
             over_relaxation: 1.0,
         };
-        
+
         let result_loose = nr_loose.solve(&Quadratic, 3.0);
         let result_strict = nr_strict.solve(&Quadratic, 3.0);
-        
+
         // Strict tolerance should take more iterations (or equal)
         assert!(result_strict.iterations >= result_loose.iterations);
-        
+
         // Both should find the root within their respective tolerances
         assert!((result_loose.value - 2.0).abs() < nr_loose.tolerance);
         assert!((result_strict.value - 2.0).abs() < nr_strict.tolerance);

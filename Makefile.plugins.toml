@@ -33,6 +33,7 @@ args = [
 ]
 
 [tasks.build]
+dependencies = ["pre-build"]
 clear = true
 run_task = [
     { name = "build-debug", condition = { env = { "CARGO_MAKE_CARGO_PROFILE" = "dev" } } },

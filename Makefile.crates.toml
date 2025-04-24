@@ -1,4 +1,5 @@
 [tasks.test]
+dependencies = ["build"]
 install_crate = { crate_name = "cargo-insta", binary = "cargo", test_arg = ["insta", "--help"] }
 command = "cargo"
 args = ["insta", "test", "--all-features"]

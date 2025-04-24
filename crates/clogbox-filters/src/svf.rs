@@ -291,7 +291,7 @@ impl<T: 'static + Copy + Send + Float + NumAssign + ops::Neg<Output = T> + CastF
         let k = self.coeffs.each_mut().map(|s| s.next_value());
         let x = [input, outputs[Lowpass], outputs[Bandpass], outputs[Highpass]];
         k.into_iter()
-            .zip(x.into_iter())
+            .zip(x)
             .map(|(k, x)| k * x)
             .reduce(ops::Add::add)
             .unwrap_or(T::zero())

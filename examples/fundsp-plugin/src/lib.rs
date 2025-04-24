@@ -1,7 +1,7 @@
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
-use clogbox_enum::{seq, Empty, Sequential};
+use clogbox_enum::{seq, Sequential};
 use clogbox_module::Module;
 use fundsp::prelude::U2;
 use std::ffi::CStr;

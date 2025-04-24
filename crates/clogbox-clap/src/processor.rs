@@ -76,7 +76,7 @@ impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
     type Output = EventSlice<T>;
 
     fn index(&self, index: E) -> &Self::Output {
-        &self.storage[index].as_slice()
+        self.storage[index].as_slice()
     }
 }
 

@@ -50,7 +50,7 @@ impl NoteId {
         // Each semitone is a factor of 2^(1/12)
         const A4_NOTE_NUMBER: f32 = 69.0;
         const A4_FREQUENCY: f32 = 440.0;
-        const SEMITONE_RATIO: f32 = 1.0594630943592953; // 2^(1/12)
+        const SEMITONE_RATIO: f32 = 1.059_463_1; // 2^(1/12)
 
         let semitones_from_a4 = self.number as f32 - A4_NOTE_NUMBER;
         A4_FREQUENCY * SEMITONE_RATIO.powf(semitones_from_a4)
@@ -236,12 +236,10 @@ mod tests {
         assert!(c4_ch1 < e4_ch1); // C4 is lower than E4
         
         // Verify that a collection of NoteIds gets sorted correctly
-        let mut notes = vec![
-            NoteId::new(64, 1), // E4, ch 1
+        let mut notes = [NoteId::new(64, 1), // E4, ch 1
             NoteId::new(60, 0), // C4, ch 0
             NoteId::new(67, 0), // G4, ch 0
-            NoteId::new(60, 1), // C4, ch 1
-        ];
+            NoteId::new(60, 1)];
         
         notes.sort();
         

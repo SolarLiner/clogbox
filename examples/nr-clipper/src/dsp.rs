@@ -10,7 +10,6 @@ use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessRes
 use clogbox_module::{module_wrapper, PrepareResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use num_traits::Float;
-use std::f32::consts::PI;
 use std::fmt::Write;
 use std::sync::LazyLock;
 

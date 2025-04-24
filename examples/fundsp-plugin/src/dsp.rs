@@ -4,7 +4,7 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
 use clogbox_module::contrib::fundsp::FundspModule;
 use clogbox_module::sample::SampleModuleWrapper;
-use clogbox_module::{module_wrapper, Module, PrepareResult, ProcessContext, ProcessResult, Samplerate};
+use clogbox_module::{module_wrapper, Module};
 use fundsp::prelude::*;
 use std::fmt::Write;
 use std::sync::LazyLock;
@@ -78,12 +78,11 @@ impl PluginDsp for Dsp {
                 shared.set_value(default[param])
             }
             let delay = || {
-                (pass() | var(&params[Params::DelayTime]))
-                    >> tap(0.0, 10.0) * var(&params[Params::Feedback])
+                (pass() | var(&params[Params::DelayTime])) >> (tap(0.0, 10.0) * var(&params[Params::Feedback]))
                     >> shape(Tanh(1.0))
             };
             let mono =
-                || pass() * (1.0 - var(&params[Params::DryWet])) & (var(&params[Params::DryWet]) * feedback(delay()));
+                || (pass() * (1.0 - var(&params[Params::DryWet]))) & (var(&params[Params::DryWet]) * feedback(delay()));
             let node = mono() | mono();
             An(Unit::new(Box::new(node)))
         });

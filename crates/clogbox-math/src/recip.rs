@@ -1,4 +1,4 @@
-use az::{Cast, CastFrom};
+use az::Cast;
 use num_traits::float::FloatCore;
 use num_traits::real::Real;
 use num_traits::{Float, FromPrimitive, Num, NumCast, NumOps, One, ToPrimitive, Zero};

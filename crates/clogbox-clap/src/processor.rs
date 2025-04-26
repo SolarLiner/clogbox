@@ -136,7 +136,7 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
         let context = PluginCreateContext {
             host: host.shared(),
             params: params.to_ref(),
-            processor_main_thread: &mut main_thread.processor_main_thread,
+            processor_main_thread: &mut main_thread.plugin,
             audio_config,
         };
         let mut dsp = P::create(context);

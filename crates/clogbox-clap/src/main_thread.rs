@@ -18,6 +18,12 @@ use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
 
+#[cfg(not(feature = "gui"))]
+type GuiHandle<E> = std::marker::PhantomData<E>;
+
+#[cfg(feature = "gui")]
+use super::gui::GuiHandle;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
     pub name: &'static str,
@@ -62,17 +68,29 @@ pub trait Plugin: 'static + Sized {
 }
 
 pub struct MainThread<P: Plugin> {
-    shared: Shared<P::Params>,
-    pub(crate) processor_main_thread: P,
+    pub(crate) shared: Shared<P::Params>,
+    pub(crate) gui: GuiHandle<P::Params>,
+    pub(crate) plugin: P,
 }
 
 impl<P: Plugin> MainThread<P> {
     pub(crate) fn new(host: HostMainThreadHandle, shared: &Shared<P::Params>) -> Result<Self, PluginError> {
-        let processor_main_thread = P::create(host.shared())?;
+        let plugin = P::create(host.shared())?;
         Ok(Self {
             shared: shared.clone(),
-            processor_main_thread,
+            gui: GuiHandle::default(),
+            plugin,
         })
+    }
+    
+    #[cfg(feature = "gui")]
+    fn notify_param_change(&mut self, id: P::Params) {
+        self.gui.notify_param_change(id);   
+    }
+    
+    #[cfg(not(feature = "gui"))]
+    fn notify_param_change(&mut self, _: P::Params) {
+        // Do nothing
     }
 }
 
@@ -144,6 +162,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
                 if let Some(id) = id {
                     let value = event.value() as _;
                     self.shared.params.set_normalized(id, value);
+                    self.notify_param_change(id);
                 }
             }
         }

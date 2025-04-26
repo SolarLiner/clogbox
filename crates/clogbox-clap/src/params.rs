@@ -278,6 +278,12 @@ pub trait ParamId: Sync + Enum {
     fn mapping(&self) -> DynMapping;
     fn value_to_text(&self, f: &mut dyn fmt::Write, denormalized: f32) -> fmt::Result;
     fn flags(&self) -> ParamInfoFlags;
+    
+    fn value_to_string(&self, denormalized: f32) -> Result<String, fmt::Error> {
+        let mut buf = String::new();
+        self.value_to_text(&mut buf, denormalized)?;
+        Ok(buf)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +294,14 @@ impl<E: ParamId> Default for ParamStorage<E> {
         Self(Arc::new(EnumMapArray::new(|p: E| {
             ParamValue::new_dyn(p.mapping(), p.default_value())
         })))
+    }
+}
+
+impl<E: ParamId> ops::Index<E> for ParamStorage<E> {
+    type Output = ParamValue;
+
+    fn index(&self, index: E) -> &Self::Output {
+        &self.0[index]
     }
 }
 

@@ -12,6 +12,9 @@ use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
+
+#[cfg(feature = "gui")]
+pub mod gui;
 pub mod main_thread;
 pub mod params;
 pub mod processor;
@@ -36,6 +39,8 @@ impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
             .register::<PluginState>();
+        #[cfg(feature = "gui")]
+        builder.register::<clack_extensions::gui::PluginGui>();
     }
 }
 

@@ -9,8 +9,9 @@ use clack_plugin::prelude::HostSharedHandle;
 use clogbox_enum::enum_iter;
 use egui::Widget;
 use raw_window_handle::HasRawWindowHandle;
-use std::sync::mpsc::{Receiver, Sender};
 use ringbuf::traits::Producer;
+use std::cmp::min;
+use std::sync::mpsc::{Receiver, Sender};
 
 pub enum GuiEvent<E> {
     ParamChange(E),
@@ -26,7 +27,12 @@ pub struct View<E: ParamId> {
 }
 
 impl<E: ParamId> View<E> {
-    fn new(host_shared_handle: HostSharedHandle, window: &impl HasRawWindowHandle, dsp_notifier: ParamNotifier<E>, shared: Shared<E>) -> Self {
+    fn new(
+        host_shared_handle: HostSharedHandle,
+        window: &impl HasRawWindowHandle,
+        dsp_notifier: ParamNotifier<E>,
+        shared: Shared<E>,
+    ) -> Self {
         struct GuiState<E: ParamId> {
             host_gui: clack_extensions::gui::HostGui,
             params: clack_extensions::params::HostParams,
@@ -82,18 +88,21 @@ impl<E: ParamId> View<E> {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.columns(2, |ui| {
                         for p in enum_iter::<E>() {
-                            let mut value = state.shared.params.get(p);
+                            let mut value = state.shared.params.get_normalized(p);
                             ui[0].label(p.name());
                             let response = egui::widgets::DragValue::new(&mut value)
-                                .custom_parser(|s| p.text_to_value(s).map(|f| f as f64))
+                                .custom_parser(|s| {
+                                    p.text_to_value(s).map(|f| p.mapping().normalize(f.clamp(0., 1.)) as _)
+                                })
                                 .custom_formatter(|f, _| {
-                                    p.value_to_string(f as f32)
+                                    p.value_to_string(p.mapping().denormalize(f as _))
                                         .unwrap_or_else(|err| format!("Formatting error: {err}"))
                                 })
+                                .speed(0.01)
                                 .ui(&mut ui[1]);
                             if response.changed() {
-                                state.shared.params.set(p, value);
-                                state.dsp_notifier.notify(p, value);
+                                state.shared.params.set(p, p.mapping().denormalize(value as _));
+                                state.dsp_notifier.notify(p, p.mapping().denormalize(value as _));
                             }
                         }
                     });
@@ -233,14 +242,22 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
         eprintln!("[set_parent] <window>");
-        self.gui
-            .create_instance(self.host.shared(), window, self.shared.clone(), self.param_notifier.clone())
+        self.gui.create_instance(
+            self.host.shared(),
+            window,
+            self.shared.clone(),
+            self.param_notifier.clone(),
+        )
     }
 
     fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
         eprintln!("[set_transient] <window>");
-        self.gui
-            .create_instance(self.host.shared(), window, self.shared.clone(), self.param_notifier.clone())
+        self.gui.create_instance(
+            self.host.shared(),
+            window,
+            self.shared.clone(),
+            self.param_notifier.clone(),
+        )
     }
 
     fn suggest_title(&mut self, title: &str) {

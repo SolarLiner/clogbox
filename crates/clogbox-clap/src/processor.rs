@@ -237,7 +237,7 @@ impl<P: PluginDsp> Processor<'_, P> {
                 0,
                 ClapId::new(event.id.to_usize() as _),
                 Pckn::match_all(),
-                event.value as _,
+                event.normalized_value() as _,
                 Cookie::empty(),
             )) {
                 eprintln!("Failed to push event: {}", err);

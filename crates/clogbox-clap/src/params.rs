@@ -2,11 +2,13 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Empty, Enum};
 use std::fmt::{Formatter, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, ops};
 
 pub use clack_extensions::params::ParamInfoFlags;
 use clogbox_math::{db_to_linear, linear_to_db};
+use clack_plugin::events::io::InputEventBuffer;
+use ringbuf::traits::{Consumer, Producer, Split};
 
 /// Mapping from and to a normalized range.
 pub trait Mapping: Send + Sync {
@@ -278,12 +280,80 @@ pub trait ParamId: Sync + Enum {
     fn mapping(&self) -> DynMapping;
     fn value_to_text(&self, f: &mut dyn fmt::Write, denormalized: f32) -> fmt::Result;
     fn flags(&self) -> ParamInfoFlags;
-    
+
     fn value_to_string(&self, denormalized: f32) -> Result<String, fmt::Error> {
         let mut buf = String::new();
         self.value_to_text(&mut buf, denormalized)?;
         Ok(buf)
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ParamChangeEvent<E> {
+    pub id: E,
+    pub value: f32,
+}
+
+// pub type ParamNotifier<E> = Arc<Mutex<ringbuf::HeapProd<ParamChangeEvent<E>>>>;
+// pub type ParamListener<E> = ringbuf::HeapCons<ParamChangeEvent<E>>;
+
+#[derive(Clone)]
+pub struct ParamNotifier<E> {
+    producer: Arc<Mutex<ringbuf::HeapProd<ParamChangeEvent<E>>>>,
+}
+
+impl<E> ParamNotifier<E> {
+    pub fn notify(&self, id: E, value: f32) {
+        if self.get_producer().try_push(ParamChangeEvent { id, value }).is_err() {
+            eprintln!("ParamNotifier: ring buffer full");
+        }
+    }
+
+    fn get_producer(&self) -> impl '_ + Drop + ops::DerefMut<Target = ringbuf::HeapProd<ParamChangeEvent<E>>> {
+        match self.producer.lock() {
+            Ok(p) => p,
+            Err(err) => {
+                eprintln!("ParamNotifier: Mutex poisoned, recovering: {err}");
+                err.into_inner()
+            }
+        }
+    }
+
+    fn construct(producer: ringbuf::HeapProd<ParamChangeEvent<E>>) -> Self {
+        Self {
+            producer: Arc::new(Mutex::new(producer)),
+        }
+    }
+}
+
+pub struct ParamListener<E: Enum> {
+    consumer: ringbuf::HeapCons<ParamChangeEvent<E>>,
+    received_values: EnumMapArray<E, f32>,
+}
+
+impl<'a, E: Enum> Iterator for &'a mut ParamListener<E> {
+    type Item = ParamChangeEvent<E>;
+    fn next(&mut self) -> Option<ParamChangeEvent<E>> {
+        self.consumer.try_pop()
+    }
+}
+
+impl<E: Enum> ParamListener<E> {
+    pub fn value_of(&self, id: E) -> Option<f32> {
+        Some(self.received_values[id]).filter(|v| !v.is_nan())
+    }
+
+    fn construct(consumer: ringbuf::HeapCons<ParamChangeEvent<E>>) -> Self {
+        Self {
+            consumer,
+            received_values: EnumMapArray::new(|p| f32::NAN),
+        }
+    }
+}
+
+pub fn create_notifier_listener<E: Enum>(capacity: usize) -> (ParamNotifier<E>, ParamListener<E>) {
+    let (producer, consumer) = ringbuf::HeapRb::new(capacity).split();
+    (ParamNotifier::construct(producer), ParamListener::construct(consumer))
 }
 
 #[derive(Debug, Clone)]

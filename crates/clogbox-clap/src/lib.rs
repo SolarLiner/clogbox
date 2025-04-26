@@ -32,7 +32,7 @@ pub struct PluginEntry<P: Plugin>(PhantomData<P>);
 impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
     type AudioProcessor<'a> = Processor<'a, P::Dsp>;
     type Shared<'a> = Shared<P::Params>;
-    type MainThread<'a> = MainThread<P>;
+    type MainThread<'a> = MainThread<'a, P>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _: Option<&Self::Shared<'_>>) {
         builder

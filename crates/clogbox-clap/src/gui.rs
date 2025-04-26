@@ -1,13 +1,16 @@
 use crate::main_thread::Plugin;
-use crate::params::ParamId;
+use crate::params::{ParamChangeEvent, ParamId, ParamNotifier};
 use crate::shared::Shared;
 use baseview::{PhySize, Size, WindowScalePolicy};
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
+use clack_plugin::prelude::HostSharedHandle;
 use clogbox_enum::enum_iter;
+use egui::Widget;
 use raw_window_handle::HasRawWindowHandle;
 use std::sync::mpsc::{Receiver, Sender};
+use ringbuf::traits::Producer;
 
 pub enum GuiEvent<E> {
     ParamChange(E),
@@ -23,11 +26,13 @@ pub struct View<E: ParamId> {
 }
 
 impl<E: ParamId> View<E> {
-    fn new(window: &impl HasRawWindowHandle, shared: Shared<E>) -> Self {
+    fn new(host_shared_handle: HostSharedHandle, window: &impl HasRawWindowHandle, dsp_notifier: ParamNotifier<E>, shared: Shared<E>) -> Self {
         struct GuiState<E: ParamId> {
+            host_gui: clack_extensions::gui::HostGui,
+            params: clack_extensions::params::HostParams,
             shared: Shared<E>,
             rx: Receiver<GuiEvent<E>>,
-            window_title: String,
+            dsp_notifier: ParamNotifier<E>,
         }
 
         let (tx, rx) = std::sync::mpsc::channel();
@@ -36,9 +41,11 @@ impl<E: ParamId> View<E> {
             height: 350,
         };
         let state = GuiState {
+            host_gui: host_shared_handle.get_extension().unwrap(),
+            params: host_shared_handle.get_extension().unwrap(),
             rx,
+            dsp_notifier,
             shared: shared.clone(),
-            window_title: String::new(),
         };
         let open_options = baseview::WindowOpenOptions {
             title: "egui plugin window".into(),
@@ -57,17 +64,15 @@ impl<E: ParamId> View<E> {
             |ctx, queue, state| {
                 for event in state.rx.try_iter() {
                     match event {
-                        GuiEvent::SetTitle(title) => {
-                            state.window_title = title;
-                            ctx.request_repaint();
-                        }
                         GuiEvent::Resize(size) => {
                             queue.resize(PhySize {
                                 width: size.width,
                                 height: size.height,
                             });
                         }
-                        GuiEvent::ParamChange(..) => {ctx.request_repaint();}
+                        GuiEvent::ParamChange(..) => {
+                            ctx.request_repaint();
+                        }
                         _ => {}
                     }
                 }
@@ -77,12 +82,19 @@ impl<E: ParamId> View<E> {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.columns(2, |ui| {
                         for p in enum_iter::<E>() {
-                            let value = state.shared.params.get(p);
+                            let mut value = state.shared.params.get(p);
                             ui[0].label(p.name());
-                            ui[1].label(
-                                p.value_to_string(value)
-                                    .unwrap_or_else(|err| format!("Formatting error: {err}")),
-                            );
+                            let response = egui::widgets::DragValue::new(&mut value)
+                                .custom_parser(|s| p.text_to_value(s).map(|f| f as f64))
+                                .custom_formatter(|f, _| {
+                                    p.value_to_string(f as f32)
+                                        .unwrap_or_else(|err| format!("Formatting error: {err}"))
+                                })
+                                .ui(&mut ui[1]);
+                            if response.changed() {
+                                state.shared.params.set(p, value);
+                                state.dsp_notifier.notify(p, value);
+                            }
                         }
                     });
                 });
@@ -136,16 +148,22 @@ impl<E: ParamId> Default for GuiHandle<E> {
 
 impl<E: ParamId> GuiHandle<E> {
     pub const CONST_DEFAULT: Self = Self { instance: None };
-    
+
     pub fn notify_param_change(&self, param: E) {
         if let Some(instance) = &self.instance {
             let _ = instance.send_event(GuiEvent::ParamChange(param));
         }
     }
 
-    fn create_instance(&mut self, window: Window, shared: Shared<E>) -> Result<(), PluginError> {
+    fn create_instance(
+        &mut self,
+        host_shared_handle: HostSharedHandle,
+        window: Window,
+        shared: Shared<E>,
+        tx_dsp: ParamNotifier<E>,
+    ) -> Result<(), PluginError> {
         eprintln!("Creating GUI instance");
-        self.instance = Some(View::new(&window, shared));
+        self.instance = Some(View::new(host_shared_handle, &window, tx_dsp, shared));
         Ok(())
     }
 }
@@ -160,7 +178,7 @@ macro_rules! delegate_gui_method {
     }};
 }
 
-impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<P> {
+impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     fn is_api_supported(&mut self, gui_config: clap_gui::GuiConfiguration) -> bool {
         eprintln!("[is_api_supported] {gui_config:?}");
         self.get_preferred_api().map_or(false, |api| api == gui_config)
@@ -215,12 +233,14 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<P> {
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
         eprintln!("[set_parent] <window>");
-        self.gui.create_instance(window, self.shared.clone())
+        self.gui
+            .create_instance(self.host.shared(), window, self.shared.clone(), self.param_notifier.clone())
     }
 
     fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
         eprintln!("[set_transient] <window>");
-        self.gui.create_instance(window, self.shared.clone())
+        self.gui
+            .create_instance(self.host.shared(), window, self.shared.clone(), self.param_notifier.clone())
     }
 
     fn suggest_title(&mut self, title: &str) {

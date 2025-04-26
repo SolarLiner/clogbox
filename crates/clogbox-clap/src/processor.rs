@@ -1,5 +1,5 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::params::ParamId;
+use crate::params::{ParamId, ParamListener};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::ParamValueEvent;
@@ -8,10 +8,12 @@ pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
+use clack_plugin::utils::Cookie;
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{count, enum_iter, Empty, Enum};
 use clogbox_module::eventbuffer::{EventBuffer, EventSlice, Timestamped};
 use clogbox_module::{Module, ProcessContext, Samplerate, StreamContext};
+use ringbuf::traits::Consumer;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::ops;
@@ -119,9 +121,13 @@ pub struct Processor<'a, P: PluginDsp> {
     params: EventStorage<P::ParamsIn, f32>,
     sample_rate: Samplerate,
     tail: Option<NonZeroU32>,
+    #[cfg(feature = "gui")]
+    dsp_listener: ParamListener<P::ParamsIn>,
 }
 
-impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>> for Processor<'a, P> {
+impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<'a, P::Plugin>>
+    for Processor<'a, P>
+{
     fn activate(
         host: HostAudioProcessorHandle<'a>,
         main_thread: &mut MainThread<P::Plugin>,
@@ -143,6 +149,8 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
         let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
+        #[cfg(feature = "gui")]
+        let dsp_listener = main_thread.dsp_listener.take().unwrap();
         dsp.prepare(
             Samplerate::new(audio_config.sample_rate),
             audio_config.max_frames_count as _,
@@ -153,14 +161,21 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
             audio_in,
             audio_out,
             params,
+            #[cfg(feature = "gui")]
+            dsp_listener,
             sample_rate: Samplerate::new(audio_config.sample_rate),
             tail: None,
         })
     }
 
-    fn process(&mut self, _process: Process, mut audio: Audio, events: Events) -> Result<ProcessStatus, PluginError> {
+    fn process(
+        &mut self,
+        _process: Process,
+        mut audio: Audio,
+        mut events: Events,
+    ) -> Result<ProcessStatus, PluginError> {
         self.copy_inputs(&audio)?;
-        self.copy_events(&events)?;
+        self.copy_events(&mut events)?;
         let process_status = self.process_audio(&StreamContext {
             block_size: audio.frames_count() as _,
             sample_rate: self.sample_rate,
@@ -193,7 +208,7 @@ impl<P: PluginDsp> Processor<'_, P> {
         Ok(())
     }
 
-    fn copy_events(&mut self, events: &Events) -> Result<(), PluginError> {
+    fn copy_events(&mut self, events: &mut Events) -> Result<(), PluginError> {
         for buf in self.params.storage.values_mut() {
             buf.clear();
         }
@@ -214,6 +229,21 @@ impl<P: PluginDsp> Processor<'_, P> {
             let mapping = param.mapping();
             self.params.storage[param].push(ev.time() as _, mapping.denormalize(ev.value() as _));
         }
+
+        // Retrieve (and publish to host) params received by the GUI
+        for event in &mut self.dsp_listener {
+            self.params.storage[event.id].push(0, event.value);
+            if let Err(err) = events.output.try_push(ParamValueEvent::new(
+                0,
+                ClapId::new(event.id.to_usize() as _),
+                Pckn::match_all(),
+                event.value as _,
+                Cookie::empty(),
+            )) {
+                eprintln!("Failed to push event: {}", err);
+            }
+        }
+
         // Send last param values to the shared state
         for param in enum_iter::<P::ParamsIn>() {
             let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else {

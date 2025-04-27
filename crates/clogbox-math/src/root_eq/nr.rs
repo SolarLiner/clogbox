@@ -1,5 +1,9 @@
-use crate::root_eq::Differentiable;
-use num_traits::Float;
+use crate::root_eq::{Differentiable, MultiDifferentiable};
+#[cfg(feature = "linalg")]
+use nalgebra as na;
+#[cfg(feature = "linalg")]
+use nalgebra::{RealField, SimdValue};
+use num_traits::{Float, NumAssign, Zero};
 
 /// Newton-Raphson solver
 pub struct NewtonRaphson<T> {
@@ -17,7 +21,7 @@ pub struct SolveResult<T> {
 
 impl<T> NewtonRaphson<T> {
     /// Solves the equation using the Newton-Raphson method
-    pub fn solve<F: Differentiable<Scalar = T>>(&self, function: &F, initial_guess: T) -> SolveResult<T>
+    pub fn solve<F: Differentiable<Scalar=T>>(&self, function: &F, initial_guess: T) -> SolveResult<T>
     where
         T: Float,
     {
@@ -41,6 +45,49 @@ impl<T> NewtonRaphson<T> {
         SolveResult {
             value: x,
             delta: T::zero(),
+            iterations: self.max_iterations,
+        }
+    }
+}
+
+#[cfg(feature = "linalg")]
+impl<T: Copy + na::Scalar + NumAssign + RealField + PartialOrd + Zero> NewtonRaphson<T> {
+    pub fn solve_multi<F: MultiDifferentiable<Scalar=T>>(
+        &self,
+        function: &F,
+        mut value: na::VectorViewMut<T, F::Dim>,
+    ) -> SolveResult<na::OVector<T, F::Dim>>
+    where
+        na::default_allocator::DefaultAllocator:
+        na::allocator::Allocator<F::Dim> + na::allocator::Allocator<F::Dim, F::Dim>,
+    {
+        for i in 0..self.max_iterations {
+            let (fx, inv_j) = function.eval_with_inv_jacobian(value.as_view());
+            let delta = inv_j * fx * self.over_relaxation;
+
+            if delta.iter().any(|x| !x.is_finite()) {
+                return SolveResult {
+                    value: value.into_owned(),
+                    delta: na::OVector::repeat(T::zero() / T::zero()),
+                    iterations: i,
+                };
+            }
+
+            value -= &delta;
+
+            let rms = delta.magnitude();
+            if rms < self.tolerance {
+                return SolveResult {
+                    value: value.clone_owned(),
+                    delta,
+                    iterations: i,
+                };
+            }
+        }
+
+        SolveResult {
+            value: value.into_owned(),
+            delta: na::zero(),
             iterations: self.max_iterations,
         }
     }
@@ -84,7 +131,6 @@ mod tests {
         }
     }
 
-    // Function with multiple closely spaced roots: f(x) = sin(10x) (roots at x = 0, ±π/10, ±2π/10, etc.)
     struct Atanh {
         x: f64,
     }

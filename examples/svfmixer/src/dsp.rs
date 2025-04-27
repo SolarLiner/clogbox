@@ -2,16 +2,17 @@ use crate::params;
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::Stereo;
-use clogbox_filters::svf::{Svf, SvfOutput};
+use clogbox_filters::svf::{Ota, Svf, SvfOutput};
 use clogbox_filters::{sinh, SimpleSaturator};
 use clogbox_math::interpolation::Linear;
+use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
 use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 pub struct DspPerSample {
     smoothers: EnumMapArray<params::Param, LinearSmoother<f32>>,
-    dsp: EnumMapArray<Stereo, Svf<SimpleSaturator<f32>>>,
+    dsp: EnumMapArray<Stereo, Svf<f32, Ota>>,
     buffer: EnumMapArray<Stereo, f32>,
 }
 
@@ -53,6 +54,7 @@ impl DspPerSample {
         for dsp in self.dsp.values_mut() {
             dsp.set_cutoff_no_update(params[Cutoff]);
             dsp.set_resonance(params[Resonance]);
+            dsp.set_drive(params[Drive]);
         }
         EnumMapArray::new(|ch| self.next_sample(ch, input[ch]))
     }
@@ -68,7 +70,7 @@ impl DspPerSample {
     fn next_sample_inner(&mut self, channel: Stereo, sample: f32) -> f32 {
         use params::Param::*;
         let params = EnumMapArray::new(|i| self.smoothers[i].current_value());
-        let out = self.dsp[channel].next_sample(sample.tanh());
+        let out = self.dsp[channel].next_sample(sample);
 
         params[Lowpass] * out[SvfOutput::Lowpass]
             + params[Bandpass] * out[SvfOutput::Bandpass]
@@ -87,7 +89,11 @@ impl PluginDsp for Dsp {
         let smoothers =
             EnumMapArray::new(|p| LinearSmoother::new(Linear, samplerate, 10e-3, context.params[p], context.params[p]));
         let dsp = EnumMapArray::new(|_| {
-            Svf::new(samplerate, context.params[Cutoff], context.params[Resonance]).with_saturator(sinh())
+            Svf::new(samplerate, context.params[Cutoff], context.params[Resonance]).with_newton_rhapson(NewtonRaphson {
+                over_relaxation: 1.0,
+                max_iterations: 10000,
+                tolerance: 1e-4,
+            })
         });
         let module = DspPerSample {
             smoothers,

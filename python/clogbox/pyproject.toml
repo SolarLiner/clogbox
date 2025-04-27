@@ -7,10 +7,7 @@ authors = [
     { name = "Nathan Graule", email = "solarliner@gmail.com" }
 ]
 requires-python = ">=3.11"
-dependencies = []
-
-[project.optional-dependencies]
-nr = [
+dependencies = [
     "sympy>=1.13.3",
 ]
 

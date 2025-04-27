@@ -12,9 +12,13 @@ use num_traits::{Float, FloatConst};
 use az::CastFrom;
 """
 
-DIFFERENTIABLE_CODE_PREAMBLE = RUST_CODE_PREAMBLE + """
-use clogbox_math::root_eq::Differentiable;
+DIFFERENTIABLE_CODE_PREAMBLE = (
+    RUST_CODE_PREAMBLE
+    + """
+use clogbox_math::root_eq;
+use nalgebra as na;
 """
+)
 
 
 class ClogboxRustCodePrinter(RustCodePrinter):
@@ -36,6 +40,16 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         p, q = tuple(self._print(sp.Integer(x)) for x in (expr.p, expr.q))
         return f"{p}/{q}"
 
+    def _print_MatrixBase(self, mat: sp.MatrixBase):
+        values = ", ".join(self._print(x) for x in mat)
+        cdim = f"na::Const<{mat.cols}>"
+        if mat.rows == 1:
+            mtype = f"na::OVector::<T, {cdim}>"
+        else:
+            rdim = f"na::Const<{mat.rows}>"
+            mtype = f"na::OMatrix::<T, {rdim}, {cdim}>"
+        return f"{mtype}::new({values})"
+
     def _print_NaN(self, expr, _type=False):
         return "T::nan()"
 
@@ -43,16 +57,31 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         return "T::E()"
 
     def _print_Pi(self, expr, _type=False):
-        return 'T::PI()'
+        return "T::PI()"
 
     def _print_Infinity(self, expr, _type=False):
-        return 'T::INFINITY()'
+        return "T::INFINITY()"
 
     def _print_NegativeInfinity(self, expr, _type=False):
-        return 'T::NEG_INFINITY()'
+        return "T::NEG_INFINITY()"
 
 
-def generate_statements(*exprs: Tuple[str, sp.Expr], printer: Optional[RustCodePrinter] = None) -> Iterable[str]:
+def get_type(e: sp.Basic):
+    """
+    Get the Rust type of a sympy expression
+    :param e: Sympy expression
+    :return: Rust type representation
+    """
+    match e:
+        case sp.MatrixBase(cols=c, rows=r):
+            return f"na::OMatrix<T, na::Const<{r}>, na::Const<{c}>>"
+        case _:
+            return "T"
+
+
+def generate_statements(
+    *exprs: Tuple[str, sp.Expr], printer: Optional[RustCodePrinter] = None
+) -> Iterable[str]:
     """
     Generate Rust statements from a list of SymPy expressions with their assignments.
 
@@ -72,7 +101,9 @@ def generate_statements(*exprs: Tuple[str, sp.Expr], printer: Optional[RustCodeP
         yield f"let {name} = {printer.doprint(expr)};"
 
 
-def generate_function(name: str, *exprs: sp.Expr, printer: Optional[RustCodePrinter] = None) -> Iterable[str]:
+def generate_function(
+    name: str, *exprs: sp.Expr, printer: Optional[RustCodePrinter] = None
+) -> Iterable[str]:
     """
     Generate a Rust function from a SymPy expression.
 
@@ -87,32 +118,47 @@ def generate_function(name: str, *exprs: sp.Expr, printer: Optional[RustCodePrin
         printer = ClogboxRustCodePrinter()
     bindings, return_expr = sp.cse(exprs)
 
-    free_args = sorted(functools.reduce(operator.or_, (e.free_symbols for e in exprs), set()), key=lambda s: s.name)
-    args = ", ".join(f"{name}: T" for name in free_args)
+    free_args = sorted(
+        functools.reduce(operator.or_, (e.free_symbols for e in exprs), set()),
+        key=lambda s: s.name,
+    )
+
+    args = ", ".join(f"{name}: {get_type(name)}" for name in free_args)
     if len(exprs) == 1:
-        rtype = "T"
+        rtype = get_type(*return_expr)
         return_expr = printer.doprint(*return_expr)
     else:
-        rtype = ", ".join("T" for _ in exprs)
+        rtype = ", ".join(get_type(e) for e in exprs)
         rtype = f"({rtype})"
         return_expr = ", ".join(printer.doprint(e) for e in return_expr)
         return_expr = f"({return_expr})"
 
-    yield f"pub fn {name}<T: Float + FloatConst + CastFrom<f64>>({args}) -> {rtype} {{"
-    for line in generate_statements(*((name, expr) for name, expr in bindings), printer=printer):
+    if any(isinstance(x, sp.MatrixBase) for x in exprs):
+        na_traits = "na::Scalar + "
+    else:
+        na_traits = ""
+
+    yield f"pub fn {name}<T: {na_traits}Float + FloatConst + CastFrom<f64>>({args}) -> {rtype} {{"
+    for line in generate_statements(
+        *((name, expr) for name, expr in bindings), printer=printer
+    ):
         yield "    " + line
 
     yield f"    {return_expr}"
     yield "}"
 
 
-def generate_functions(*exprs: Tuple[str, sp.Expr], printer: Optional[RustCodePrinter] = None) -> Iterable[str]:
+def generate_functions(
+    *exprs: Tuple[str, sp.Expr], printer: Optional[RustCodePrinter] = None
+) -> Iterable[str]:
     for name, expr in exprs:
         yield from generate_function(name, expr, printer=printer)
         yield ""
 
 
-def generate_module(exprs: List[Tuple[str, sp.Expr]], printer: Optional[RustCodePrinter] = None) -> Iterable[str]:
+def generate_module(
+    exprs: List[Tuple[str, sp.Expr]], printer: Optional[RustCodePrinter] = None
+) -> Iterable[str]:
     """
     Generates Rust module code for a list of symbolic expressions.
 
@@ -129,8 +175,13 @@ def generate_module(exprs: List[Tuple[str, sp.Expr]], printer: Optional[RustCode
     yield from generate_functions(*exprs, printer=printer)
 
 
-def generate_differentiable(expr: Union[sp.Expr, sp.Eq], variable: sp.Symbol, struct_name="Equation",
-                            printer: Optional[RustCodePrinter] = None) -> Iterable[str]:
+def generate_differentiable(
+    expr: Union[sp.Expr, sp.Eq],
+    variable: Union[sp.Symbol, sp.MatrixBase],
+    struct_name="Equation",
+    printer: Optional[RustCodePrinter] = None,
+    runtime_invert=False,
+) -> Iterable[str]:
     """
     Generate Rust code for a specific equation that is differentiable once about a variable. This function will
     implement the `clogbox_math::root_eq::Differentiable` trait for the generated struct.
@@ -151,23 +202,52 @@ def generate_differentiable(expr: Union[sp.Expr, sp.Eq], variable: sp.Symbol, st
     if isinstance(expr, sp.Eq):
         expr = expr.rhs - expr.lhs
 
-    diff = sp.diff(expr, variable)
-
-    fields = sorted(expr.free_symbols - {variable}, key=lambda s: s.name)
+    if isinstance(variable, sp.MatrixBase):
+        var_symbols = set(variable.free_symbols)
+    else:
+        var_symbols = {variable}
+    fields = sorted(expr.free_symbols - var_symbols, key=lambda s: s.name)
 
     yield f"pub struct {struct_name}<T> {{"
     for field in fields:
-        yield f"    pub {str(field)}: T,"
+        yield f"    pub {str(field)}: {get_type(field)},"
     yield "}"
     yield ""
-    yield f"impl<T: Float + FloatConst + CastFrom<f64>> Differentiable for {struct_name}<T> {{"
-    yield f"    type Scalar = T;"
-    yield ""
-    yield f"    fn eval_with_derivative(&self, {str(variable)}: T) -> (T, T) {{"
-    for field in fields:
-        yield f"        let {str(field)} = self.{str(field)};"
-    for line in generate_statements(("f", expr), ("df", diff), printer=printer):
-        yield "        " + line
+    if isinstance(expr, sp.MatrixBase):
+        vtype = "na::OVector<Self::Scalar, Self::Dim>"
+        mtype = "na::OMatrix<Self::Scalar, Self::Dim, Self::Dim>"
+        vview_type = "na::VectorView<Self::Scalar, Self::Dim>"
+        yield f"impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::MultiDifferentiable for {struct_name}<T> {{"
+        yield f"    type Scalar = T;"
+        yield f"    type Dim = na::Const<{expr.rows}>;"
+        yield ""
+        yield f"    fn eval_with_inv_jacobian(&self, matrix: {vview_type}) -> ({vtype}, {mtype}) {{"
+        for i, name in enumerate(variable):
+            yield f"        let {str(name)} = matrix[{i}];"
+        for field in fields:
+            yield f"        let {str(field)} = self.{str(field)};"
+
+        if runtime_invert:
+            j = expr.jacobian(variable)
+            for line in generate_statements(("f", expr), ("df", j), printer=printer):
+                yield "        " + line
+            yield "        let df = df.try_inverse().unwrap();"
+        else:
+            inv_j = expr.jacobian(variable).inverse()
+            for line in generate_statements(("f", expr), ("df", inv_j), printer=printer):
+                yield "        " + line
+
+    else:
+        yield f"impl<T: Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for {struct_name}<T> {{"
+        yield f"    type Scalar = T;"
+        yield ""
+        yield f"    fn eval_with_derivative(&self, {str(variable)}: T) -> (T, T) {{"
+        for field in fields:
+            yield f"        let {str(field)} = self.{str(field)};"
+
+        diff = sp.diff(expr, variable)
+        for line in generate_statements(("f", expr), ("df", diff), printer=printer):
+            yield "        " + line
     yield "        (f, df)"
     yield "    }"
     yield "}"

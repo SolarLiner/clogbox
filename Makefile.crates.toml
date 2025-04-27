@@ -1,3 +1,9 @@
+[tasks.build]
+dependencies = ["pre-build"]
+
+[tasks.fmt]
+dependencies = ["pre-build"]
+
 [tasks.test]
 dependencies = ["build"]
 install_crate = { crate_name = "cargo-insta", binary = "cargo", test_arg = ["insta", "--help"] }

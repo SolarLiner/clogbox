@@ -7,7 +7,7 @@ from sympy.printing.rust import RustCodePrinter
 
 RUST_CODE_PREAMBLE = """
 //! Generated source code with the `clogbox` Python package, to use with the `clogbox` project.
-#![allow(unused_imports, dead_code)]
+#![allow(unused_imports, dead_code, non_snake_case, non_camel_case)]
 use num_traits::{Float, FloatConst};
 use az::CastFrom;
 """

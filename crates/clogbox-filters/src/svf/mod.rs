@@ -225,18 +225,17 @@ impl<
     /// The output samples are `(LP, BP, HP)`
     #[replace_float_literals(T::cast_from(literal))]
     pub fn next_sample(&mut self, x: T) -> EnumMapArray<SvfOutput, T> {
-        let eq = gen::Equation {
+        let eq = gen::SvfEquation {
             g: self.g,
             x,
             R: self.r,
-            s0: self.s[0],
-            s1: self.s[1],
+            S: na::OVector::from(self.s),
             k_drive: self.drive,
         };
         let mut x = SVector::<T, 3>::new(x, self.s[0], self.s[1]);
         self.newton_raphson.solve_multi(&eq, x.as_view_mut());
 
-        let s = gen::s(self.g, self.drive, x[1], x[2], x[0]);
+        let s = gen::state(na::OVector::from(self.s), self.g, x[1], x[2], x[0]);
         self.s = s.into();
         EnumMapArray::new(|ch| match ch {
             SvfOutput::Lowpass => x[0],

@@ -8,109 +8,91 @@
 # clogbox = { path = "../../python/clogbox" }
 # ///
 import typing
-from functools import cached_property
+from io import StringIO
 from pathlib import Path
+from typing import TypeAlias, NamedTuple
 
 import sympy as sp
 
-from clogbox.codegen import generate_function, generate_differentiable, ClogboxRustCodePrinter, \
-    DIFFERENTIABLE_CODE_PREAMBLE
+from clogbox.codegen import generate_differentiable, ClogboxRustCodePrinter, \
+    ClogboxCodegen, codegen_module
 
 
-class Svf:
-    def __init__(self) -> None:
-        self.x, self.lp, self.bp, self.hp, self.r = sp.symbols("x y_lp y_bp y_hp R", real=True)
-        self.g = sp.Symbol("g", real=True, positive=True)
-        self.s = sp.symbols("s:2", real=True)
-        self.bp1 = 2 * self.r * self.bp
-        self.fb_sum = self.lp + self.bp1
+class IntegratorInput(NamedTuple):
+    s: sp.Basic
+    g: sp.Basic
+    x: sp.Basic
 
-    @cached_property
-    def Y(self):
-        return sp.Matrix([self.lp, self.bp, self.hp])
-
-    @cached_property
-    def S(self):
-        return sp.Matrix(self.s)
-
-    @cached_property
-    def output_equations(self):
-        return sp.Eq(self.Y, sp.Matrix([
-            self._integrator(self.bp, self.s[1]),
-            self._integrator(self.hp, self.s[0]),
-            self.x - self.fb_sum
-        ]))
-
-    @cached_property
-    def state_equations(self):
-        return sp.Eq(self.S, sp.Matrix([
-            self._integrator(self.hp, self.bp),
-            self._integrator(self.bp, self.lp),
-        ]))
-
-    def _integrator(self, x: sp.Basic, s: sp.Basic):
-        return self.g * x + s
+Integrator: TypeAlias = typing.Callable[[IntegratorInput], sp.Basic]
+Shaper: TypeAlias = typing.Callable[[sp.Basic], sp.Basic]
 
 
-class NonlinearSvf(Svf):
-    def __init__(self, nonlinearity: typing.Callable[[sp.Basic], sp.Basic]) -> None:
-        super().__init__()
-        self.drive = sp.Symbol("k_drive", real=True, positive=True)
-        self.nonlinearity = nonlinearity
-
-    def _integrator(self, x: sp.Basic, s: sp.Basic):
-        return super()._integrator(self.nonlinearity(self.drive * x) / self.drive, s)
+def linear_integrator(inp: IntegratorInput) -> sp.Basic:
+    return inp.g * inp.x + inp.s
 
 
-class DrivenSvf(NonlinearSvf):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self.sat = sp.Function("sat", real=True)
-        self.asat = sp.Function("sat^{-1}", real=True)
-        self.bpp = self.asat(self.bp)
-        self.bp1 = 2 * (self.bpp + (self.r - 1) * self.bp)
-        self.fb_sum = self.lp + self.bp1
+def ota_integrator(inp: IntegratorInput, tanh=sp.tanh) -> sp.Basic:
+    return inp.g * tanh(inp.x) + inp.s
 
-    @cached_property
-    def Y(self):
-        return sp.Matrix([self.lp, self.bp, self.hp])
 
-    @cached_property
-    def sat_replacement(self):
-        k, v = next(iter(sp.solve(super().output_equations, self.asat(self.bp), implicit=True, dict=True)[0].items()))
-        return sp.Eq(k, v)
+def make_matrix_equation(eqs: typing.Iterable[sp.Eq]) -> sp.Eq:
+    return sp.Eq(sp.Matrix([e.lhs for e in eqs]), sp.Matrix([e.rhs for e in eqs]))
 
-    @cached_property
-    def bp_equation(self) -> sp.Eq:
-        return sp.Eq(self.bp, self.sat(self.sat_replacement.rhs))
 
-    @cached_property
-    def output_equations(self) -> sp.Eq:
-        eq = super().output_equations.subs({self.bp_equation.lhs: self.bp_equation.rhs})
-        return self._simplify_sat(eq)
+class Svf(NamedTuple):
+    x: sp.Symbol
+    lp: sp.Symbol
+    bp: sp.Symbol
+    hp: sp.Symbol
+    output_equations: sp.Eq
+    state_equations: sp.Eq
 
-    def _simplify_sat(self, e: sp.Basic) -> sp.Basic:
-        w = sp.Wild('w')
-        return e.replace(self.sat(self.asat(w)), w).replace(self.asat(self.sat(w)), w).simplify()
+
+def svf(integrator: Integrator, damping_resonance: Shaper) -> Svf:
+    x, lp, bp, hp, r = sp.symbols("x y_lp y_bp y_hp R", real=True)
+    g = sp.Symbol("g", real=True, positive=True)
+    s = sp.MatrixSymbol('S', 2, 1)
+    sat = sp.Function("sat", real=True)
+    asat = sp.Function("sat^{-1}", real=True)
+    bpp = asat(bp)
+    bp1 = 2 * (bpp + (r - 1) * bp)
+    fb_sum = lp + bp1
+
+    out_eq = [
+        sp.Eq(hp, x - fb_sum),
+        sp.Eq(bp, integrator(IntegratorInput(s[0], g, hp))),
+        sp.Eq(lp, integrator(IntegratorInput(s[1], g, bp))),
+    ]
+
+    sat_inner = sp.solve(out_eq, asat(bp), implicit=True, dict=True)[0][asat(bp)]
+    bp_replacement = {bp: sat(sat_inner)}
+
+    w = sp.Wild("w")
+    out_eq = [e.subs(bp_replacement).replace(sat(asat(w)), w).replace(asat(sat(w)), w).replace(sat(w), damping_resonance(w)) for e in out_eq]
+    state_eq = [integrator(IntegratorInput(bp, g, hp)), integrator(IntegratorInput(lp, g, bp))]
+
+    return Svf(x, lp, bp, hp, make_matrix_equation(out_eq), sp.Eq(s, sp.Matrix(state_eq)))
 
 
 def main() -> None:
     this_dir = Path(__file__).parent
     dest = this_dir / "src" / "svf" / "gen.rs"
 
-    equ = DrivenSvf(sp.tanh)
-    # a,b = map(sp.Float, ("1e-12", "4e-2"))
-    # fb_sat = lambda x: (1-a/b)*x + a*sp.asinh(x/b)
-    fb_sat = lambda x: sp.asinh(equ.drive * x) / equ.drive
-    def replace_fb_sat(e: sp.Basic) -> sp.Basic:
-        w = sp.Wild('w')
-        return e.replace(equ.sat(w), fb_sat(w))
+    drive = sp.Symbol("k_drive", real=True, positive=True)
+    equ = svf(ota_integrator, lambda x: sp.asinh(drive * x) / drive)
 
     printer = ClogboxRustCodePrinter(settings={"strict": False})
-    dest.write_text("\n".join([DIFFERENTIABLE_CODE_PREAMBLE, "",
-                               *generate_differentiable(replace_fb_sat(equ.output_equations), equ.Y,
-                                                        printer=printer, runtime_invert=True), "",
-                               *generate_function("s", replace_fb_sat(equ.state_equations.rhs), printer=printer), ]))
+    codegen = ClogboxCodegen(printer=printer)
+    wrt = sp.Matrix([equ.lp, equ.bp, equ.hp])
+    with dest.open("wt") as f:
+        s = StringIO()
+        generate_differentiable(s, equ.output_equations, wrt, "SvfEquation", printer=printer, codegen=codegen,
+                                runtime_invert=True)
+        state_routine_args = sorted(equ.state_equations.free_symbols, key=lambda s: s.name)
+        routine = codegen.routine("state", equ.state_equations, state_routine_args, [])
+        f.write(codegen_module([routine], printer=printer, codegen=codegen))
+        f.write("\n\n")
+        f.write(s.getvalue())
 
 
 if __name__ == "__main__":

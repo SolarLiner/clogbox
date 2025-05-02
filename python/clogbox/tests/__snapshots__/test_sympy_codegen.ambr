@@ -1,0 +1,57 @@
+# serializer version: 1
+# name: test_asinh_derivative
+  '(u.powi(2) + T::cast_from(1.0)).sqrt().recip()'
+# ---
+# name: test_generate_differentiable
+  '''
+  pub struct Equation<T> {}
+  impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
+      type Scalar = T;
+  
+      fn eval_with_derivative(&self, u: T) -> (T, T) {
+  x0 = u.tanh();
+  [-x0 + u.asinh(), x0.powi(2) + T::cast_from(-1.0) + (u.powi(2) + T::cast_from(1.0)).sqrt().recip()]
+      }
+  }
+  
+  '''
+# ---
+# name: test_matrix_expression
+  '-u.tanh() + (na::OMatrix::<T, na::Const<2>, na::Const<2>>::new(u, u.powi(2), u.powi(3), u.powi(4))).determinant()'
+# ---
+# name: test_matrix_routine
+  '''
+  /*
+   *                      Code generated with SymPy 1.13.3
+   *
+   *              See http://www.sympy.org/ for more information.
+   *
+   *                       This file is part of 'project'
+   */
+  
+  use nalgebra as na;
+  
+  
+  fn matrix_routine<T: na::Scalar>(X: na::OMatrix<T, na::Const<2>, na::Const<2>>) -> T {
+  
+      let out1 = (X[0] + X[1] + X[2] + X[3])/(X).determinant();
+      out1
+  
+  }
+  
+  '''
+# ---
+# name: test_newton_rhapson_function
+  '''
+  fn newton<T: Float + CastFrom<f64> + FloatConst>(u: T) -> T {
+      let mut d_u = T::INFINITY();
+      while d_u.abs() > T::cast_from(4e-16)*u.abs() + T::cast_from(1e-12) {
+          x0 = (u.powi(2) + T::cast_from(1.0)).sqrt();
+          x1 = u.tanh();
+          d_u = -x0*(-x1 + u.asinh())/(x0*x1.powi(2) - x0 + T::cast_from(1.0));
+          u += d_u;
+      }
+      return u;
+  }
+  '''
+# ---

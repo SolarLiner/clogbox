@@ -32,7 +32,7 @@ impl ParamId for Param {
 
     fn mapping(&self) -> DynMapping {
         static CUTOFF_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(20.0, 20e3, 4.0).into_dyn());
-        static RESO_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(0.0, 1.0, 0.5).into_dyn());
+        static RESO_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(0.0, 1.5, 0.5).into_dyn());
         static ATTENUVERTER_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| linear(-1.0, 1.0).into_dyn());
         static DRIVE_MAPPING: LazyLock<DynMapping> = LazyLock::new(|| polynomial_raw(0.01, 10.0, 4.0).into_dyn());
 

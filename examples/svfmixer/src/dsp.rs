@@ -2,17 +2,47 @@ use crate::params;
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::Stereo;
-use clogbox_filters::svf::{Ota, Svf, SvfOutput};
-use clogbox_filters::{sinh, SimpleSaturator};
+use clogbox_filters::svf::{Svf, SvfImpl, SvfOutput, SvfSampleOutput};
 use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
 use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate, StreamContext};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
+use nalgebra as na;
+
+struct OtaTanh;
+
+impl SvfImpl<f32> for OtaTanh {
+    #[inline]
+    fn next_sample(svf: &mut Svf<f32, Self>, input: f32) -> SvfSampleOutput<f32> {
+        const NR: NewtonRaphson<f32> = NewtonRaphson {
+            over_relaxation: 1.0,
+            max_iterations: 500,
+            tolerance: 1e-4,
+        };
+
+        let mut x = na::OVector::from(svf.last_out);
+        NR.solve_multi(
+            &crate::gen::SvfEquation {
+                S: svf.s.into(),
+                x: input,
+                g: svf.g,
+                k_drive: svf.drive,
+                q: svf.q,
+            },
+            x.as_view_mut(),
+        );
+        SvfSampleOutput {
+            y: x.into(),
+            s: crate::gen::state(svf.s.into(), svf.g, x[1], x[2], x[0]).into(),
+        }
+    }
+}
+
 pub struct DspPerSample {
     smoothers: EnumMapArray<params::Param, LinearSmoother<f32>>,
-    dsp: EnumMapArray<Stereo, Svf<f32, Ota>>,
+    dsp: EnumMapArray<Stereo, Svf<f32, OtaTanh>>,
     buffer: EnumMapArray<Stereo, f32>,
 }
 
@@ -88,13 +118,7 @@ impl PluginDsp for Dsp {
         let samplerate = 2.0 * context.audio_config.sample_rate as f32;
         let smoothers =
             EnumMapArray::new(|p| LinearSmoother::new(Linear, samplerate, 10e-3, context.params[p], context.params[p]));
-        let dsp = EnumMapArray::new(|_| {
-            Svf::new(samplerate, context.params[Cutoff], context.params[Resonance]).with_newton_rhapson(NewtonRaphson {
-                over_relaxation: 1.0,
-                max_iterations: 10000,
-                tolerance: 1e-4,
-            })
-        });
+        let dsp = EnumMapArray::new(|_| Svf::new(samplerate, context.params[Cutoff], context.params[Resonance]));
         let module = DspPerSample {
             smoothers,
             dsp,

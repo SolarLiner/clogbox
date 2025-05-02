@@ -1,1 +1,7 @@
 extend = "../../Makefile.plugins.toml"
+
+[tasks.generate]
+script = "uv run gen_svf.py"
+
+[tasks.pre-build]
+dependencies = ["generate"]

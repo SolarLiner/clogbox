@@ -9,13 +9,51 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
-use nalgebra::{self as na, SVector, SimdRealField};
+use nalgebra::{self as na, SimdRealField};
 use num_traits::{Float, FloatConst, Num, NumAssign, Zero};
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
 use std::ops;
 
-mod gen;
+/// Output given by the implementations of the SVF filter signal path
+pub struct SvfSampleOutput<T> {
+    /// Filter output (LP, BP, HP)
+    pub y: [T; 3],
+    /// State
+    pub s: [T; 2],
+}
+
+/// Trait for SVF filter implementations.
+pub trait SvfImpl<T> {
+    /// Compute the next sample for outputs and state
+    fn next_sample(svf: &mut Svf<T, Self>, input: T) -> SvfSampleOutput<T>;
+}
+
+impl<T: Float + az::CastFrom<f64>> SvfImpl<T> for Linear<T> {
+    #[replace_float_literals(T::cast_from(literal))]
+    #[inline]
+    fn next_sample(svf: &mut Svf<T, Self>, input: T) -> SvfSampleOutput<T> {
+        let [s1, s2] = svf.s;
+
+        let bpp = s1;
+        let bpl = (svf.q - 1.) * s1;
+        let bp1 = 2. * (bpp + bpl);
+        let hp = (input - bp1 - s2) * svf.d;
+
+        let v1 = svf.g * hp;
+        let bp = v1 + s1;
+        let s1 = bp + v1;
+
+        let v2 = svf.g * bp;
+        let lp = v2 + s2;
+        let s2 = lp + v2;
+
+        SvfSampleOutput {
+            y: [lp, bp, hp],
+            s: [s1, s2],
+        }
+    }
+}
 
 /// Parameter type for the SVF filter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Enum)]
@@ -41,46 +79,52 @@ pub enum SvfOutput {
 
 /// SVF topology filter, with optional non-linearities.
 // #[derive(Debug, Clone)]
-pub struct Svf<T, Mode = Linear<T>> {
-    s: [T; 2],
-    r: T,
-    fc: T,
-    g: T,
-    g1: T,
-    d: T,
-    w_step: T,
-    sample_rate: T,
-    newton_raphson: NewtonRaphson<T>,
+pub struct Svf<T, Mode: ?Sized = Linear<T>> {
+    /// Inner state of the filter
+    pub s: [T; 2],
+    /// Last output of the filter
+    pub last_out: [T; 3],
+    /// Filter resonance (0..1)
+    pub q: T,
+    /// Filter cutoff frequency (in Hz)
+    pub fc: T,
+    /// Computed normalized frequency
+    pub g: T,
+    /// Pre-computed input amplitude to the first integrator 
+    pub d: T,
+    /// Radian step (where 1 radian = 1/sample_rate)
+    pub w_step: T,
+    /// Sample rate (Hz)
+    pub sample_rate: T,
+    /// Filter drive (does not drive the input, instead drives the nonlinearities directly)
+    pub drive: T,
     __mode: PhantomData<Mode>,
-    drive: T,
 }
 
 impl<T, Mode> Svf<T, Mode> {
     /// Replace the saturators in this SVF instance with the provided values.
-    pub fn with_saturator<S2>(self) -> Svf<T, S2> {
+    pub fn with_mode<Mode2>(self) -> Svf<T, Mode2> {
         let Self {
             s,
-            r,
+            last_out,
+            q,
             fc,
             g,
-            g1,
             d,
             w_step,
             sample_rate,
-            newton_raphson,
             drive,
             ..
         } = self;
         Svf {
             s,
-            r,
+            last_out,
+            q,
             fc,
             g,
-            g1,
             d,
             w_step,
             sample_rate,
-            newton_raphson,
             drive,
             __mode: PhantomData,
         }
@@ -96,18 +140,13 @@ impl<T: Copy + Float + FloatConst + CastFrom<f64> + Num, Mode> Svf<T, Mode> {
         let q = T::cast_from(resonance as _);
         let mut this = Self {
             s: [0.; 2],
-            r: 1. - q,
+            last_out: [0.; 3],
+            q,
             fc,
             g: 0.,
-            g1: 0.,
             d: 0.,
             sample_rate,
             w_step: T::PI() / sample_rate,
-            newton_raphson: NewtonRaphson {
-                over_relaxation: 1.0,
-                max_iterations: 10,
-                tolerance: 1e-4,
-            },
             drive: 1.0,
             __mode: PhantomData,
         };
@@ -139,23 +178,12 @@ impl<T: Cast<f64> + CastFrom<f64> + Float, Mode> Svf<T, Mode> {
     /// It's required to call [`Self::update_coefficients`] after a call to this, and before
     /// processing the next sample.
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn set_resonance_no_update(&mut self, r: T) {
-        // let r = 1. - r * resonance_compensation(self.fc / self.sample_rate);
-        let r = 1. - r;
-        self.r = 2. * r;
+    pub fn set_resonance_no_update(&mut self, q: T) {
+        self.q = q;
     }
     
     pub fn set_drive(&mut self, drive: T) {
         self.drive = drive;
-    }
-
-    pub fn set_newton_rhapson(&mut self, newton_raphson: NewtonRaphson<T>) {
-        self.newton_raphson = newton_raphson;
-    }
-
-    pub fn with_newton_rhapson(mut self, newton_raphson: NewtonRaphson<T>) -> Self {
-        self.newton_raphson = newton_raphson;
-        self
     }
 }
 
@@ -170,41 +198,9 @@ impl<T: Float + CastFrom<f64>, Mode> Svf<T, Mode> {
     #[replace_float_literals(T::cast_from(literal))]
     pub fn update_coefficients(&mut self) {
         self.g = self.w_step * self.fc;
-        self.g1 = 2. * self.r + self.g;
-        self.d = (1. + 2. * self.r * self.g + self.g * self.g).recip();
+        self.d = (1. + 2. * self.q * self.g + self.g * self.g).recip();
     }
 }
-
-impl<T: Copy + Float + FloatConst + CastFrom<f64>> Svf<T, Linear<T>> {
-    #[replace_float_literals(T::cast_from(literal))]
-    pub fn next_sample(&mut self, x: T) -> EnumMapArray<SvfOutput, T> {
-        let [s1, s2] = self.s;
-
-        let bpp = s1;
-        let bpl = (self.r - 1.) * s1;
-        let bp1 = 2. * (bpp + bpl);
-        let hp = (x - bp1 - s2) * self.d;
-
-        let v1 = self.g * hp;
-        let bp = v1 + s1;
-        let s1 = bp + v1;
-
-        let v2 = self.g * bp;
-        let lp = v2 + s2;
-        let s2 = lp + v2;
-
-        self.s = [s1, s2];
-
-        EnumMapArray::new(|ch| match ch {
-            SvfOutput::Lowpass => lp,
-            SvfOutput::Bandpass => bp,
-            SvfOutput::Highpass => hp,
-        })
-    }
-}
-
-/// Marker trait for SVF filters with OTA non-linearities
-pub struct Ota;
 
 impl<
         T: 'static
@@ -218,29 +214,29 @@ impl<
             + na::Scalar
             + SimdRealField
             + NumAssign,
-    > Svf<T, Ota>
+    Mode: SvfImpl<T>,
+    > Svf<T, Mode>
 {
     /// Process the next sample of this filter, with the given input sample.
     ///
     /// The output samples are `(LP, BP, HP)`
     #[replace_float_literals(T::cast_from(literal))]
     pub fn next_sample(&mut self, x: T) -> EnumMapArray<SvfOutput, T> {
-        let eq = gen::SvfEquation {
-            g: self.g,
-            x,
-            R: self.r,
-            S: na::OVector::from(self.s),
-            k_drive: self.drive,
-        };
-        let mut x = SVector::<T, 3>::new(x, self.s[0], self.s[1]);
-        self.newton_raphson.solve_multi(&eq, x.as_view_mut());
-
-        let s = gen::state(na::OVector::from(self.s), self.g, x[1], x[2], x[0]);
-        self.s = s.into();
+        let SvfSampleOutput { mut y, mut s } = Mode::next_sample(self, x);
+        for x in &mut y {
+            if x.is_nan() {
+                x.set_zero();
+            }
+        }
+        for i in 0..2 {
+            if !s[i].is_nan() {
+                self.s[i] = s[i];
+            }
+        }
         EnumMapArray::new(|ch| match ch {
-            SvfOutput::Lowpass => x[0],
-            SvfOutput::Bandpass => x[1],
-            SvfOutput::Highpass => x[2],
+            SvfOutput::Lowpass => y[0],
+            SvfOutput::Bandpass => y[1],
+            SvfOutput::Highpass => y[2],
         })
     }
 

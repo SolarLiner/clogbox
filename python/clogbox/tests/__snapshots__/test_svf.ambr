@@ -20,13 +20,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp.tanh(), y_lp + g*y_bp.tanh());
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp.tanh() + y_bp, g*y_bp.tanh() + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -47,17 +47,17 @@
           let x = self.x;
           let (f, df) = {
               let x0 = T::cast_from(4.0)*q;
-              let x1 = -T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp - T::cast_from(2.0)*q*y_bp;
+              let x1 = -T::cast_from(2.0)*q*y_bp - T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp;
               let x2 = T::cast_from(2.0)*q;
-              let x3 = -x2 + T::cast_from(1.0);
+              let x3 = T::cast_from(1.0) - x2;
               let x4 = T::cast_from(2.0)*x3;
               let x5 = y_hp.tanh();
               let x6 = T::cast_from(2.0)*q;
-              let x7 = (-T::cast_from(1.0)/T::cast_from(2.0)*x + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp - x6*y_bp).tanh();
+              let x7 = (-T::cast_from(1.0)/T::cast_from(2.0)*x - x6*y_bp + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp).tanh();
               let x8 = x2 + T::cast_from(-1.0);
               let x9 = x7.powi(2);
-              let x10 = g*-T::cast_from(1.0)/T::cast_from(2.0)*x9 + T::cast_from(1.0)/T::cast_from(2.0);
-              (na::OVector::<T, na::Const<3>>::new(T::cast_from(2.0)*y_bp - x0*y_bp + x1*x4, g*x5 + x1 + S[0], -y_lp - g*x7 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x3, -x0 - x4*x8 + T::cast_from(2.0), x3, T::cast_from(0.5), -x8, g*T::cast_from(1.0) - x5.powi(2) + T::cast_from(0.5), -x10 + T::cast_from(-1.0), -g*T::cast_from(1.0) - x6*T::cast_from(1.0) - x9, -x10))
+              let x10 = g*(T::cast_from(1.0)/T::cast_from(2.0) - T::cast_from(1.0)/T::cast_from(2.0)*x9);
+              (na::OVector::<T, na::Const<3>>::new(-x0*y_bp + x1*x4 + T::cast_from(2.0)*y_bp, g*x5 + x1 + S[0], -g*x7 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x3, -x0 - x4*x8 + T::cast_from(2.0), x3, T::cast_from(0.5), -x8, g*(T::cast_from(1.0) - x5.powi(2)) + T::cast_from(0.5), -x10 + T::cast_from(-1.0), -g*(T::cast_from(1.0) - x6)*(T::cast_from(1.0) - x9), -x10))
           };
           (f, df.try_inverse().unwrap())
               }
@@ -86,13 +86,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp, y_lp + g*y_bp);
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp + y_bp, g*y_bp + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -113,14 +113,14 @@
           let x = self.x;
           let (f, df) = {
               let x0 = T::cast_from(4.0)*q;
-              let x1 = -T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp - T::cast_from(2.0)*q*y_bp;
+              let x1 = -T::cast_from(2.0)*q*y_bp - T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp;
               let x2 = -x1;
               let x3 = T::cast_from(2.0)*q;
-              let x4 = -x3 + T::cast_from(1.0);
+              let x4 = T::cast_from(1.0) - x3;
               let x5 = T::cast_from(2.0)*x4;
               let x6 = x3 + T::cast_from(-1.0);
               let x7 = T::cast_from(0.5)*g;
-              (na::OVector::<T, na::Const<3>>::new(T::cast_from(2.0)*y_bp - x0*y_bp - x2*x5, x1 + g*y_hp + S[0], -y_lp + g*x2 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x4, -x0 - x5*x6 + T::cast_from(2.0), x4, T::cast_from(0.5), -x6, g + T::cast_from(0.5), -x7 + T::cast_from(-1.0), g*x6, -x7))
+              (na::OVector::<T, na::Const<3>>::new(-x0*y_bp - x2*x5 + T::cast_from(2.0)*y_bp, g*y_hp + x1 + S[0], g*x2 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x4, -x0 - x5*x6 + T::cast_from(2.0), x4, T::cast_from(0.5), -x6, g + T::cast_from(0.5), -x7 + T::cast_from(-1.0), g*x6, -x7))
           };
           (f, df.try_inverse().unwrap())
               }
@@ -149,13 +149,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp.tanh(), y_lp + g*y_bp.tanh());
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp.tanh() + y_bp, g*y_bp.tanh() + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -178,13 +178,13 @@
               let x0 = T::cast_from(2.0)*y_bp;
               let x1 = T::cast_from(4.0)*q;
               let x2 = T::cast_from(2.0)*q;
-              let x3 = -T::cast_from(1.0)/T::cast_from(2.0)*x + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp - x2*y_bp;
+              let x3 = -T::cast_from(1.0)/T::cast_from(2.0)*x - x2*y_bp + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp;
               let x4 = x3.asinh();
               let x5 = T::cast_from(2.0)*q;
-              let x6 = -x5 + T::cast_from(1.0);
+              let x6 = T::cast_from(1.0) - x5;
               let x7 = T::cast_from(2.0)*x6;
               let x8 = y_hp.tanh();
-              let x9 = -T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp - q*x0;
+              let x9 = -q*x0 - T::cast_from(0.5)*x + y_bp + T::cast_from(0.5)*y_hp + T::cast_from(0.5)*y_lp;
               let x10 = x9.powi(2);
               let x11 = x10 + T::cast_from(1.0);
               let x12 = g*x11.sqrt().recip();
@@ -193,8 +193,8 @@
               let x15 = x13*(T::cast_from(1.0) - x2);
               let x16 = (T::cast_from(1.0)/T::cast_from(2.0))*x13;
               let x17 = x11.powf(T::cast_from(-1.5));
-              let x18 = g*x17*x9*T::cast_from(0.25)*x - T::cast_from(0.5)*y_bp - T::cast_from(0.25)*y_hp - T::cast_from(0.25)*y_lp + T::cast_from(1.0)*q*y_bp + T::cast_from(0.5)*x12;
-              (na::OVector::<T, na::Const<3>>::new(x0 - x1*y_bp + x4*x7, g*x8 + x4 + S[0], -y_lp - x12*x9 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x14, -x1 + x15*x7 + T::cast_from(2.0), x14, x16, x15, g*T::cast_from(1.0) - x8.powi(2) + x16, -x18 + T::cast_from(-1.0), T::cast_from(0.5)*g*x10*x17*T::cast_from(2.0) - x1 - x12*(T::cast_from(1.0) - x5), -x18))
+              let x18 = g*x17*x9*(T::cast_from(1.0)*q*y_bp + T::cast_from(0.25)*x - T::cast_from(0.5)*y_bp - T::cast_from(0.25)*y_hp - T::cast_from(0.25)*y_lp) + T::cast_from(0.5)*x12;
+              (na::OVector::<T, na::Const<3>>::new(x0 - x1*y_bp + x4*x7, g*x8 + x4 + S[0], -x12*x9 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x14, -x1 + x15*x7 + T::cast_from(2.0), x14, x16, x15, g*(T::cast_from(1.0) - x8.powi(2)) + x16, -x18 + T::cast_from(-1.0), T::cast_from(0.5)*g*x10*x17*(T::cast_from(2.0) - x1) - x12*(T::cast_from(1.0) - x5), -x18))
           };
           (f, df.try_inverse().unwrap())
               }
@@ -223,13 +223,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp, y_lp + g*y_bp);
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp + y_bp, g*y_bp + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -251,16 +251,16 @@
           let (f, df) = {
               let x0 = T::cast_from(4.0)*q;
               let x1 = T::cast_from(2.0)*q;
-              let x2 = -T::cast_from(1.0)/T::cast_from(2.0)*x + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp - x1*y_bp;
+              let x2 = -T::cast_from(1.0)/T::cast_from(2.0)*x - x1*y_bp + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp;
               let x3 = x2.asinh();
-              let x4 = -T::cast_from(2.0)*q + T::cast_from(1.0);
+              let x4 = T::cast_from(1.0) - T::cast_from(2.0)*q;
               let x5 = T::cast_from(2.0)*x4;
               let x6 = (x2.powi(2) + T::cast_from(1.0)).sqrt().recip();
               let x7 = T::cast_from(1.0)*x4*x6;
               let x8 = x6*(T::cast_from(1.0) - x1);
               let x9 = (T::cast_from(1.0)/T::cast_from(2.0))*x6;
               let x10 = g*x9;
-              (na::OVector::<T, na::Const<3>>::new(T::cast_from(2.0)*y_bp - x0*y_bp + x3*x5, x3 + g*y_hp + S[0], -y_lp - g*x3 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x7, -x0 + x5*x8 + T::cast_from(2.0), x7, x9, x8, g + x9, -x10 + T::cast_from(-1.0), -g*x8, -x10))
+              (na::OVector::<T, na::Const<3>>::new(-x0*y_bp + x3*x5 + T::cast_from(2.0)*y_bp, g*y_hp + x3 + S[0], -g*x3 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x7, -x0 + x5*x8 + T::cast_from(2.0), x7, x9, x8, g + x9, -x10 + T::cast_from(-1.0), -g*x8, -x10))
           };
           (f, df.try_inverse().unwrap())
               }
@@ -289,13 +289,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp.tanh(), y_lp + g*y_bp.tanh());
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp.tanh() + y_bp, g*y_bp.tanh() + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -317,18 +317,18 @@
           let (f, df) = {
               let x0 = T::cast_from(4.0)*q;
               let x1 = T::cast_from(2.0)*q;
-              let x2 = (-T::cast_from(1.0)/T::cast_from(2.0)*x + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp - x1*y_bp).tanh();
-              let x3 = -T::cast_from(4.0)*q + T::cast_from(2.0);
+              let x2 = (-T::cast_from(1.0)/T::cast_from(2.0)*x - x1*y_bp + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp).tanh();
+              let x3 = T::cast_from(2.0) - T::cast_from(4.0)*q;
               let x4 = y_hp.tanh();
               let x5 = x2.tanh();
               let x6 = x2.powi(2);
               let x7 = (T::cast_from(1.0)/T::cast_from(2.0))*x6;
-              let x8 = -x7 + T::cast_from(1.0)/T::cast_from(2.0);
+              let x8 = T::cast_from(1.0)/T::cast_from(2.0) - x7;
               let x9 = x3*x8;
               let x10 = (T::cast_from(1.0) - x1)*(T::cast_from(1.0) - x6);
-              let x11 = g*T::cast_from(1.0) - x5.powi(2);
+              let x11 = g*(T::cast_from(1.0) - x5.powi(2));
               let x12 = x11*x8;
-              (na::OVector::<T, na::Const<3>>::new(T::cast_from(2.0)*y_bp - x0*y_bp + x2*x3, g*x4 + x2 + S[0], -y_lp - g*x5 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x9, -x0 + x10*x3 + T::cast_from(2.0), x9, x8, x10, -x7 + g*T::cast_from(1.0) - x4.powi(2) + T::cast_from(1.0)/T::cast_from(2.0), -x12 + T::cast_from(-1.0), -x10*x11, -x12))
+              (na::OVector::<T, na::Const<3>>::new(-x0*y_bp + x2*x3 + T::cast_from(2.0)*y_bp, g*x4 + x2 + S[0], -g*x5 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x9, -x0 + x10*x3 + T::cast_from(2.0), x9, x8, x10, g*(T::cast_from(1.0) - x4.powi(2)) - x7 + T::cast_from(1.0)/T::cast_from(2.0), -x12 + T::cast_from(-1.0), -x10*x11, -x12))
           };
           (f, df.try_inverse().unwrap())
               }
@@ -357,13 +357,13 @@
   
   pub fn state<T: CastFrom<f64> + Float + na::Scalar>(S: na::OVector<T, na::Const<2>>, g: T, y_bp: T, y_hp: T, y_lp: T) -> na::OVector<T, na::Const<2>> {
   
-      let S = na::OVector::<T, na::Const<2>>::new(y_bp + g*y_hp, y_lp + g*y_bp);
+      let S = na::OVector::<T, na::Const<2>>::new(g*y_hp + y_bp, g*y_bp + y_lp);
       S
   
   }
   
   
-  pub struct SvfEquation<T: Float + na::Scalar> {
+  pub struct SvfEquation<T: na::Scalar> {
       pub S: na::OVector<T, na::Const<2>>,
       pub g: T,
       pub q: T,
@@ -385,15 +385,15 @@
           let (f, df) = {
               let x0 = T::cast_from(4.0)*q;
               let x1 = T::cast_from(2.0)*q;
-              let x2 = (-T::cast_from(1.0)/T::cast_from(2.0)*x + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp - x1*y_bp).tanh();
-              let x3 = -T::cast_from(4.0)*q + T::cast_from(2.0);
+              let x2 = (-T::cast_from(1.0)/T::cast_from(2.0)*x - x1*y_bp + y_bp + (T::cast_from(1.0)/T::cast_from(2.0))*y_hp + (T::cast_from(1.0)/T::cast_from(2.0))*y_lp).tanh();
+              let x3 = T::cast_from(2.0) - T::cast_from(4.0)*q;
               let x4 = x2.powi(2);
               let x5 = (T::cast_from(1.0)/T::cast_from(2.0))*x4;
-              let x6 = -x5 + T::cast_from(1.0)/T::cast_from(2.0);
+              let x6 = T::cast_from(1.0)/T::cast_from(2.0) - x5;
               let x7 = x3*x6;
               let x8 = (T::cast_from(1.0) - x1)*(T::cast_from(1.0) - x4);
               let x9 = g*x6;
-              (na::OVector::<T, na::Const<3>>::new(T::cast_from(2.0)*y_bp - x0*y_bp + x2*x3, x2 + g*y_hp + S[0], -y_lp - g*x2 + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x7, -x0 + x3*x8 + T::cast_from(2.0), x7, x6, x8, g - x5 + T::cast_from(1.0)/T::cast_from(2.0), -x9 + T::cast_from(-1.0), -g*x8, -x9))
+              (na::OVector::<T, na::Const<3>>::new(-x0*y_bp + x2*x3 + T::cast_from(2.0)*y_bp, g*y_hp + x2 + S[0], -g*x2 - y_lp + S[1]), na::OMatrix::<T, na::Const<3>, na::Const<3>>::new(x7, -x0 + x3*x8 + T::cast_from(2.0), x7, x6, x8, g - x5 + T::cast_from(1.0)/T::cast_from(2.0), -x9 + T::cast_from(-1.0), -g*x8, -x9))
           };
           (f, df.try_inverse().unwrap())
               }

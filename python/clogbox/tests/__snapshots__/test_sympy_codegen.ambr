@@ -7,39 +7,37 @@
 # ---
 # name: test_generate_differentiable
   '''
-  pub struct Equation<T: Float> {
+  pub struct Equation<T> {
   }
   
   impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
       type Scalar = T;
   
       fn eval_with_derivative(&self, u: T) -> (T, T) {
-  {
-      let x0 = u.tanh();
-      (-x0 + u.asinh(), (u.powi(2) + T::cast_from(1.0)).sqrt().recip() + T::cast_from(-1.0) + x0.powi(2))
+          {
+              let x0 = u.tanh();
+              (-x0 + u.asinh(), x0.powi(2) + T::cast_from(-1.0) + (u.powi(2) + T::cast_from(1.0)).sqrt().recip())
+          }
+      }
   }
-                  }
-              }
-              
   '''
 # ---
 # name: test_hyperbolic_diff
   '''
-  pub struct Equation<T: Float> {
+  pub struct Equation<T> {
   }
   
   impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
       type Scalar = T;
   
       fn eval_with_derivative(&self, x: T) -> (T, T) {
-  {
-      let x0 = x.abs() + T::cast_from(1.0);
-      let x1 = x0.powi(-1);
-      (x*x1, -x*(x).signum() as T*x0.powi(-2) + x1)
+          {
+              let x0 = x.abs() + T::cast_from(1.0);
+              let x1 = x0.powi(-1);
+              (x*x1, -x*(x).signum()/x0.powi(2) + x1)
+          }
+      }
   }
-                  }
-              }
-              
   '''
 # ---
 # name: test_matrix_expression
@@ -87,7 +85,7 @@
 # name: test_piecewise
   '''
   match () {
-      _ if x < T::cast_from(0.0) => x,
+      _ if x < T::zero() => x,
       _ => x.powi(2)
   }
   '''

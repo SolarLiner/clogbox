@@ -42,8 +42,11 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         self.uses: set[str] = self._default_uses.copy()
         self.type_params: set[str] = self._default_typeparams.copy()
 
-    def get_type_params(self) -> str:
-        result = "<T{bounds}>".format(bounds=": " + " + ".join(sorted(self.type_params)) if len(self.type_params) > 0 else "")
+    def get_type_params(self, remove:Optional[set[str]]=None) -> str:
+        if remove is None:
+            remove = set()
+        params = self.type_params - remove
+        result = "<T{bounds}>".format(bounds=": " + " + ".join(sorted(params)) if len(params) > 0 else "")
         self.type_params = self._default_typeparams.copy()
         return result
 
@@ -56,6 +59,9 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         result = "\n".join(f"use {mod};" for mod in sorted(self.uses, key=sort_uses))
         self.uses = self._default_uses.copy()
         return result
+
+    def _cast_to_float(self, expr):
+        return expr
 
     @requires(type_params={"Float"}, uses={"num_traits::Float"})
     def _print_Zero(self, expr):
@@ -360,12 +366,13 @@ def generate_differentiable(
         be used.
     :param evalf: Do partial numerical evaluation where possible (set to zero to disable)
     """
-    if not printer:
-        printer = ClogboxRustCodePrinter()
     if not codegen:
+        if not printer:
+            printer = ClogboxRustCodePrinter()
         codegen = ClogboxCodegen(printer=printer)
+    del printer
 
-    printer.uses.add("clogbox_math::root_eq")
+    codegen.printer.uses.add("clogbox_math::root_eq")
 
     if isinstance(expr, sp.Eq):
         expr = expr.rhs - expr.lhs
@@ -387,7 +394,7 @@ def generate_differentiable(
             codegen.printer.type_params.add("na::Scalar")
         fields_str.append(f"pub {str(field)}: {type_},")
 
-    typeparams = codegen.printer.get_type_params()
+    typeparams = codegen.printer.get_type_params(remove={"Float"})
 
     f.write(f"pub struct {struct_name}{typeparams} {{\n")
     for field in fields_str:
@@ -395,8 +402,10 @@ def generate_differentiable(
     f.write("}\n")
     f.writelines([""])
 
-    codegen.printer.uses.update({"num_traits::Float", "num_traits::FloatConst", "az::CastFrom"})
+    codegen.printer.uses.update({"num_traits::Float", "num_traits::FloatConst", "az::CastFrom",
+                                 "clogbox_math::root_eq"})
     if isinstance(expr, sp.MatrixBase):
+        codegen.printer.uses.add("nalgebra as na")
         vtype = "na::OVector<Self::Scalar, Self::Dim>"
         mtype = "na::OMatrix<Self::Scalar, Self::Dim, Self::Dim>"
         vview_type = "na::VectorView<Self::Scalar, Self::Dim>"
@@ -417,32 +426,32 @@ impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq:
         if runtime_invert:
             j = expr.jacobian(variable)
             block = generate_scope([expr, j])
-            indented.write(printer.doprint(block, assign_to="let (f, df)"))
+            indented.write(codegen.printer.doprint(block, assign_to="let (f, df)"))
             indented.write("\n(f, df.try_inverse().unwrap())\n")
             f.write("    }\n}\n")
         else:
             inv_j = expr.jacobian(variable).inverse()
             block = generate_scope([expr, inv_j])
-            indented.write(printer.doprint(block))
+            indented.write(codegen.printer.doprint(block))
 
     else:
         f.write(
             f"""
-impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for {struct_name}<T> {{
+impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for {struct_name}<T> {{
     type Scalar = T;
 
     fn eval_with_derivative(&self, {str(variable)}: T) -> (T, T) {{
 """
         )
+        s = IndentStream(f, indent=" " * 8)
         for field in fields:
-            f.write(f"        let {str(field)} = self.{str(field)};\n")
+            s.write(f"let {str(field)} = self.{str(field)};\n")
 
         diff = sp.diff(expr, variable)
         block = generate_scope([expr, diff])
-        f.write(printer.doprint(block))
-        f.write(
-            """
-                }
-            }
-            """
+        s.write(codegen.printer.doprint(block))
+
+        f.write("""
+    }
+}"""
         )

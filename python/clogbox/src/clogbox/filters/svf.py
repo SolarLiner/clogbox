@@ -66,9 +66,7 @@ class SvfInput:
         bp_replacement = {bp: sat(sat_inner)}
 
         w = sp.Wild("w")
-        out_eq = [e.subs(bp_replacement).replace(sat(asat(w)), w).replace(asat(sat(w)), w).replace(sat(w),
-                                                                                                   self.damping_resonance(
-                                                                                                       w))
+        out_eq = [e.subs(bp_replacement).replace(sat(asat(w)), w).replace(asat(sat(w)), w).replace(sat(w), self.damping_resonance(w))
                   for e in out_eq]
         state_eq = [self.integrator(IntegratorInput(bp, self.g, hp)), self.integrator(IntegratorInput(lp, self.g, bp))]
 

@@ -1,4 +1,6 @@
-use crate::root_eq::{Differentiable, MultiDifferentiable};
+use crate::root_eq::Differentiable;
+#[cfg(feature = "linalg")]
+use crate::root_eq::MultiDifferentiable;
 #[cfg(feature = "linalg")]
 use nalgebra as na;
 #[cfg(feature = "linalg")]

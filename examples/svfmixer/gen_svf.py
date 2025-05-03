@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
-#     "clogbox[nr]",
+#     "clogbox",
 # ]
 #
 # [tool.uv.sources]
@@ -11,8 +11,11 @@ from pathlib import Path
 
 import sympy as sp
 
-from clogbox.filters import drive, linear_integrator
+from clogbox.filters import ota_integrator, Shaper, drive, linear_integrator
 from clogbox.filters.svf import SvfInput
+
+hyperbolic: Shaper = lambda x: x / (1 + sp.Abs(x))
+exponential: Shaper = lambda x: (1 - sp.exp(-sp.Abs(x))) * sp.sign(x)
 
 
 def main() -> None:
@@ -21,10 +24,10 @@ def main() -> None:
 
     g, q = sp.symbols("g q", real=True, positive=True)
     k_drive = sp.Symbol("k_drive", real=True, positive=True)
-    svf = SvfInput(g, q, linear_integrator, drive(sp.asinh, k_drive)).generate()
+    svf = SvfInput(g, q, linear_integrator, lambda x: x).generate()
 
     with dest.open("wt") as f:
-        svf.generate_module(f)
+        svf.generate_module(f, evalf=0)
 
 
 if __name__ == "__main__":

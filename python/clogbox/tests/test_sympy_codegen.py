@@ -1,23 +1,37 @@
 from io import StringIO
 
 import sympy as sp
-from sympy.codegen import ast
-from sympy.utilities.codegen import RustCodeGen, Routine
 
-from clogbox.codegen import ClogboxRustCodePrinter, ClogboxCodegen, render_as_module, codegen_module, \
-    generate_differentiable
+from clogbox.codegen import ClogboxRustCodePrinter, ClogboxCodegen, render_as_module, codegen_module, generate_differentiable
 
 import pytest
 
 
 @pytest.fixture
-def printer() -> ClogboxRustCodePrinter:
-    return ClogboxRustCodePrinter()
-
-
-@pytest.fixture
 def codegen(printer: ClogboxRustCodePrinter) -> ClogboxCodegen:
     return ClogboxCodegen(printer=printer)
+
+
+def test_abs_diff(printer: ClogboxRustCodePrinter, snapshot: str):
+    x = sp.Symbol("x", real=True)
+    expr = sp.Abs(x).diff(x)
+    actual = printer.doprint(expr)
+    assert snapshot == actual
+
+
+def test_hyperbolic_diff(printer: ClogboxRustCodePrinter, snapshot: str):
+    x = sp.Symbol("x", real=True)
+    hyperbolic = x / (1 + sp.Abs(x))
+    actual = StringIO()
+    generate_differentiable(actual, hyperbolic, x, printer=printer)
+    assert snapshot == actual.getvalue()
+
+
+def test_piecewise(printer: ClogboxRustCodePrinter, snapshot: str):
+    x = sp.Symbol("x", real=True)
+    expr = sp.Piecewise((x, x < 0), (x ** 2, True))
+    actual = printer.doprint(expr)
+    assert snapshot == actual
 
 
 def test_asinh_derivative(printer: ClogboxRustCodePrinter, snapshot: str):
@@ -33,7 +47,7 @@ def test_generate_differentiable(codegen: ClogboxCodegen, snapshot: str):
     expr = sp.asinh(u) - sp.tanh(u)
 
     actual = StringIO()
-    generate_differentiable(actual, expr, u, printer=codegen.printer, codegen=codegen)
+    generate_differentiable(actual, expr, u, codegen=codegen)
     assert snapshot == actual.getvalue()
 
 

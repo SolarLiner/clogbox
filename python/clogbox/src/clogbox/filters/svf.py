@@ -22,7 +22,7 @@ class SvfOutput:
     state_equations: sp.Eq
 
     def generate_module(self, f: io.TextIOBase, printer: typing.Optional[ClogboxRustCodePrinter] = None,
-                        codegen: typing.Optional[ClogboxCodegen] = None, runtime_invert=True):
+                        codegen: typing.Optional[ClogboxCodegen] = None, evalf=23, runtime_invert=True):
         if not printer:
             printer = ClogboxRustCodePrinter()
         if not codegen:
@@ -31,7 +31,7 @@ class SvfOutput:
         s = io.StringIO()
         wrt = sp.Matrix([self.lp, self.bp, self.hp])
         generate_differentiable(s, self.output_equations, wrt, "SvfEquation", printer=printer, codegen=codegen,
-                                runtime_invert=runtime_invert)
+                                runtime_invert=runtime_invert, evalf=evalf)
         state_routine_args = sorted(self.state_equations.free_symbols, key=lambda s: s.name)
         routine = codegen.routine("state", self.state_equations, state_routine_args, [])
         f.write(codegen_module([routine], printer=printer, codegen=codegen))

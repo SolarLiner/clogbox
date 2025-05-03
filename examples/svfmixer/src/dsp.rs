@@ -28,14 +28,14 @@ impl SvfImpl<f32> for OtaTanh {
                 S: svf.s.into(),
                 x: input,
                 g: svf.g,
-                k_drive: svf.drive,
+                // k_drive: svf.drive,
                 q: svf.q,
             },
             x.as_view_mut(),
         );
         SvfSampleOutput {
             y: x.into(),
-            s: crate::gen::state(svf.s.into(), svf.g, x[1], x[2], x[0]).into(),
+            s: crate::gen::state(svf.s.into(), svf.g, svf.drive, x[2], x[0]).into(),
         }
     }
 }

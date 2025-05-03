@@ -37,18 +37,9 @@ jobs:
         with:
           args: --workspace --all-targets --all-features
   ruff:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: [3.11, 3.12, 3.13]
+    runs-on: ubuntu-latest
     steps:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Test
         run: uvx ruff check python/clogbox
-      - name: Cache venv
-        uses: actions/cache@v4
-        with:
-          path: python/clogbox/.venv
-          key: ${{ runner.os }}-py${{ matrix.python }}-uv

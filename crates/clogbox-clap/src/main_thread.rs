@@ -15,10 +15,10 @@ use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum, Mono, Stereo};
 use clogbox_module::Module;
+use ringbuf::traits::*;
 use std::ffi::CStr;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
-use ringbuf::traits::*;
 
 #[cfg(not(feature = "gui"))]
 type GuiHandle<E> = std::marker::PhantomData<E>;

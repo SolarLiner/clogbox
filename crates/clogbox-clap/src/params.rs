@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, ops};
 
 pub use clack_extensions::params::ParamInfoFlags;
-use clogbox_math::{db_to_linear, linear_to_db};
 use clack_plugin::events::io::InputEventBuffer;
+use clogbox_math::{db_to_linear, linear_to_db};
 use ringbuf::traits::{Consumer, Producer, Split};
 
 /// Mapping from and to a normalized range.
@@ -301,7 +301,7 @@ impl<E: ParamId> ParamChangeEvent<E> {
             value: id.mapping().denormalize(normalized_value),
         }
     }
-    
+
     pub fn normalized_value(&self) -> f32 {
         self.id.mapping().normalize(self.value)
     }

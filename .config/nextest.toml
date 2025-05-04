@@ -2,5 +2,5 @@
 fail-fast = false
 
 [profile.ci.junit]  # this can be some other profile, too
-path = "junit.xml"
+path = "test-results.xml"
 report-name = "clogbox"

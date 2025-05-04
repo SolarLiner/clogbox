@@ -37,9 +37,14 @@ jobs:
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}-cargo-registry-
-
-    - name: Test
-      run: cargo make test
+    - name: Run CI
+      run: cargo make ci
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: tests-${{ runner.os }}-rust
+        path: target/nextest/ci/test-results.xml
   python:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -74,7 +79,7 @@ jobs:
           path: python/clogbox/coverage.xml
   summary:
     runs-on: ubuntu-latest
-    needs: [python]
+    needs: [rust, python]
     if: always()
     steps:
       - name: Download test-results.xml

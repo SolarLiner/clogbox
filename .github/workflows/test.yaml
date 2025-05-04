@@ -25,6 +25,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v5
     - uses: taiki-e/install-action@cargo-llvm-cov
+    - uses: taiki-e/install-action@nextest
     - name: Install cargo-make
       uses: actions-rs/cargo@v1
       with:

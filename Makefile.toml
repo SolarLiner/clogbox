@@ -20,22 +20,37 @@ dependencies = ["pre-build"]
 
 [tasks.test]
 clear = true
-command = "cargo"
-args = ["test", "--doc", "--all-features"] # Only run doc tests (tests are run with nextest)
-
-[tasks.ci-test]
-run_task = { name = "test", fork = true }
 
 [tasks.ci-pre-build]
 run_task = { name = "pre-build", fork = true }
 
+[tasks.ci-coverage-clean]
+workspace = false
+command = "cargo"
+toolchain = "nightly"
+args = ["llvm-cov", "clean", "--workspace"]
+
+[tasks.ci-doctest]
+workspace = false
+dependencies = ["ci-pre-build"]
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-cov", "--no-report", "test", "--doc", "--all-features", "--workspace"]
+
 [tasks.ci-nextest]
 workspace = false
 dependencies = ["ci-pre-build"]
-install_crate = { crate_name = "cargo-nextest", binary = "cargo", test_arg = ["nextest", "--help"] }
+toolchain = "nightly"
 command = "cargo"
-args = ["nextest", "--profile=ci", "run", "--workspace", "--all-features"]
+args = ["llvm-cov", "--no-report", "nextest", "--profile=ci", "--workspace", "--all-features"]
+
+[tasks.ci-cobertura]
+workspace = false
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-cov", "report", "--cobertura", "--output-path=coverage.xml"]
 
 [tasks.ci]
 workspace = false
-dependencies = ["ci-test", "ci-nextest"]
+toolchain = "nightly"
+dependencies = ["ci-coverage-clean", "ci-doctest", "ci-nextest", "ci-cobertura"]

@@ -25,6 +25,7 @@ jobs:
         toolchain: ${{ matrix.rust }}
     - name: Install uv
       uses: astral-sh/setup-uv@v5
+    - uses: taiki-e/install-action@cargo-llvm-cov
     - name: Install cargo-make
       uses: actions-rs/cargo@v1
       with:
@@ -45,6 +46,12 @@ jobs:
       with:
         name: tests-${{ runner.os }}-rust
         path: target/nextest/ci/test-results.xml
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-${{ runner.os }}-rust
+        path: coverage.xml
   python:
     runs-on: ${{ matrix.os }}
     strategy:

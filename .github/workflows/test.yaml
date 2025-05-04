@@ -52,9 +52,46 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Test
-        run: uv run --group cov --directory python/clogbox --python ${{ matrix.python }} pytest --junitxml=junit/test-results.xml --cov=com --cov-report=xml --cov-report=html
+        run: uv run --group cov --directory python/clogbox --python ${{ matrix.python }} pytest --junitxml=junit/test-results.xml --cov=src --cov-report=xml
+      - name: Generate coverage
+        run: uv run --group cov --directory python/clogbox coverage xml
       - name: Cache venv
         uses: actions/cache@v4
         with:
           path: python/clogbox/.venv
           key: ${{ runner.os }}-py${{ matrix.python }}-uv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tests-${{ runner.os }}-py${{ matrix.python }}
+          path: python/clogbox/junit/test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ runner.os }}-py${{ matrix.python }}
+          path: python/clogbox/junit/test-results.xml
+  summary:
+    runs-on: ubuntu-latest
+    needs: [python]
+    if: always()
+    steps:
+      - name: Download test-results.xml
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: 'false'
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "**/test-results.xml"
+      - name: Coverage report
+        uses: im-open/code-coverage-report-generator@v5
+        with:
+          reports: '**/coverage.xml'
+          targetdir: '.'
+          reporttypes: 'MarkdownSummary'
+      - name: Create a PR comment from the summary file
+        uses: im-open/process-code-coverage-summary@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-file: Summary.md
+          create-pr-comment: 'false'

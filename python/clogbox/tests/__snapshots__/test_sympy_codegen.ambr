@@ -10,7 +10,7 @@
   pub struct Equation<T> {
   }
   
-  impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
+  impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
       type Scalar = T;
   
       fn eval_with_derivative(&self, u: T) -> (T, T) {
@@ -27,7 +27,7 @@
   pub struct Equation<T> {
   }
   
-  impl<T: Copy + na::Scalar + na::RealField + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
+  impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
       type Scalar = T;
   
       fn eval_with_derivative(&self, x: T) -> (T, T) {

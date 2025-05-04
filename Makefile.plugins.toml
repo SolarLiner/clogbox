@@ -41,6 +41,7 @@ run_task = [
 ]
 
 [tasks.post-build]
+dependencies = ["build"]
 command = "python"
 args = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts/create_clap_bundle.py",
     "${LIB_FILE}",

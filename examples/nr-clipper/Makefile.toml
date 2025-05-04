@@ -3,5 +3,9 @@ extend = "../../Makefile.plugins.toml"
 [tasks.generate]
 script = "uv run --project ../.. gen_dsp.py"
 
+[tasks.generate.condition.files_modified]
+input = ["gen_dsp.py"]
+output = ["src/gen.rs"]
+
 [tasks.pre-build]
 dependencies = ["generate"]

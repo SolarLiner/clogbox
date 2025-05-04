@@ -4,6 +4,7 @@ CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
 [tasks.ci-lint]
 workspace = false
 install_crate = { rustup_component_name = "clippy" }
+dependencies = ["ci-pre-build"]
 command = "cargo"
 args = ["clippy", "--workspace", "--all-features"]
 
@@ -25,9 +26,12 @@ args = ["test", "--doc", "--all-features"] # Only run doc tests (tests are run w
 [tasks.ci-test]
 run_task = { name = "test", fork = true }
 
+[tasks.ci-pre-build]
+run_task = { name = "pre-build", fork = true }
+
 [tasks.ci-nextest]
 workspace = false
-dependencies = ["pre-build"]
+dependencies = ["ci-pre-build"]
 install_crate = { crate_name = "cargo-nextest", binary = "cargo", test_arg = ["nextest", "--help"] }
 command = "cargo"
 args = ["nextest", "--profile=ci", "run", "--workspace", "--all-features"]

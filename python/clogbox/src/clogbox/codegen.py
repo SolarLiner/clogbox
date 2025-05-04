@@ -71,7 +71,6 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         return f"{mtype}::zero()"
 
     def _print_Function(self, expr):
-        print("[_print_Function]", expr)
         if (use := self._function_uses.get(expr.func.__name__)) is not None:
             self.uses.update(use)
         if (use := self._function_typeparams.get(expr.func.__name__)) is not None:
@@ -80,7 +79,6 @@ class ClogboxRustCodePrinter(RustCodePrinter):
 
     @requires(type_params={"Float"}, uses={"num_traits::Float"})
     def _print_sign(self, expr: sp.sign):
-        print("[_print_sign]", expr)
         base = "({})".format(self._print(expr.args[0]))
         match expr.args[0]:
             case sp.MatrixBase():

@@ -38,4 +38,4 @@ args = ["nextest", "--profile=ci", "run", "--workspace", "--all-features"]
 
 [tasks.ci]
 workspace = false
-dependencies = ["ci-lint", "ci-test", "ci-nextest"]
+dependencies = ["ci-test", "ci-nextest"]

@@ -30,12 +30,8 @@ jobs:
         with:
           command: install
           args: --debug cargo-make
-      - name: Pre-build
-        run: cargo make pre-build
-      - name: Run clippy
-        uses: clechasseur/rs-clippy-check@v3
-        with:
-          args: --workspace --all-targets --all-features
+      - name: Run CI linting
+        run: cargo make ci-lint
   ruff:
     runs-on: ubuntu-latest
     steps:

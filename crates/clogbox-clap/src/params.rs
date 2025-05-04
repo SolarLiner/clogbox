@@ -289,25 +289,17 @@ pub trait ParamId: Sync + Enum {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub enum ParamChangeKind {
+    GestureBegin,
+    GestureEnd,
+    ValueChange(f32),
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct ParamChangeEvent<E> {
     pub id: E,
-    pub value: f32,
+    pub kind: ParamChangeKind,
 }
-
-impl<E: ParamId> ParamChangeEvent<E> {
-    pub fn from_normalized(id: E, normalized_value: f32) -> Self {
-        Self {
-            id,
-            value: id.mapping().denormalize(normalized_value),
-        }
-    }
-
-    pub fn normalized_value(&self) -> f32 {
-        self.id.mapping().normalize(self.value)
-    }
-}
-// pub type ParamNotifier<E> = Arc<Mutex<ringbuf::HeapProd<ParamChangeEvent<E>>>>;
-// pub type ParamListener<E> = ringbuf::HeapCons<ParamChangeEvent<E>>;
 
 #[derive(Clone)]
 pub struct ParamNotifier<E> {
@@ -315,8 +307,8 @@ pub struct ParamNotifier<E> {
 }
 
 impl<E> ParamNotifier<E> {
-    pub fn notify(&self, id: E, value: f32) {
-        if self.get_producer().try_push(ParamChangeEvent { id, value }).is_err() {
+    pub fn notify(&self, id: E, kind: ParamChangeKind) {
+        if self.get_producer().try_push(ParamChangeEvent { id, kind }).is_err() {
             eprintln!("ParamNotifier: ring buffer full");
         }
     }

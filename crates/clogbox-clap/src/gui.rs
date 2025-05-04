@@ -1,5 +1,5 @@
 use crate::main_thread::Plugin;
-use crate::params::{ParamChangeEvent, ParamId, ParamNotifier};
+use crate::params::{ParamChangeEvent, ParamChangeKind, ParamId, ParamNotifier};
 use crate::shared::Shared;
 use baseview::{PhySize, Size, WindowScalePolicy};
 pub use clack_extensions::gui as clap_gui;
@@ -106,7 +106,9 @@ impl<E: ParamId> View<E> {
                                 ui.end_row();
                                 if response.changed() {
                                     state.shared.params.set(p, p.mapping().denormalize(value as _));
-                                    state.dsp_notifier.notify(p, p.mapping().denormalize(value as _));
+                                    state
+                                        .dsp_notifier
+                                        .notify(p, ParamChangeKind::ValueChange(p.mapping().denormalize(value as _)));
                                 }
                             }
                         });

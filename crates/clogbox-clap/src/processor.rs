@@ -1,8 +1,8 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::params::{ParamId, ParamListener};
+use crate::params::{ParamChangeKind, ParamId, ParamListener};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
-use clack_plugin::events::event_types::ParamValueEvent;
+use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
 use clack_plugin::host::HostAudioProcessorHandle;
 pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
@@ -232,14 +232,22 @@ impl<P: PluginDsp> Processor<'_, P> {
 
         // Retrieve (and publish to host) params received by the GUI
         for event in &mut self.dsp_listener {
-            self.params.storage[event.id].push(0, event.value);
-            if let Err(err) = events.output.try_push(ParamValueEvent::new(
-                0,
-                ClapId::new(event.id.to_usize() as _),
-                Pckn::match_all(),
-                event.normalized_value() as _,
-                Cookie::empty(),
-            )) {
+            let clap_id = ClapId::new(event.id.to_usize() as _);
+            let result = match event.kind {
+                ParamChangeKind::GestureBegin => events.output.try_push(ParamGestureBeginEvent::new(0, clap_id)),
+                ParamChangeKind::GestureEnd => events.output.try_push(ParamGestureEndEvent::new(0, clap_id)),
+                ParamChangeKind::ValueChange(v) => {
+                    self.params.storage[event.id].push(0, v);
+                    events.output.try_push(ParamValueEvent::new(
+                        0,
+                        clap_id,
+                        Pckn::match_all(),
+                        event.id.mapping().normalize(v) as _,
+                        Cookie::empty(),
+                    ))
+                }
+            };
+            if let Err(err) = result {
                 eprintln!("Failed to push event: {}", err);
             }
         }

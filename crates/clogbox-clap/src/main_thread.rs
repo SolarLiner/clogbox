@@ -1,4 +1,4 @@
-use crate::params::{ParamChangeEvent, ParamId, ParamListener, ParamNotifier, ParamStorage};
+use crate::params::{ParamChangeKind, ParamId, ParamListener, ParamNotifier, ParamStorage};
 use crate::processor::PluginDsp;
 use crate::shared::Shared;
 use bincode::de::Decoder;
@@ -15,10 +15,8 @@ use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Enum, Mono, Stereo};
 use clogbox_module::Module;
-use ringbuf::traits::*;
 use std::ffi::CStr;
 use std::fmt::Write;
-use std::sync::{Arc, Mutex};
 
 #[cfg(not(feature = "gui"))]
 type GuiHandle<E> = std::marker::PhantomData<E>;
@@ -99,7 +97,7 @@ impl<'host, P: Plugin> MainThread<'host, P> {
 
     #[cfg(feature = "gui")]
     fn notify_param_change(&mut self, id: P::Params, value: f32) {
-        self.param_notifier.notify(id, value);
+        self.param_notifier.notify(id, ParamChangeKind::ValueChange(value));
     }
 
     #[cfg(not(feature = "gui"))]

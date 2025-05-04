@@ -7,7 +7,6 @@ use crate::{Linear, Saturator};
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
-use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use nalgebra::{self as na, SimdRealField};
 use num_traits::{Float, FloatConst, Num, NumAssign, Zero};
@@ -90,7 +89,7 @@ pub struct Svf<T, Mode: ?Sized = Linear<T>> {
     pub fc: T,
     /// Computed normalized frequency
     pub g: T,
-    /// Pre-computed input amplitude to the first integrator 
+    /// Pre-computed input amplitude to the first integrator
     pub d: T,
     /// Radian step (where 1 radian = 1/sample_rate)
     pub w_step: T,
@@ -181,7 +180,7 @@ impl<T: Cast<f64> + CastFrom<f64> + Float, Mode> Svf<T, Mode> {
     pub fn set_resonance_no_update(&mut self, q: T) {
         self.q = q;
     }
-    
+
     pub fn set_drive(&mut self, drive: T) {
         self.drive = drive;
     }
@@ -214,7 +213,7 @@ impl<
             + na::Scalar
             + SimdRealField
             + NumAssign,
-    Mode: SvfImpl<T>,
+        Mode: SvfImpl<T>,
     > Svf<T, Mode>
 {
     /// Process the next sample of this filter, with the given input sample.
@@ -245,7 +244,7 @@ impl<
         match param {
             SvfParams::Cutoff => self.set_cutoff(T::cast_from(value as _)),
             SvfParams::Resonance => self.set_resonance(T::cast_from(value as _)),
-            SvfParams::Drive => self.drive = T::cast_from(value as _),       
+            SvfParams::Drive => self.drive = T::cast_from(value as _),
         }
     }
 }
@@ -324,9 +323,45 @@ pub struct SvfMixer<T> {
     coeffs: [ExpSmoother<T>; 4],
 }
 
+impl<T: CastFrom<f64> + Float + NumAssign> SvfMixer<T> {
+    pub fn new(samplerate: T, filter_type: FilterType, amp: T) -> Self {
+        let coeffs = filter_type
+            .mix_coefficients(T::cast_from(1.0))
+            .map(|k| ExpSmoother::new(samplerate, T::cast_from(10e-3), k, k));
+        Self {
+            filter_type,
+            amp: ExpSmoother::new(samplerate, T::cast_from(10e-3), amp, amp),
+            coeffs,
+        }
+    }
+
+    pub fn set_filter_type(&mut self, filter_type: FilterType) {
+        if self.filter_type == filter_type {
+            return;
+        }
+        self.filter_type = filter_type;
+        let amp = self.amp.next_value();
+        self.update_coefficients(filter_type.mix_coefficients(amp));
+    }
+
+    pub fn set_amp(&mut self, amp: T) {
+        self.amp.set_target(amp);
+    }
+
+    fn update_coefficients(&mut self, coeffs: [T; 4]) {
+        for (i, k) in coeffs.into_iter().enumerate() {
+            self.coeffs[i].set_target(k);
+        }
+    }
+}
+
 impl<T: 'static + Copy + Send + Float + NumAssign + ops::Neg<Output = T> + CastFrom<f64>> SvfMixer<T> {
     pub fn mix(&mut self, input: T, outputs: EnumMapArray<SvfOutput, T>) -> T {
         use SvfOutput::*;
+        if !self.amp.has_converged() {
+            let amp = self.amp.next_value();
+            self.update_coefficients(self.filter_type.mix_coefficients(amp));
+        }
         let k = self.coeffs.each_mut().map(|s| s.next_value());
         let x = [input, outputs[Lowpass], outputs[Bandpass], outputs[Highpass]];
         k.into_iter()

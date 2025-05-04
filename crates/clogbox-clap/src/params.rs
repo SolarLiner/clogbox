@@ -1,11 +1,12 @@
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{Empty, Enum};
+use clogbox_enum::{count, Empty, Enum};
 use std::fmt::{Formatter, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{fmt, ops};
 
 pub use clack_extensions::params::ParamInfoFlags;
+use clogbox_math::{db_to_linear, linear_to_db};
 
 /// Mapping from and to a normalized range.
 pub trait Mapping: Send + Sync {
@@ -119,6 +120,94 @@ pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> impl Mapping {
 
 pub fn polynomial(min: f32, max: f32, factor: f32) -> impl Mapping {
     polynomial_raw(min, max, factor.exp())
+}
+
+pub struct Logarithmic {
+    base: f32,
+    start: f32,
+    end: f32,
+}
+
+impl Mapping for Logarithmic {
+    fn normalize(&self, value: f32) -> f32 {
+        let x = value.log(self.base);
+        (x - self.start) / (self.end - self.start)
+    }
+
+    fn denormalize(&self, value: f32) -> f32 {
+        let x = self.start + (self.end - self.start) * value;
+        self.base.powf(x)
+    }
+
+    fn range(&self) -> ops::Range<f32> {
+        self.base.powf(self.start)..self.base.powf(self.end)
+    }
+}
+
+pub fn logarithmic(base: f32, start: f32, end: f32) -> impl Mapping {
+    Logarithmic {
+        base,
+        start: start.log(base),
+        end: end.log(base),
+    }
+}
+
+pub fn frequency(min: f32, max: f32) -> impl Mapping {
+    logarithmic(2.0, min, max)
+}
+
+pub struct Decibel(Range<Linear>);
+
+impl Mapping for Decibel {
+    fn normalize(&self, value: f32) -> f32 {
+        self.0.normalize(linear_to_db(value))
+    }
+
+    fn denormalize(&self, value: f32) -> f32 {
+        db_to_linear(self.0.denormalize(value))
+    }
+
+    fn range(&self) -> ops::Range<f32> {
+        self.0.range()
+    }
+}
+
+pub fn decibel(min: f32, max: f32) -> impl Mapping {
+    Decibel(Range {
+        inner: Linear,
+        min,
+        max,
+    })
+}
+
+pub struct Int {
+    min: f32,
+    max: f32,
+}
+
+impl Mapping for Int {
+    fn normalize(&self, value: f32) -> f32 {
+        (value.round() - self.min) / (self.max - self.min)
+    }
+
+    fn denormalize(&self, value: f32) -> f32 {
+        (self.min + (self.max - self.min) * value).round()
+    }
+
+    fn range(&self) -> ops::Range<f32> {
+        self.min..self.max
+    }
+}
+
+pub fn int(min: i32, max: i32) -> impl Mapping {
+    Int {
+        min: min as f32,
+        max: max as f32,
+    }
+}
+
+pub fn enum_<E: Enum>() -> impl Mapping {
+    int(0, count::<E>() as i32 - 1)
 }
 
 pub struct ParamValue {

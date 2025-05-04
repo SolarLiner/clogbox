@@ -11,16 +11,16 @@ from pathlib import Path
 
 import sympy as sp
 
-from clogbox.filters import drive, linear_integrator
+from clogbox.filters import drive, ota_integrator
 from clogbox.filters.svf import SvfInput
 
 
-def hyperbolic(x):
+def hyperbolic_bounded(x):
     return x / sp.sqrt(1 + x**2)
 
 
-def exponential(x):
-    return (1 - sp.exp(-sp.Abs(x))) * sp.sign(x)
+def hyperbolic_unbounded(x):
+    return 2 * x / (1 + sp.sqrt(1 + sp.Abs(4 * x)))
 
 
 def main() -> None:
@@ -29,7 +29,12 @@ def main() -> None:
 
     g, q = sp.symbols("g q", real=True, positive=True)
     k_drive = sp.Symbol("k_drive", real=True, positive=True)
-    svf = SvfInput(g, q, linear_integrator, drive(hyperbolic, k_drive)).generate()
+    svf = SvfInput(
+        g,
+        q,
+        ota_integrator(k_drive, hyperbolic_bounded),
+        drive(hyperbolic_unbounded, k_drive),
+    ).generate()
 
     with dest.open("wt") as f:
         svf.generate_module(f, evalf=0)

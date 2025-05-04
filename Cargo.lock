@@ -164,6 +164,7 @@ dependencies = [
  "clack-extensions",
  "clack-plugin",
  "clogbox-enum",
+ "clogbox-math",
  "clogbox-module",
 ]
 

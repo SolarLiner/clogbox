@@ -72,11 +72,11 @@ pub struct ExpSmoother<T> {
     last: T,
 }
 
-impl<T: Copy + NumOps> ExpSmoother<T> {
+impl<T: Copy + One + NumOps> ExpSmoother<T> {
     pub fn new(samplerate: T, time: T, initial: T, target: T) -> Self {
         Self {
             target,
-            tau: time / samplerate,
+            tau: T::one() - time / samplerate,
             time,
             samplerate,
             last: initial,

@@ -23,7 +23,7 @@ pub struct SolveResult<T> {
 
 impl<T> NewtonRaphson<T> {
     /// Solves the equation using the Newton-Raphson method
-    pub fn solve<F: Differentiable<Scalar=T>>(&self, function: &F, initial_guess: T) -> SolveResult<T>
+    pub fn solve<F: Differentiable<Scalar = T>>(&self, function: &F, initial_guess: T) -> SolveResult<T>
     where
         T: Float,
     {
@@ -54,14 +54,14 @@ impl<T> NewtonRaphson<T> {
 
 #[cfg(feature = "linalg")]
 impl<T: Copy + na::Scalar + NumAssign + RealField + PartialOrd + Zero> NewtonRaphson<T> {
-    pub fn solve_multi<F: MultiDifferentiable<Scalar=T>>(
+    pub fn solve_multi<F: MultiDifferentiable<Scalar = T>>(
         &self,
         function: &F,
         mut value: na::VectorViewMut<T, F::Dim>,
     ) -> SolveResult<na::OVector<T, F::Dim>>
     where
         na::default_allocator::DefaultAllocator:
-        na::allocator::Allocator<F::Dim> + na::allocator::Allocator<F::Dim, F::Dim>,
+            na::allocator::Allocator<F::Dim> + na::allocator::Allocator<F::Dim, F::Dim>,
     {
         for i in 0..self.max_iterations {
             let (fx, inv_j) = function.eval_with_inv_jacobian(value.as_view());

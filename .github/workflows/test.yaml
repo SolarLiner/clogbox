@@ -110,4 +110,4 @@ jobs:
           summary-file: Summary.md
           create-pr-comment: 'false'
       - name: Set report as step summary
-        run: "< Summary.md > $GITHUB_STEP_SUMMARY"
+        run: "< Summary.md >> $GITHUB_STEP_SUMMARY"

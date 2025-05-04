@@ -43,4 +43,4 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Test
-        run: uvx ruff check python/clogbox
+        run: uvx ruff check

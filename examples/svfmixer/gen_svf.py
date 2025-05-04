@@ -11,11 +11,16 @@ from pathlib import Path
 
 import sympy as sp
 
-from clogbox.filters import ota_integrator, Shaper, drive, linear_integrator
+from clogbox.filters import drive, linear_integrator
 from clogbox.filters.svf import SvfInput
 
-hyperbolic: Shaper = lambda x: x / sp.sqrt(1 + x**2)
-exponential: Shaper = lambda x: (1 - sp.exp(-sp.Abs(x))) * sp.sign(x)
+
+def hyperbolic(x):
+    return x / sp.sqrt(1 + x**2)
+
+
+def exponential(x):
+    return (1 - sp.exp(-sp.Abs(x))) * sp.sign(x)
 
 
 def main() -> None:

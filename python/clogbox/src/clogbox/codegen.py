@@ -18,15 +18,11 @@ RUST_CODE_PREAMBLE = """#![allow(unused_imports, dead_code, non_snake_case, non_
 class ClogboxRustCodePrinter(RustCodePrinter):
     tab = " " * 4
 
-    type_mappings = RustCodePrinter.type_mappings | { ast.float32: "T", ast.float64: "T"}
+    type_mappings = RustCodePrinter.type_mappings | {ast.float32: "T", ast.float64: "T"}
 
-    _function_uses = {
-        func: {"num_traits::Float"} for func in known_functions
-    }
+    _function_uses = {func: {"num_traits::Float"} for func in known_functions}
 
-    _function_typeparams = {
-        func: {"Float"} for func in known_functions
-    }
+    _function_typeparams = {func: {"Float"} for func in known_functions}
 
     _default_uses = {"num_traits::Float"}
     _default_typeparams = {"Float"}
@@ -42,11 +38,13 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         self.uses: set[str] = self._default_uses.copy()
         self.type_params: set[str] = self._default_typeparams.copy()
 
-    def get_type_params(self, remove:Optional[set[str]]=None) -> str:
+    def get_type_params(self, remove: Optional[set[str]] = None) -> str:
         if remove is None:
             remove = set()
         params = self.type_params - remove
-        result = "<T{bounds}>".format(bounds=": " + " + ".join(sorted(params)) if len(params) > 0 else "")
+        result = "<T{bounds}>".format(
+            bounds=": " + " + ".join(sorted(params)) if len(params) > 0 else ""
+        )
         self.type_params = self._default_typeparams.copy()
         return result
 
@@ -90,9 +88,10 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         return f"{base}.signum()"
 
     def _print_DiracDelta(self, expr: sp.DiracDelta):
-        dirac_delta = lambda x: sp.Piecewise((1, x == 0), (0, True))
-        return self._print(dirac_delta(expr.args[0]))
+        def dirac_delta(x):
+            return sp.Piecewise((1, x == 0), (0, True))
 
+        return self._print(dirac_delta(expr.args[0]))
 
     @requires(type_params={"Float"}, uses={"num_traits::Float"})
     def _print_Pow(self, expr):
@@ -148,19 +147,31 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         if len(expr.args) == 1:
             expr, _ = expr.args[0]
             return self._print(expr)
-        arms = [self._indent_codestring("_ if {cond} => {expr},".format(cond=self._print(cond), expr=self._print(
-            expr))) for expr, cond in expr.args[:-1]]
-        arms.append(self._indent_codestring("_ => {}".format(self._print(expr.args[-1][0]))))
+        arms = [
+            self._indent_codestring(
+                "_ if {cond} => {expr},".format(
+                    cond=self._print(cond), expr=self._print(expr)
+                )
+            )
+            for expr, cond in expr.args[:-1]
+        ]
+        arms.append(
+            self._indent_codestring("_ => {}".format(self._print(expr.args[-1][0])))
+        )
         arms = "\n".join(arms)
         return f"match () {{\n{arms}\n}}"
 
     def _print_FunctionDefinition(self, fdecl: ast.FunctionDefinition):
-        params = ", ".join(self._print_Variable(var, _type=True) for var in fdecl.parameters)
+        params = ", ".join(
+            self._print_Variable(var, _type=True) for var in fdecl.parameters
+        )
         rtype = self._print_Type(fdecl.return_type)
         body = self._indent_codestring(self._print(fdecl.body))
         typeparams = self.get_type_params()
 
-        return f"""pub fn {fdecl.name}{typeparams}({params}) -> {rtype} {{\n{body}\n}}"""
+        return (
+            f"""pub fn {fdecl.name}{typeparams}({params}) -> {rtype} {{\n{body}\n}}"""
+        )
 
     def _print_Type(self, t: ast.Type):
         if isinstance(t, ast.ComplexBaseType):
@@ -172,14 +183,14 @@ class ClogboxRustCodePrinter(RustCodePrinter):
             return "u64"
         return "T"
 
-
     def _print_Declaration(self, decl: ast.Declaration, _type=False):
         if value_const in decl.variable.attrs:
             mut = ""
         else:
             mut = " mut"
         return self._get_statement(
-            f"let{mut} {self._print_Variable(decl.variable, _type=_type)} = {self._print(decl.variable.value)}")
+            f"let{mut} {self._print_Variable(decl.variable, _type=_type)} = {self._print(decl.variable.value)}"
+        )
 
     def _print_Variable(self, x: ast.Variable, _type=False):
         if _type:
@@ -211,10 +222,12 @@ class ClogboxRustCodePrinter(RustCodePrinter):
         return super()._print_CodeBlock(expr)
 
     def _print_Scope(self, scope: ast.Scope):
-        return "{{\n{body}\n}}".format(body=self._indent_codestring(self._print_CodeBlock(scope.body)))
+        return "{{\n{body}\n}}".format(
+            body=self._indent_codestring(self._print_CodeBlock(scope.body))
+        )
 
     def _indent_codestring(self, codestring):
-        return '\n'.join([self.tab + line for line in codestring.split('\n')])
+        return "\n".join([self.tab + line for line in codestring.split("\n")])
 
     def _get_matrix_type(self, mat):
         rdim = f"na::Const<{mat.rows}>"
@@ -244,9 +257,15 @@ class ClogboxCodegen(codegen.RustCodeGen):
                 typ = "&mut " + typ
             return f"{arg.name}: {typ}"
 
-        replacement, results = (sp.cse(result.expr for result in typing.cast(list[codegen.Result], routine.results) if
-                                       not isinstance(result, codegen.OutputArgument)))
-        codeblock = ast.CodeBlock(*(ast.Assignment(lhs, rhs) for lhs, rhs in replacement), ast.Return(*results))
+        replacement, results = sp.cse(
+            result.expr
+            for result in typing.cast(list[codegen.Result], routine.results)
+            if not isinstance(result, codegen.OutputArgument)
+        )
+        codeblock = ast.CodeBlock(
+            *(ast.Assignment(lhs, rhs) for lhs, rhs in replacement),
+            ast.Return(*results),
+        )
 
         # Print the body to collect the necessary bounds
         self.printer.doprint(codeblock)
@@ -255,7 +274,9 @@ class ClogboxCodegen(codegen.RustCodeGen):
         typeparams = self.printer.get_type_params()
 
         if len(routine.result_variables) > 1:
-            rtype = "({types})".format(types=", ".join(get_type(var.expr) for var in routine.result_variables))
+            rtype = "({types})".format(
+                types=", ".join(get_type(var.expr) for var in routine.result_variables)
+            )
         else:
             rtype = get_type(routine.result_variables[0].expr)
         return f"pub fn {routine.name}{typeparams}({args}) -> {rtype}"
@@ -271,12 +292,18 @@ def render_as_module(content, printer: Optional[ClogboxRustCodePrinter] = None) 
             return ""
         return module
 
-    imports = "\n".join(f"use {module};" for module in sorted(printer.uses, key=sort_uses))
+    imports = "\n".join(
+        f"use {module};" for module in sorted(printer.uses, key=sort_uses)
+    )
     return f"{RUST_CODE_PREAMBLE}\n{imports}\n\n{str}"
 
 
-def codegen_module(routines, printer: Optional[ClogboxRustCodePrinter] = None, codegen: Optional[ClogboxCodegen] = None,
-                   project: str = "clogbox") -> str:
+def codegen_module(
+    routines,
+    printer: Optional[ClogboxRustCodePrinter] = None,
+    codegen: Optional[ClogboxCodegen] = None,
+    project: str = "clogbox",
+) -> str:
     if not printer:
         printer = ClogboxRustCodePrinter()
     if not codegen:
@@ -290,7 +317,15 @@ def codegen_module(routines, printer: Optional[ClogboxRustCodePrinter] = None, c
     [(_, contents)] = codegen.write(routines, "")  # type: str
     imports = codegen.printer.get_uses()
     end_of_comment = contents.find("*/") + 3  # 2 chars + newline
-    return contents[:end_of_comment] + "\n" + RUST_CODE_PREAMBLE + "\n" + imports + "\n\n" + contents[end_of_comment:]
+    return (
+        contents[:end_of_comment]
+        + "\n"
+        + RUST_CODE_PREAMBLE
+        + "\n"
+        + imports
+        + "\n\n"
+        + contents[end_of_comment:]
+    )
 
 
 def get_type(e: sp.Basic):
@@ -333,22 +368,25 @@ class IndentStream(io.TextIOBase):
 
 def generate_scope(exprs: list[sp.Expr]) -> ast.Scope:
     replacements, exprs = sp.cse(exprs)
-    codeblock = ast.CodeBlock(*(ast.Variable(lhs, attrs={value_const}).as_Declaration(value=rhs) for lhs,
-    rhs in replacements),
-                              ast.Return(
-                                  sp.Tuple(*exprs)))
+    codeblock = ast.CodeBlock(
+        *(
+            ast.Variable(lhs, attrs={value_const}).as_Declaration(value=rhs)
+            for lhs, rhs in replacements
+        ),
+        ast.Return(sp.Tuple(*exprs)),
+    )
     return ast.Scope(codeblock)
 
 
 def generate_differentiable(
-        f: io.TextIOBase,
-        expr: Union[sp.Expr, sp.Eq],
-        variable: Union[sp.Symbol, sp.MatrixBase],
-        struct_name="Equation",
-        printer: Optional[RustCodePrinter] = None,
-        codegen: Optional[ClogboxCodegen] = None,
-        runtime_invert=False,
-        evalf=23,
+    f: io.TextIOBase,
+    expr: Union[sp.Expr, sp.Eq],
+    variable: Union[sp.Symbol, sp.MatrixBase],
+    struct_name="Equation",
+    printer: Optional[RustCodePrinter] = None,
+    codegen: Optional[ClogboxCodegen] = None,
+    runtime_invert=False,
+    evalf=23,
 ):
     """
     Generate Rust code for a specific equation that is differentiable once about a variable. This function will
@@ -402,8 +440,14 @@ def generate_differentiable(
     f.write("}\n")
     f.writelines([""])
 
-    codegen.printer.uses.update({"num_traits::Float", "num_traits::FloatConst", "az::CastFrom",
-                                 "clogbox_math::root_eq"})
+    codegen.printer.uses.update(
+        {
+            "num_traits::Float",
+            "num_traits::FloatConst",
+            "az::CastFrom",
+            "clogbox_math::root_eq",
+        }
+    )
     if isinstance(expr, sp.MatrixBase):
         codegen.printer.uses.add("nalgebra as na")
         vtype = "na::OVector<Self::Scalar, Self::Dim>"
@@ -453,5 +497,4 @@ impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for {
 
         f.write("""
     }
-}"""
-        )
+}""")

@@ -1,4 +1,4 @@
-extend = "./Makefile.crates.toml"
+extend = "./Makefile.toml"
 
 [env]
 FS_PROFILE = { source = "${CARGO_MAKE_CARGO_PROFILE}", default_value = "${CARGO_MAKE_CARGO_PROFILE}", mapping = { "dev" = "debug" } }
@@ -41,9 +41,17 @@ run_task = [
 ]
 
 [tasks.post-build]
+dependencies = ["build"]
 command = "python"
 args = ["${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/scripts/create_clap_bundle.py",
     "${LIB_FILE}",
     "--id", "dev.solarliner.clogbox.${CARGO_MAKE_CRATE_NAME}",
     "--name", "${CARGO_MAKE_CRATE_NAME}",
     "--version", "${CARGO_MAKE_CRATE_VERSION}"]
+
+[tasks.test]
+clear = true
+
+[tasks.default]
+clear = true
+alias = "post-build"

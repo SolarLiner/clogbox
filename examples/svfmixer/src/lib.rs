@@ -1,4 +1,5 @@
 mod dsp;
+mod gen;
 mod params;
 
 use clogbox_clap::main_thread::{Plugin, PortLayout};

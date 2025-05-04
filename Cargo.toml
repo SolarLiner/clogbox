@@ -60,3 +60,11 @@ clack-extensions = { git = "https://github.com/prokopyl/clack.git" }
 #homepage.workspace = true
 #repository.workspace = true
 #keywords.workspace = true
+
+[profile.dev]
+opt-level = 1
+
+
+[profile.dev.package."*"]
+opt-level = 3
+

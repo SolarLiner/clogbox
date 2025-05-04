@@ -1,0 +1,56 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.ci-lint]
+workspace = false
+install_crate = { rustup_component_name = "clippy" }
+dependencies = ["ci-pre-build"]
+command = "cargo"
+args = ["clippy", "--workspace", "--all-features"]
+
+[tasks.lint-fix]
+extend = "ci-lint"
+args = ["clippy", "--fix"]
+
+[tasks.build]
+dependencies = ["pre-build"]
+
+[tasks.fmt]
+dependencies = ["pre-build"]
+
+[tasks.test]
+clear = true
+
+[tasks.ci-pre-build]
+run_task = { name = "pre-build", fork = true }
+
+[tasks.ci-coverage-clean]
+workspace = false
+command = "cargo"
+toolchain = "nightly"
+args = ["llvm-cov", "clean", "--workspace"]
+
+[tasks.ci-doctest]
+workspace = false
+dependencies = ["ci-pre-build"]
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-cov", "--no-report", "test", "--doc", "--all-features", "--workspace"]
+
+[tasks.ci-nextest]
+workspace = false
+dependencies = ["ci-pre-build"]
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-cov", "--no-report", "nextest", "--profile=ci", "--workspace", "--all-features"]
+
+[tasks.ci-cobertura]
+workspace = false
+toolchain = "nightly"
+command = "cargo"
+args = ["llvm-cov", "report", "--cobertura", "--output-path=coverage.xml"]
+
+[tasks.ci]
+workspace = false
+toolchain = "nightly"
+dependencies = ["ci-coverage-clean", "ci-doctest", "ci-nextest", "ci-cobertura"]

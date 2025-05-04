@@ -1,0 +1,92 @@
+# serializer version: 1
+# name: test_abs_diff
+  '(x).signum()'
+# ---
+# name: test_asinh_derivative
+  '(u.powi(2) + T::cast_from(1.0)).sqrt().recip()'
+# ---
+# name: test_generate_differentiable
+  '''
+  pub struct Equation<T> {
+  }
+  
+  impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
+      type Scalar = T;
+  
+      fn eval_with_derivative(&self, u: T) -> (T, T) {
+          {
+              let x0 = u.tanh();
+              (-x0 + u.asinh(), x0.powi(2) + T::cast_from(-1.0) + (u.powi(2) + T::cast_from(1.0)).sqrt().recip())
+          }
+      }
+  }
+  '''
+# ---
+# name: test_hyperbolic_diff
+  '''
+  pub struct Equation<T> {
+  }
+  
+  impl<T: Copy + Float + FloatConst + CastFrom<f64>> root_eq::Differentiable for Equation<T> {
+      type Scalar = T;
+  
+      fn eval_with_derivative(&self, x: T) -> (T, T) {
+          {
+              let x0 = x.abs() + T::cast_from(1.0);
+              let x1 = x0.powi(-1);
+              (x*x1, -x*(x).signum()/x0.powi(2) + x1)
+          }
+      }
+  }
+  '''
+# ---
+# name: test_matrix_expression
+  '-u.tanh() + (na::OMatrix::<T, na::Const<2>, na::Const<2>>::new(u, u.powi(2), u.powi(3), u.powi(4))).determinant()'
+# ---
+# name: test_matrix_routine
+  '''
+  /*
+   *                      Code generated with SymPy 1.14.0
+   *
+   *              See http://www.sympy.org/ for more information.
+   *
+   *                       This file is part of 'project'
+   */
+  
+  #![allow(unused_imports, dead_code, non_snake_case, non_camel_case_types)]
+  
+  use nalgebra as na;
+  use num_traits::Float;
+  
+  
+  pub fn matrix_routine<T: Float + na::Scalar>(X: na::OMatrix<T, na::Const<2>, na::Const<2>>) -> T {
+  
+      let out1 = (X[0] + X[1] + X[2] + X[3])/(X).determinant();
+      out1
+  
+  }
+  
+  '''
+# ---
+# name: test_newton_rhapson_function
+  '''
+  pub fn newton<T: CastFrom<f64> + Float + FloatConst>(u: T) -> T {
+      let mut d_u = T::INFINITY();
+      while d_u.abs() > T::cast_from(4e-16)*u.abs() + T::cast_from(1e-12) {
+          x0 = (u.powi(2) + T::cast_from(1.0)).sqrt();
+          x1 = u.tanh();
+          d_u = -x0*(-x1 + u.asinh())/(x0*x1.powi(2) - x0 + T::cast_from(1.0));
+          u += d_u;
+      }
+      u
+  }
+  '''
+# ---
+# name: test_piecewise
+  '''
+  match () {
+      _ if x < T::zero() => x,
+      _ => x.powi(2)
+  }
+  '''
+# ---

@@ -7,7 +7,7 @@ use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostSharedHandle;
 use clogbox_enum::enum_iter;
-use egui::Widget;
+use egui::{widgets, Widget};
 use raw_window_handle::HasRawWindowHandle;
 use ringbuf::traits::Producer;
 use std::cmp::min;
@@ -86,26 +86,30 @@ impl<E: ParamId> View<E> {
                     ctx.request_repaint();
                 }
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.columns(2, |ui| {
-                        for p in enum_iter::<E>() {
-                            let mut value = state.shared.params.get_normalized(p);
-                            ui[0].label(p.name());
-                            let response = egui::widgets::DragValue::new(&mut value)
-                                .custom_parser(|s| {
-                                    p.text_to_value(s).map(|f| p.mapping().normalize(f.clamp(0., 1.)) as _)
-                                })
-                                .custom_formatter(|f, _| {
-                                    p.value_to_string(p.mapping().denormalize(f as _))
-                                        .unwrap_or_else(|err| format!("Formatting error: {err}"))
-                                })
-                                .speed(0.01)
-                                .ui(&mut ui[1]);
-                            if response.changed() {
-                                state.shared.params.set(p, p.mapping().denormalize(value as _));
-                                state.dsp_notifier.notify(p, p.mapping().denormalize(value as _));
+                    egui::Grid::new("params")
+                        .num_columns(2)
+                        .spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            for p in enum_iter::<E>() {
+                                let mut value = state.shared.params.get_normalized(p);
+                                ui.label(p.name());
+                                let response = widgets::DragValue::new(&mut value)
+                                    .custom_parser(|s| p.text_to_value(s).map(|f| p.mapping().normalize(f) as _))
+                                    .custom_formatter(|f, _| {
+                                        p.value_to_string(p.mapping().denormalize(f as _))
+                                            .unwrap_or_else(|err| format!("Formatting error: {err}"))
+                                    })
+                                    .speed(0.005)
+                                    .range(0.0..=1.0)
+                                    .ui(ui);
+                                ui.end_row();
+                                if response.changed() {
+                                    state.shared.params.set(p, p.mapping().denormalize(value as _));
+                                    state.dsp_notifier.notify(p, p.mapping().denormalize(value as _));
+                                }
                             }
-                        }
-                    });
+                        });
                 });
                 // egui::Window::new("debug settings")
                 //     .collapsible(true)

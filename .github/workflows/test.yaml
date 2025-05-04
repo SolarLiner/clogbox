@@ -86,7 +86,14 @@ jobs:
         with:
           paths: "**/test-results.xml"
       - name: Coverage report
-        uses: 5monkeys/cobertura-action@v14
+        uses: im-open/code-coverage-report-generator@v5
         with:
-          path: '**/coverage.xml'
-          minimum_coverage: 75
+          reports: '**/coverage.xml'
+          targetdir: '.'
+          reporttypes: 'MarkdownSummary'
+      - name: Create a PR comment from the summary file
+        uses: im-open/process-code-coverage-summary@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          summary-file: Summary.md
+          create-pr-comment: 'false'

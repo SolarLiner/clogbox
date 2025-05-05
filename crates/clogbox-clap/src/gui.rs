@@ -15,6 +15,7 @@ pub enum GuiEvent<E> {
     SetScale(f64),
 }
 
+#[derive(Clone)]
 pub struct GuiContext<E: ParamId> {
     pub params: ParamStorage<E>,
     pub dsp_notifier: ParamNotifier<E>,

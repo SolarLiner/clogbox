@@ -336,6 +336,7 @@ version = "0.1.0"
 dependencies = [
  "baseview",
  "clogbox-clap",
+ "clogbox-enum",
  "egui",
  "egui-baseview",
 ]

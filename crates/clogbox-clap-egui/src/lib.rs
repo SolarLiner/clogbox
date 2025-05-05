@@ -3,6 +3,7 @@ use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::{GuiContext, GuiEvent, HasRawWindowHandle, PluginView, PluginViewHandle};
 use clogbox_clap::params::ParamId;
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
+use egui::Id;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{Receiver, Sender};
@@ -11,11 +12,21 @@ use std::sync::Arc;
 pub use egui;
 pub use egui_baseview;
 
+pub mod generic_ui;
+pub mod components;
+
+pub use generic_ui::generic_ui;
+
+pub fn gui_context_id() -> Id {
+    Id::new("gui_context")
+}
+
 pub trait EguiPluginView: 'static + Send {
     type Params: ParamId;
 
-    fn build(&mut self, ctx: &egui::Context, context: &GuiContext<Self::Params>, queue: &mut egui_baseview::Queue) {}
-    fn update(&mut self, ctx: &egui::Context, queue: &mut egui_baseview::Queue, gui_context: &GuiContext<Self::Params>);
+    #[allow(unused_variables)]
+    fn build(&mut self, ctx: &egui::Context, queue: &mut egui_baseview::Queue) {}
+    fn update(&mut self, ctx: &egui::Context, queue: &mut egui_baseview::Queue);
 }
 
 struct ArcSizeInner {
@@ -77,16 +88,15 @@ impl<E: ParamId> EguiHandle<E> {
         size: GuiSize,
     ) -> Result<Self, PluginError> {
         struct GuiState<E: ParamId> {
-            context: GuiContext<E>,
             current_size: ArcSize,
             rx: Receiver<GuiEvent<E>>,
             instance: Box<dyn EguiPluginView<Params = E>>,
         }
 
+        let mut context = Some(context);
         let (tx, rx) = std::sync::mpsc::channel();
         let current_size = arc_size(size.width, size.height);
         let state = GuiState {
-            context,
             rx,
             current_size: current_size.clone(),
             instance,
@@ -104,9 +114,10 @@ impl<E: ParamId> EguiHandle<E> {
             open_options,
             graphics_config,
             state,
-            |ctx, queue, state| {
-                let GuiState { context, instance, .. } = state;
-                instance.build(ctx, context, queue);
+            move |ctx, queue, state| {
+                let GuiState { instance, .. } = state;
+                ctx.data_mut(|data| data.insert_temp(gui_context_id(), context.take().unwrap()));
+                instance.build(ctx, queue);
             },
             |ctx, queue, state| {
                 for event in state.rx.try_iter() {
@@ -122,7 +133,7 @@ impl<E: ParamId> EguiHandle<E> {
                         _ => {}
                     }
                 }
-                state.instance.update(ctx, queue, &state.context);
+                state.instance.update(ctx, queue);
             },
         );
         Ok(Self {

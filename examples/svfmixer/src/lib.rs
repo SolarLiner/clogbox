@@ -1,7 +1,9 @@
 mod dsp;
 mod gen;
+mod gui;
 mod params;
 
+use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
@@ -28,6 +30,10 @@ impl Plugin for SvfMixer {
 
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)
+    }
+
+    fn view(&mut self) -> Result<Box<dyn PluginView<Params = Self::Params>>, PluginError> {
+        gui::view()
     }
 }
 

@@ -1,5 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::params::{ParamChangeKind, ParamId, ParamListener};
+#[cfg(feature = "gui")]
+use crate::params::ParamListener;
+use crate::params::{ParamChangeKind, ParamId};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
@@ -13,6 +15,7 @@ use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{count, enum_iter, Empty, Enum};
 use clogbox_module::eventbuffer::{EventBuffer, EventSlice, Timestamped};
 use clogbox_module::{Module, ProcessContext, Samplerate, StreamContext};
+#[cfg(feature = "gui")]
 use ringbuf::traits::Consumer;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
@@ -231,6 +234,7 @@ impl<P: PluginDsp> Processor<'_, P> {
         }
 
         // Retrieve (and publish to host) params received by the GUI
+        #[cfg(feature = "gui")]
         for event in &mut self.dsp_listener {
             let clap_id = ClapId::new(event.id.to_usize() as _);
             let result = match event.kind {

@@ -1,4 +1,6 @@
-use crate::params::{ParamChangeKind, ParamId, ParamListener, ParamNotifier, ParamStorage};
+use crate::params::{ParamChangeKind, ParamId, ParamStorage};
+#[cfg(feature = "gui")]
+use crate::params::{ParamListener, ParamNotifier};
 use crate::processor::PluginDsp;
 use crate::shared::Shared;
 use bincode::de::Decoder;
@@ -65,6 +67,9 @@ pub trait Plugin: 'static + Sized {
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
+
+    #[cfg(feature = "gui")]
+    fn view(&mut self) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params>>, PluginError>;
 }
 
 pub struct MainThread<'host, P: Plugin> {
@@ -101,7 +106,7 @@ impl<'host, P: Plugin> MainThread<'host, P> {
     }
 
     #[cfg(not(feature = "gui"))]
-    fn notify_param_change(&mut self, _: P::Params) {
+    fn notify_param_change(&mut self, _: P::Params, _: f32) {
         // Do nothing
     }
 }

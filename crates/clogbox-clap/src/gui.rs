@@ -1,158 +1,44 @@
 use crate::main_thread::Plugin;
-use crate::params::{ParamChangeEvent, ParamChangeKind, ParamId, ParamNotifier};
+use crate::params::{ParamId, ParamNotifier, ParamStorage};
 use crate::shared::Shared;
-use baseview::{PhySize, Size, WindowScalePolicy};
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostSharedHandle;
-use clogbox_enum::enum_iter;
-use egui::{widgets, Widget};
-use raw_window_handle::HasRawWindowHandle;
-use ringbuf::traits::Producer;
-use std::cmp::min;
-use std::sync::mpsc::{Receiver, Sender};
+
+pub use raw_window_handle::HasRawWindowHandle;
 
 pub enum GuiEvent<E> {
     ParamChange(E),
     Resize(GuiSize),
     SetTitle(String),
+    SetScale(f64),
 }
 
-pub struct View<E: ParamId> {
-    handle: baseview::WindowHandle,
-    shared: Shared<E>,
-    size: GuiSize,
-    pub tx: Sender<GuiEvent<E>>,
+pub struct GuiContext<E: ParamId> {
+    pub params: ParamStorage<E>,
+    pub dsp_notifier: ParamNotifier<E>,
 }
 
-impl<E: ParamId> View<E> {
-    fn new(
-        host_shared_handle: HostSharedHandle,
-        window: &impl HasRawWindowHandle,
-        dsp_notifier: ParamNotifier<E>,
-        shared: Shared<E>,
-    ) -> Self {
-        struct GuiState<E: ParamId> {
-            host_gui: clack_extensions::gui::HostGui,
-            params: clack_extensions::params::HostParams,
-            shared: Shared<E>,
-            rx: Receiver<GuiEvent<E>>,
-            dsp_notifier: ParamNotifier<E>,
-        }
+pub trait PluginViewHandle {
+    type Params: ParamId;
+    fn get_size(&self) -> Option<GuiSize>;
+    fn send_event(&self, event: GuiEvent<Self::Params>) -> Result<(), PluginError>;
+}
 
-        let (tx, rx) = std::sync::mpsc::channel();
-        let size = GuiSize {
-            width: 800,
-            height: 350,
-        };
-        let state = GuiState {
-            host_gui: host_shared_handle.get_extension().unwrap(),
-            params: host_shared_handle.get_extension().unwrap(),
-            rx,
-            dsp_notifier,
-            shared: shared.clone(),
-        };
-        let open_options = baseview::WindowOpenOptions {
-            title: "egui plugin window".into(),
-            size: Size::new(size.width as f64, size.height as f64),
-            scale: WindowScalePolicy::SystemScaleFactor,
-            gl_config: None,
-        };
-        let graphics_config = egui_baseview::GraphicsConfig::default();
-
-        let handle = egui_baseview::EguiWindow::open_parented(
-            window,
-            open_options,
-            graphics_config,
-            state,
-            |_, _, _| (),
-            |ctx, queue, state| {
-                for event in state.rx.try_iter() {
-                    match event {
-                        GuiEvent::Resize(size) => {
-                            queue.resize(PhySize {
-                                width: size.width,
-                                height: size.height,
-                            });
-                        }
-                        GuiEvent::ParamChange(..) => {
-                            ctx.request_repaint();
-                        }
-                        _ => {}
-                    }
-                }
-                if enum_iter::<E>().any(|p| state.shared.params[p].has_changed()) {
-                    ctx.request_repaint();
-                }
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    egui::Grid::new("params")
-                        .num_columns(2)
-                        .spacing([40.0, 4.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            for p in enum_iter::<E>() {
-                                let mut value = state.shared.params.get_normalized(p);
-                                ui.label(p.name());
-                                let response = widgets::DragValue::new(&mut value)
-                                    .custom_parser(|s| p.text_to_value(s).map(|f| p.mapping().normalize(f) as _))
-                                    .custom_formatter(|f, _| {
-                                        p.value_to_string(p.mapping().denormalize(f as _))
-                                            .unwrap_or_else(|err| format!("Formatting error: {err}"))
-                                    })
-                                    .speed(0.005)
-                                    .range(0.0..=1.0)
-                                    .ui(ui);
-                                ui.end_row();
-                                if response.changed() {
-                                    state.shared.params.set(p, p.mapping().denormalize(value as _));
-                                    state
-                                        .dsp_notifier
-                                        .notify(p, ParamChangeKind::ValueChange(p.mapping().denormalize(value as _)));
-                                }
-                            }
-                        });
-                });
-                // egui::Window::new("debug settings")
-                //     .collapsible(true)
-                //     .vscroll(true)
-                //     .show(ctx, |ui| {
-                //         ctx.settings_ui(ui);
-                //     });
-            },
-        );
-        Self {
-            handle,
-            size,
-            shared,
-            tx,
-        }
-    }
-
-    fn set_scale(&mut self, _scale: f64) -> Result<(), PluginError> {
-        Ok(())
-    }
-
-    fn get_size(&self) -> Option<GuiSize> {
-        Some(self.size)
-    }
-
-    fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
-        self.size = size;
-        self.send_event(GuiEvent::Resize(size))
-    }
-
-    fn send_event(&self, event: GuiEvent<E>) -> Result<(), PluginError> {
-        self.tx.send(event).map_err(|err| PluginError::Error(Box::new(err)))
-    }
-
-    fn set_title(&mut self, title: &str) {
-        let _ = self.send_event(GuiEvent::SetTitle(title.to_string()));
-    }
+pub trait PluginView {
+    type Params: ParamId;
+    fn create(
+        &mut self,
+        window: &dyn HasRawWindowHandle,
+        host: HostSharedHandle,
+        context: GuiContext<Self::Params>,
+    ) -> Result<Box<dyn PluginViewHandle<Params = Self::Params>>, PluginError>;
 }
 
 pub struct GuiHandle<E: ParamId> {
-    instance: Option<View<E>>,
+    view: Option<Box<dyn PluginView<Params = E>>>,
+    handle: Option<Box<dyn PluginViewHandle<Params = E>>>,
 }
 
 impl<E: ParamId> Default for GuiHandle<E> {
@@ -162,10 +48,13 @@ impl<E: ParamId> Default for GuiHandle<E> {
 }
 
 impl<E: ParamId> GuiHandle<E> {
-    pub const CONST_DEFAULT: Self = Self { instance: None };
+    pub const CONST_DEFAULT: Self = Self {
+        handle: None,
+        view: None,
+    };
 
     pub fn notify_param_change(&self, param: E) {
-        if let Some(instance) = &self.instance {
+        if let Some(instance) = &self.handle {
             let _ = instance.send_event(GuiEvent::ParamChange(param));
         }
     }
@@ -178,18 +67,27 @@ impl<E: ParamId> GuiHandle<E> {
         tx_dsp: ParamNotifier<E>,
     ) -> Result<(), PluginError> {
         eprintln!("Creating GUI instance");
-        self.instance = Some(View::new(host_shared_handle, &window, tx_dsp, shared));
+        let context = GuiContext {
+            params: shared.params.clone(),
+            dsp_notifier: tx_dsp,
+        };
+        self.handle = Some(
+            self.view
+                .as_mut()
+                .unwrap()
+                .create(&window, host_shared_handle, context)?,
+        );
         Ok(())
     }
 }
 
 macro_rules! delegate_gui_method {
     ($self:ident : $name:ident ($($arg:expr),*); $error:expr) => {{
-        let Some(instance) = $self.gui.instance.as_mut() else {
+        let Some(handle) = $self.gui.handle.as_mut() else {
             return $error;
         };
         eprintln!("Calling GUI method: {}(...)", stringify!($name));
-        instance.$name($($arg),*)
+        handle.$name($($arg),*)
     }};
 }
 
@@ -223,27 +121,28 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
 
     fn create(&mut self, _configuration: clap_gui::GuiConfiguration) -> Result<(), PluginError> {
         eprintln!("[create]");
+        if self.gui.view.is_none() {
+            self.gui.view = Some(self.plugin.view()?);
+        }
         Ok(())
     }
 
     fn destroy(&mut self) {
         eprintln!("[destroy]");
-        self.gui.instance.take();
+        self.gui.view.take();
+        self.gui.handle.take();
     }
 
     fn set_scale(&mut self, scale: f64) -> Result<(), PluginError> {
-        eprintln!("[set_scale] {scale}");
-        delegate_gui_method!(self: set_scale(scale); Err(PluginError::Message("GUI instance not created")))
+        delegate_gui_method!(self: send_event(GuiEvent::SetScale(scale)); Err(PluginError::Message("GUI instance not created")))
     }
 
     fn get_size(&mut self) -> Option<GuiSize> {
-        eprintln!("[get_size]");
         delegate_gui_method!(self : get_size(); None)
     }
 
     fn set_size(&mut self, size: GuiSize) -> Result<(), PluginError> {
-        eprintln!("[set_size] {size:?}");
-        delegate_gui_method!(self : set_size(size); Err(PluginError::Message("GUI instance not created")))
+        delegate_gui_method!(self : send_event(GuiEvent::Resize(size)); Err(PluginError::Message("GUI instance not created")))
     }
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
@@ -268,7 +167,10 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
 
     fn suggest_title(&mut self, title: &str) {
         eprintln!("[suggest_title] {title}");
-        delegate_gui_method!(self: set_title(title); ())
+        match delegate_gui_method!(self: send_event(GuiEvent::SetTitle(title.to_string())); ()) {
+            Ok(()) => {}
+            Err(err) => eprintln!("Error setting title: {err}"),
+        }
     }
 
     fn show(&mut self) -> Result<(), PluginError> {

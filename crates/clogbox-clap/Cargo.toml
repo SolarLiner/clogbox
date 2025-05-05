@@ -18,14 +18,9 @@ clack-plugin.workspace = true
 clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }
 ringbuf = { workspace = true, optional = true }
 
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0", optional = true }
-egui = { version = "0.31", optional = true }
-egui-baseview = { git = "https://github.com/BillyDM/egui-baseview.git", branch = "main", optional = true }
 raw-window-handle = { version = "0.5.0", optional = true }
 
 bincode = "2.0.0"
 
 [features]
-default = ["gui"]
-gui = ["clack-extensions/gui", "clack-extensions/raw-window-handle_05", "dep:baseview", "dep:egui", "dep:egui-baseview",
-    "dep:raw-window-handle", "dep:ringbuf"]
+gui = ["clack-extensions/gui", "clack-extensions/raw-window-handle_05", "dep:raw-window-handle", "dep:ringbuf"]

@@ -8,6 +8,7 @@ use std::{fmt, ops};
 pub use clack_extensions::params::ParamInfoFlags;
 use clack_plugin::events::io::InputEventBuffer;
 use clogbox_math::{db_to_linear, linear_to_db};
+#[cfg(feature = "gui")]
 use ringbuf::traits::{Consumer, Producer, Split};
 
 /// Mapping from and to a normalized range.
@@ -301,11 +302,13 @@ pub struct ParamChangeEvent<E> {
     pub kind: ParamChangeKind,
 }
 
+#[cfg(feature = "gui")]
 #[derive(Clone)]
 pub struct ParamNotifier<E> {
     producer: Arc<Mutex<ringbuf::HeapProd<ParamChangeEvent<E>>>>,
 }
 
+#[cfg(feature = "gui")]
 impl<E> ParamNotifier<E> {
     pub fn notify(&self, id: E, kind: ParamChangeKind) {
         if self.get_producer().try_push(ParamChangeEvent { id, kind }).is_err() {
@@ -330,11 +333,13 @@ impl<E> ParamNotifier<E> {
     }
 }
 
+#[cfg(feature = "gui")]
 pub struct ParamListener<E: Enum> {
     consumer: ringbuf::HeapCons<ParamChangeEvent<E>>,
     received_values: EnumMapArray<E, f32>,
 }
 
+#[cfg(feature = "gui")]
 impl<'a, E: Enum> Iterator for &'a mut ParamListener<E> {
     type Item = ParamChangeEvent<E>;
     fn next(&mut self) -> Option<ParamChangeEvent<E>> {
@@ -342,6 +347,7 @@ impl<'a, E: Enum> Iterator for &'a mut ParamListener<E> {
     }
 }
 
+#[cfg(feature = "gui")]
 impl<E: Enum> ParamListener<E> {
     pub fn value_of(&self, id: E) -> Option<f32> {
         Some(self.received_values[id]).filter(|v| !v.is_nan())
@@ -355,6 +361,7 @@ impl<E: Enum> ParamListener<E> {
     }
 }
 
+#[cfg(feature = "gui")]
 pub fn create_notifier_listener<E: Enum>(capacity: usize) -> (ParamNotifier<E>, ParamListener<E>) {
     let (producer, consumer) = ringbuf::HeapRb::new(capacity).split();
     (ParamNotifier::construct(producer), ParamListener::construct(consumer))

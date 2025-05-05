@@ -320,17 +320,24 @@ dependencies = [
 name = "clogbox-clap"
 version = "0.1.0"
 dependencies = [
- "baseview",
  "bincode",
  "clack-extensions",
  "clack-plugin",
  "clogbox-enum",
  "clogbox-math",
  "clogbox-module",
- "egui",
- "egui-baseview",
  "raw-window-handle 0.5.2",
  "ringbuf",
+]
+
+[[package]]
+name = "clogbox-clap-egui"
+version = "0.1.0"
+dependencies = [
+ "baseview",
+ "clogbox-clap",
+ "egui",
+ "egui-baseview",
 ]
 
 [[package]]
@@ -2192,6 +2199,7 @@ version = "0.1.0"
 dependencies = [
  "az",
  "clogbox-clap",
+ "clogbox-clap-egui",
  "clogbox-enum",
  "clogbox-filters",
  "clogbox-math",

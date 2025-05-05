@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use crate::main_thread::Plugin;
 use crate::params::{ParamId, ParamNotifier, ParamStorage};
 use crate::shared::Shared;
@@ -29,32 +30,36 @@ pub trait PluginViewHandle {
 
 pub trait PluginView {
     type Params: ParamId;
+    type SharedData;
     fn create(
         &mut self,
         window: &dyn HasRawWindowHandle,
         host: HostSharedHandle,
         context: GuiContext<Self::Params>,
+        shared_data: &Self::SharedData,
     ) -> Result<Box<dyn PluginViewHandle<Params = Self::Params>>, PluginError>;
 }
 
-pub struct GuiHandle<E: ParamId> {
-    view: Option<Box<dyn PluginView<Params = E>>>,
-    handle: Option<Box<dyn PluginViewHandle<Params = E>>>,
+pub struct GuiHandle<P: Plugin> {
+    __plugin: PhantomData<P>,
+    view: Option<Box<dyn PluginView<Params = P::Params, SharedData = P::SharedData>>>,
+    handle: Option<Box<dyn PluginViewHandle<Params = P::Params>>>,
 }
 
-impl<E: ParamId> Default for GuiHandle<E> {
+impl<P: Plugin> Default for GuiHandle<P> {
     fn default() -> Self {
         Self::CONST_DEFAULT
     }
 }
 
-impl<E: ParamId> GuiHandle<E> {
+impl<P: Plugin> GuiHandle<P> {
     pub const CONST_DEFAULT: Self = Self {
+        __plugin: PhantomData,
         handle: None,
         view: None,
     };
 
-    pub fn notify_param_change(&self, param: E) {
+    pub fn notify_param_change(&self, param: P::Params) {
         if let Some(instance) = &self.handle {
             let _ = instance.send_event(GuiEvent::ParamChange(param));
         }
@@ -64,8 +69,8 @@ impl<E: ParamId> GuiHandle<E> {
         &mut self,
         host_shared_handle: HostSharedHandle,
         window: Window,
-        shared: Shared<E>,
-        tx_dsp: ParamNotifier<E>,
+        shared: Shared<P>,
+        tx_dsp: ParamNotifier<P::Params>,
     ) -> Result<(), PluginError> {
         eprintln!("Creating GUI instance");
         let context = GuiContext {
@@ -76,7 +81,7 @@ impl<E: ParamId> GuiHandle<E> {
             self.view
                 .as_mut()
                 .unwrap()
-                .create(&window, host_shared_handle, context)?,
+                .create(&window, host_shared_handle, context, &shared.user_data)?,
         );
         Ok(())
     }

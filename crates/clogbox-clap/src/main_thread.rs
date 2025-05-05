@@ -62,20 +62,25 @@ impl PortLayout<Stereo> {
 pub trait Plugin: 'static + Sized {
     type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
+    type SharedData: 'static + Clone + Send + Sync;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
 
+    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
+
     #[cfg(feature = "gui")]
-    fn view(&mut self) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params>>, PluginError>;
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
 }
 
 pub struct MainThread<'host, P: Plugin> {
     pub(crate) host: HostMainThreadHandle<'host>,
-    pub(crate) shared: Shared<P::Params>,
-    pub(crate) gui: GuiHandle<P::Params>,
+    pub(crate) shared: Shared<P>,
+    pub(crate) gui: GuiHandle<P>,
     pub(crate) plugin: P,
     #[cfg(feature = "gui")]
     pub(crate) param_notifier: ParamNotifier<P::Params>,
@@ -84,7 +89,7 @@ pub struct MainThread<'host, P: Plugin> {
 }
 
 impl<'host, P: Plugin> MainThread<'host, P> {
-    pub(crate) fn new(host: HostMainThreadHandle<'host>, shared: &Shared<P::Params>) -> Result<Self, PluginError> {
+    pub(crate) fn new(host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
         let plugin = P::create(host.shared())?;
         #[cfg(feature = "gui")]
         let (notifier, listener) = crate::params::create_notifier_listener(1024);
@@ -186,7 +191,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
     }
 }
 
-impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P::Params>> for MainThread<'a, P> {}
+impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P>> for MainThread<'a, P> {}
 
 impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     fn count(&mut self, is_input: bool) -> u32 {

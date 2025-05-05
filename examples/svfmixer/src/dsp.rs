@@ -6,11 +6,12 @@ use clogbox_filters::svf::{FilterType, Svf, SvfImpl, SvfMixer, SvfSampleOutput};
 use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
-use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate, StreamContext};
+use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 use crate::params::Param;
 use nalgebra as na;
+use clogbox_module::context::StreamContext;
 
 struct OtaTanh;
 

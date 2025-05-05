@@ -7,12 +7,13 @@ use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_math::{db_to_linear, linear_to_db};
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
-use clogbox_module::{module_wrapper, PrepareResult, Samplerate, StreamContext};
+use clogbox_module::{module_wrapper, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use num_traits::Float;
 use std::f32::consts::PI;
 use std::fmt::Write;
 use std::sync::LazyLock;
+use clogbox_module::context::StreamContext;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum Params {

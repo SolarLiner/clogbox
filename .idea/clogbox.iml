@@ -23,6 +23,7 @@
       <sourceFolder url="file://$MODULE_DIR$/examples/nr-clipper/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/python/clogbox/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-clap-egui/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/env-follower/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

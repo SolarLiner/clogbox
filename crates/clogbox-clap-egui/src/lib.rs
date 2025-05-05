@@ -12,13 +12,17 @@ use std::sync::Arc;
 pub use egui;
 pub use egui_baseview;
 
-pub mod generic_ui;
 pub mod components;
+pub mod generic_ui;
 
 pub use generic_ui::generic_ui;
 
 pub fn gui_context_id() -> Id {
     Id::new("gui_context")
+}
+
+pub fn shared_data_id() -> Id {
+    Id::new("shared_data")
 }
 
 pub trait EguiPluginView: 'static + Send {
@@ -62,14 +66,15 @@ fn arc_size(width: u32, height: u32) -> ArcSize {
     ArcSizeInner::new(width, height)
 }
 
-pub struct EguiHandle<E: ParamId> {
+pub struct EguiHandle<E: ParamId, SharedData> {
     __paramid: PhantomData<E>,
+    __shared_data: PhantomData<SharedData>,
     tx: Sender<GuiEvent<E>>,
     current_size: ArcSize,
     pub handle: WindowHandle,
 }
 
-impl<E: ParamId> PluginViewHandle for EguiHandle<E> {
+impl<E: ParamId, SharedData> PluginViewHandle for EguiHandle<E, SharedData> {
     type Params = E;
     fn get_size(&self) -> Option<GuiSize> {
         Some(self.current_size.get())
@@ -80,12 +85,13 @@ impl<E: ParamId> PluginViewHandle for EguiHandle<E> {
     }
 }
 
-impl<E: ParamId> EguiHandle<E> {
+impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, SharedData> {
     fn create(
         window: &dyn HasRawWindowHandle,
         context: GuiContext<E>,
         instance: Box<dyn EguiPluginView<Params = E>>,
         size: GuiSize,
+        shared_data: &SharedData,
     ) -> Result<Self, PluginError> {
         struct GuiState<E: ParamId> {
             current_size: ArcSize,
@@ -94,6 +100,7 @@ impl<E: ParamId> EguiHandle<E> {
         }
 
         let mut context = Some(context);
+        let mut shared_data = Some(shared_data.clone());
         let (tx, rx) = std::sync::mpsc::channel();
         let current_size = arc_size(size.width, size.height);
         let state = GuiState {
@@ -116,7 +123,10 @@ impl<E: ParamId> EguiHandle<E> {
             state,
             move |ctx, queue, state| {
                 let GuiState { instance, .. } = state;
-                ctx.data_mut(|data| data.insert_temp(gui_context_id(), context.take().unwrap()));
+                ctx.data_mut(|data| {
+                    data.insert_temp(gui_context_id(), context.take().unwrap());
+                    data.insert_temp(shared_data_id(), shared_data.take().unwrap());
+                });
                 instance.build(ctx, queue);
             },
             |ctx, queue, state| {
@@ -138,6 +148,7 @@ impl<E: ParamId> EguiHandle<E> {
         );
         Ok(Self {
             __paramid: PhantomData,
+            __shared_data: PhantomData,
             handle,
             tx,
             current_size,
@@ -145,25 +156,27 @@ impl<E: ParamId> EguiHandle<E> {
     }
 }
 
-pub fn view<E: ParamId>(
+pub fn view<E: ParamId, SharedData: 'static + Send + Sync + Clone>(
     size: GuiSize,
     view: impl EguiPluginView<Params = E>,
-) -> Result<Box<dyn PluginView<Params = E>>, PluginError> {
-    struct Impl<V: EguiPluginView>(GuiSize, Option<V>);
+) -> Result<Box<dyn PluginView<Params = E, SharedData = SharedData>>, PluginError> {
+    struct Impl<V: EguiPluginView, SharedData>(GuiSize, Option<V>, PhantomData<SharedData>);
 
-    impl<V: EguiPluginView> PluginView for Impl<V> {
+    impl<V: EguiPluginView, SharedData: 'static + Send + Sync + Clone> PluginView for Impl<V, SharedData> {
         type Params = V::Params;
+        type SharedData = SharedData;
 
         fn create(
             &mut self,
             window: &dyn HasRawWindowHandle,
             _host: HostSharedHandle,
             context: GuiContext<Self::Params>,
+            shared_data: &Self::SharedData,
         ) -> Result<Box<dyn PluginViewHandle<Params = Self::Params>>, PluginError> {
-            let handle = EguiHandle::create(window, context, Box::new(self.1.take().unwrap()), self.0)?;
+            let handle = EguiHandle::create(window, context, Box::new(self.1.take().unwrap()), self.0, shared_data)?;
             Ok(Box::new(handle))
         }
     }
 
-    Ok(Box::new(Impl(size, Some(view))))
+    Ok(Box::new(Impl(size, Some(view), PhantomData)))
 }

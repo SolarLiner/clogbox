@@ -1,8 +1,9 @@
 use crate::eventbuffer::Timestamped;
-use crate::{Module, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
+use crate::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Empty, Enum};
 use std::num::NonZeroU32;
+use crate::context::{ProcessContext, StreamContext};
 
 pub struct SampleProcessResult<E: Enum, T> {
     pub tail: Option<NonZeroU32>,

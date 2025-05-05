@@ -1,8 +1,9 @@
 use crate::sample::{SampleModule, SampleProcessResult};
-use crate::{Module, PrepareResult, Samplerate, StreamContext};
+use crate::{Module, PrepareResult, Samplerate};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
 use clogbox_enum::{Count, Empty, Enum, Sequential};
 use fundsp::prelude::*;
+use crate::context::StreamContext;
 
 pub struct FundspModule<N: AudioNode, Params: Enum = Empty> {
     params: EnumMapArray<Params, Shared>,

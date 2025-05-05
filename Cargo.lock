@@ -73,6 +73,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -416,9 +422,14 @@ dependencies = [
 name = "clogbox-module"
 version = "0.1.0"
 dependencies = [
+ "az",
  "clogbox-enum",
  "clogbox-math",
  "fundsp",
+ "num-traits",
+ "numeric_literals",
+ "ringbuf",
+ "typenum",
 ]
 
 [[package]]
@@ -741,6 +752,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_plot"
+version = "0.32.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14ae092b46ea532f6c69d3e71036fb3b688fd00fd09c2a1e43d17051a8ae43e6"
+dependencies = [
+ "ahash",
+ "egui",
+ "emath",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -768,6 +790,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "env-follower"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "clogbox-clap",
+ "clogbox-clap-egui",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "egui_plot",
 ]
 
 [[package]]

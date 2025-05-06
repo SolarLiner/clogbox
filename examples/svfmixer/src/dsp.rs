@@ -6,11 +6,12 @@ use clogbox_filters::svf::{FilterType, Svf, SvfImpl, SvfMixer, SvfSampleOutput};
 use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
-use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate, StreamContext};
+use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 use crate::params::Param;
 use nalgebra as na;
+use clogbox_module::context::StreamContext;
 
 struct OtaTanh;
 
@@ -114,7 +115,7 @@ module_wrapper!(Dsp: SampleModuleWrapper<DspPerSample>);
 impl PluginDsp for Dsp {
     type Plugin = super::SvfMixer;
 
-    fn create(context: PluginCreateContext<Self>) -> Self {
+    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
         use params::Param::*;
         let samplerate = 2.0 * context.audio_config.sample_rate as f32;
         let smoothers =

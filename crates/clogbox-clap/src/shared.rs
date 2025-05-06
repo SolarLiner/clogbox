@@ -1,17 +1,14 @@
+use std::marker::PhantomData;
 use crate::params::{ParamId, ParamStorage};
 use clack_plugin::prelude::*;
+use crate::Plugin;
+
+pub type Shared<P> = SharedData<<P as Plugin>::Params, <P as Plugin>::SharedData>;
 
 #[derive(Debug, Clone)]
-pub struct Shared<E: Send + ParamId> {
-    pub params: ParamStorage<E>,
+pub struct SharedData<Params: ParamId, UserData> {
+    pub params: ParamStorage<Params>,
+    pub user_data: UserData,
 }
 
-impl<E: Send + ParamId> Default for Shared<E> {
-    fn default() -> Self {
-        Self {
-            params: ParamStorage::default(),
-        }
-    }
-}
-
-impl<E: Sync + ParamId> PluginShared<'_> for Shared<E> {}
+impl<Params: ParamId, UserData: 'static + Send + Sync> PluginShared<'_> for SharedData<Params, UserData> {}

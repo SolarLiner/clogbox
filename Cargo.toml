@@ -14,6 +14,7 @@ keywords = ["virtual-analog", "audio", "plugin", "va-modeling", "dsp"]
 
 [workspace.dependencies]
 clogbox-clap = { path = "crates/clogbox-clap" }
+clogbox-clap-egui = { path = "crates/clogbox-clap-egui" }
 clogbox-derive = { path = "crates/clogbox-derive" }
 clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
@@ -32,6 +33,7 @@ numeric-array = "0.6.1"
 numeric_literals = "0.2.0"
 nalgebra = "0.33.0"
 profiling = "1.0.15"
+ringbuf = "0.4.8"
 slotmap = "1.0.7"
 thiserror = "2.0.3"
 typenum = "1.17.0"

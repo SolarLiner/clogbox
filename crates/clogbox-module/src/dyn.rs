@@ -1,8 +1,9 @@
-use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
+use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::{count, Enum};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops;
+use crate::context::{ProcessContext, StreamContext};
 
 pub struct DynProcessContext<'a, T> {
     pub audio_in: &'a dyn ops::Index<usize, Output = [T]>,

@@ -1,4 +1,6 @@
-use crate::params::{ParamId, ParamStorage};
+use crate::params::{ParamChangeKind, ParamId, ParamStorage};
+#[cfg(feature = "gui")]
+use crate::params::{ParamListener, ParamNotifier};
 use crate::processor::PluginDsp;
 use crate::shared::Shared;
 use bincode::de::Decoder;
@@ -17,6 +19,12 @@ use clogbox_enum::{count, Enum, Mono, Stereo};
 use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
+
+#[cfg(not(feature = "gui"))]
+type GuiHandle<E> = std::marker::PhantomData<E>;
+
+#[cfg(feature = "gui")]
+use super::gui::GuiHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
@@ -54,29 +62,61 @@ impl PortLayout<Stereo> {
 pub trait Plugin: 'static + Sized {
     type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
+    type SharedData: 'static + Clone + Send + Sync;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
+
+    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
+
+    #[cfg(feature = "gui")]
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
 }
 
-pub struct MainThread<P: Plugin> {
-    shared: Shared<P::Params>,
-    pub(crate) processor_main_thread: P,
+pub struct MainThread<'host, P: Plugin> {
+    pub(crate) host: HostMainThreadHandle<'host>,
+    pub(crate) shared: Shared<P>,
+    pub(crate) gui: GuiHandle<P>,
+    pub(crate) plugin: P,
+    #[cfg(feature = "gui")]
+    pub(crate) param_notifier: ParamNotifier<P::Params>,
+    #[cfg(feature = "gui")]
+    pub(crate) dsp_listener: Option<ParamListener<P::Params>>,
 }
 
-impl<P: Plugin> MainThread<P> {
-    pub(crate) fn new(host: HostMainThreadHandle, shared: &Shared<P::Params>) -> Result<Self, PluginError> {
-        let processor_main_thread = P::create(host.shared())?;
+impl<'host, P: Plugin> MainThread<'host, P> {
+    pub(crate) fn new(host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
+        let plugin = P::create(host.shared())?;
+        #[cfg(feature = "gui")]
+        let (notifier, listener) = crate::params::create_notifier_listener(1024);
         Ok(Self {
+            host,
             shared: shared.clone(),
-            processor_main_thread,
+            gui: GuiHandle::default(),
+            plugin,
+            #[cfg(feature = "gui")]
+            param_notifier: notifier,
+            #[cfg(feature = "gui")]
+            dsp_listener: Some(listener),
         })
+    }
+
+    #[cfg(feature = "gui")]
+    fn notify_param_change(&mut self, id: P::Params, value: f32) {
+        self.param_notifier.notify(id, ParamChangeKind::ValueChange(value));
+    }
+
+    #[cfg(not(feature = "gui"))]
+    fn notify_param_change(&mut self, _: P::Params, _: f32) {
+        // Do nothing
     }
 }
 
-impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
+impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
     fn count(&mut self) -> u32 {
         count::<P::Params>() as _
     }
@@ -144,15 +184,16 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
                 if let Some(id) = id {
                     let value = event.value() as _;
                     self.shared.params.set_normalized(id, value);
+                    self.notify_param_change(id, value);
                 }
             }
         }
     }
 }
 
-impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P::Params>> for MainThread<P> {}
+impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P>> for MainThread<'a, P> {}
 
-impl<P: Plugin> PluginAudioPortsImpl for MainThread<P> {
+impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     fn count(&mut self, is_input: bool) -> u32 {
         if is_input {
             P::INPUT_LAYOUT.len() as _
@@ -216,7 +257,7 @@ impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
     }
 }
 
-impl<P: Plugin> PluginStateImpl for MainThread<P> {
+impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
     fn save(&mut self, output: &mut OutputStream) -> Result<(), PluginError> {
         bincode::encode_into_std_write(Encode(&self.shared.params), output, bincode::config::standard())?;
         Ok(())

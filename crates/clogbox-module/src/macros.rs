@@ -16,8 +16,8 @@ impl $crate::Module for $output {
         self.0.prepare(sample_rate, block_size)
     }
 
-    fn process(&mut self, context: $crate::ProcessContext<Self>) -> $crate::ProcessResult {
-        let context = $crate::ProcessContext {
+    fn process(&mut self, context: $crate::context::ProcessContext<Self>) -> $crate::ProcessResult {
+        let context = $crate::context::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
             params_in: context.params_in,
@@ -48,8 +48,8 @@ impl<$($targ: $tbound),*> $crate::Module for $output<$($targ),*> {
         self.0.prepare(sample_rate, block_size)
     }
 
-    fn process(&mut self, context: $crate::ProcessContext<Self>) -> $crate::ProcessResult {
-        let context = $crate::ProcessContext {
+    fn process(&mut self, context: $crate::context::ProcessContext<Self>) -> $crate::ProcessResult {
+        let context = $crate::context::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
             params_in: context.params_in,

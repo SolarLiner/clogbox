@@ -16,6 +16,7 @@ impl PluginMeta for NrClipper {
 impl Plugin for NrClipper {
     type Dsp = dsp::Dsp;
     type Params = dsp::Params;
+    type SharedData = ();
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
         &[PortLayout::STEREO.main().named("Input")];
@@ -24,6 +25,10 @@ impl Plugin for NrClipper {
 
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)
+    }
+
+    fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
+        Ok(()) 
     }
 }
 

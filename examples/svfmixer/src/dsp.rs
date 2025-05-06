@@ -115,7 +115,7 @@ module_wrapper!(Dsp: SampleModuleWrapper<DspPerSample>);
 impl PluginDsp for Dsp {
     type Plugin = super::SvfMixer;
 
-    fn create(context: PluginCreateContext<Self>) -> Self {
+    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
         use params::Param::*;
         let samplerate = 2.0 * context.audio_config.sample_rate as f32;
         let smoothers =

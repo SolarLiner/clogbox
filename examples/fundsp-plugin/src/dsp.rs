@@ -71,7 +71,7 @@ module_wrapper!(Dsp: SampleModuleWrapper<FundspModule<Unit<U2, U2>, Params>>);
 impl PluginDsp for Dsp {
     type Plugin = super::FundspPlugin;
 
-    fn create(context: PluginCreateContext<Self>) -> Self {
+    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
         let default = EnumMapArray::new(|p: Params| p.default_value());
         let dsp = FundspModule::create(|mut params| {
             for (param, shared) in params.iter_mut() {

@@ -22,6 +22,7 @@ impl PluginMeta for SvfMixer {
 impl Plugin for SvfMixer {
     type Dsp = dsp::Dsp;
     type Params = params::Param;
+    type SharedData = ();
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
         &[PortLayout::STEREO.main().named("Input")];
@@ -30,6 +31,10 @@ impl Plugin for SvfMixer {
 
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)
+    }
+
+    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
+        Ok(())
     }
 
     fn view(&mut self) -> Result<Box<dyn crate::gui::PluginView<Params=Self::Params>>, PluginError> {

@@ -59,7 +59,8 @@ impl ParamId for Params {
 
 pub struct SampleDsp {
     params: EnumMapArray<Params, LinearSmoother<f32>>,
-    z: EnumMapArray<Stereo, f32>,
+    last_s: EnumMapArray<Stereo, f32>,
+    last_u: EnumMapArray<Stereo, f32>,
     wstep: f32,
 }
 
@@ -70,7 +71,7 @@ impl SampleModule for SampleDsp {
     type Params = Params;
 
     fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
-        self.z.as_slice_mut().fill(0.0);
+        self.last_s.as_slice_mut().fill(0.0);
         self.wstep = PI * sample_rate.recip().value() as f32;
         PrepareResult { latency: 0.0 }
     }
@@ -99,7 +100,7 @@ impl SampleDsp {
         let cutoff = self.params[Cutoff].current_value();
         let drive = self.params[Drive].current_value();
         let g = self.wstep * cutoff;
-        let s = self.z[ch];
+        let s = self.last_s[ch];
 
         const NR: NewtonRaphson<f32> = NewtonRaphson {
             tolerance: 1e-4,
@@ -112,13 +113,14 @@ impl SampleDsp {
             x,
             k_drive: drive,
         };
-        let u = NR.solve(&eq, x.asinh()).value;
+        let u = NR.solve(&eq,self.last_u[ch]).value;
         if !u.is_finite() {
             return gen::y(x, 0.0, s, g) / drive;
         }
         let y = gen::y(g, x, s, u);
         let s = gen::s(g, x, y, u);
-        self.z[ch] = s;
+        self.last_u[ch] = u;
+        self.last_s[ch] = s;
         2.0 * y * (0.5 * drive).asinh()
     }
 }
@@ -128,11 +130,12 @@ module_wrapper!(Dsp: SampleModuleWrapper<SampleDsp>);
 impl PluginDsp for Dsp {
     type Plugin = super::NrClipper;
 
-    fn create(context: PluginCreateContext<Self>) -> Self {
+    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
         let params = EnumMapArray::new(|p| context.params[p]);
         Self(SampleModuleWrapper::new(
             SampleDsp {
-                z: EnumMapArray::new(|_| 0.0),
+                last_s: EnumMapArray::new(|_| 0.0),
+                last_u: EnumMapArray::new(|_| 0.0),
                 params: EnumMapArray::new(|p| {
                     LinearSmoother::new(
                         Linear,

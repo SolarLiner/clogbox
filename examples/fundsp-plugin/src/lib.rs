@@ -35,6 +35,10 @@ impl Plugin for FundspPlugin {
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)
     }
+
+    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
+        Ok(()) 
+    }
 }
 
 export_plugin!(FundspPlugin);

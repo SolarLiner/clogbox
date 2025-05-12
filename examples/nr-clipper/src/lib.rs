@@ -28,7 +28,7 @@ impl Plugin for NrClipper {
     }
 
     fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
-        Ok(()) 
+        Ok(())
     }
 }
 

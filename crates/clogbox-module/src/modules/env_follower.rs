@@ -52,14 +52,18 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_attack(&mut self, attack: T) {
         self.attack = attack;
-        let Some(sample_rate) = self.sample_rate else { return; };
+        let Some(sample_rate) = self.sample_rate else {
+            return;
+        };
         self.attack_tau = attack * T::cast_from(sample_rate.recip().value());
     }
 
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_release(&mut self, release: T) {
         self.release = release;
-        let Some(sample_rate) = self.sample_rate else { return; };
+        let Some(sample_rate) = self.sample_rate else {
+            return;
+        };
         self.release_tau = release * T::cast_from(sample_rate.recip().value());
     }
 
@@ -69,7 +73,7 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
         self.attack_tau = self.attack * T::cast_from(sample_rate.recip().value());
         self.release_tau = self.release * T::cast_from(sample_rate.recip().value());
     }
-    
+
     pub fn set_follow_mode(&mut self, mode: FollowMode) {
         if mode == self.mode {
             return;
@@ -79,8 +83,9 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
     }
 }
 
-impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio: Enum> SampleModule for EnvFollower<T, 
-    Audio> {
+impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio: Enum> SampleModule
+    for EnvFollower<T, Audio>
+{
     type Sample = T;
     type AudioIn = Audio;
     type AudioOut = Audio;
@@ -113,7 +118,7 @@ impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio:
                 FollowMode::Rms(params[Params::RmsTime] as _)
             }
         });
-        
+
         let value = if let Some(cb) = &self.buf {
             cb.send_frame(inputs.clone());
             cb.iter_frames().fold(EnumMapArray::new(|_| T::zero()), |a, b| {
@@ -122,7 +127,7 @@ impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio:
         } else {
             inputs.clone().map(|_, x| x.abs())
         };
-        
+
         let output = EnumMapArray::new(|e| {
             let x = value[e];
             let last = self.last[e];
@@ -133,10 +138,7 @@ impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio:
             }
         });
         self.last = output.clone();
-        
-        SampleProcessResult {
-            output,
-            tail: None,
-        }
+
+        SampleProcessResult { output, tail: None }
     }
 }

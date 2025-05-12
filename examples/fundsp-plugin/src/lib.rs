@@ -37,7 +37,7 @@ impl Plugin for FundspPlugin {
     }
 
     fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
-        Ok(()) 
+        Ok(())
     }
 }
 

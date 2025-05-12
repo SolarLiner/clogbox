@@ -13,6 +13,7 @@ pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
 use clack_plugin::utils::Cookie;
 use clogbox_enum::enum_map::EnumMapRef;
 use clogbox_enum::{count, enum_iter, Empty, Enum};
+use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
 use clogbox_module::eventbuffer::Timestamped;
 use clogbox_module::{Module, Samplerate};
 #[cfg(feature = "gui")]
@@ -21,7 +22,6 @@ use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::ops;
 use std::ops::DerefMut;
-use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,

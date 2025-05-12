@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
 use crate::params::{ParamId, ParamStorage};
-use clack_plugin::prelude::*;
 use crate::Plugin;
+use clack_plugin::prelude::*;
+use std::marker::PhantomData;
 
 pub type Shared<P> = SharedData<<P as Plugin>::Params, <P as Plugin>::SharedData>;
 

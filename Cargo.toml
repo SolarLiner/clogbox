@@ -21,7 +21,9 @@ clogbox-filters = { path = "crates/clogbox-filters" }
 clogbox-math = { path = "crates/clogbox-math" }
 clogbox-module = { path = "crates/clogbox-module" }
 clogbox-params = { path = "crates/clogbox-params" }
+fixed-ringbuf = { path = "crates/fixed-ringbuf" }
 
+# Dependencies
 az = "1.2.1"
 derive_more = "1.0.0"
 generic-array = "1.1.0"
@@ -38,6 +40,7 @@ slotmap = "1.0.7"
 thiserror = "2.0.3"
 typenum = "1.17.0"
 typenum-consts = "0.1.5"
+zerocopy = "0.8.25"
 
 # Dev dependencies
 approx = "0.5.1"

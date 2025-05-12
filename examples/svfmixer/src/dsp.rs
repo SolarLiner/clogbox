@@ -10,8 +10,8 @@ use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 use crate::params::Param;
-use nalgebra as na;
 use clogbox_module::context::StreamContext;
+use nalgebra as na;
 
 struct OtaTanh;
 

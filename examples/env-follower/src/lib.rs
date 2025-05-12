@@ -63,8 +63,7 @@ impl Plugin for EnvFollowerPlugin {
 
     fn view(
         &mut self,
-    ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>
-    {
+    ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
         gui::view()
     }
 }

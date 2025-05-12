@@ -1,3 +1,4 @@
+use crate::context::ProcessContext;
 use crate::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::typenum::Unsigned;
@@ -6,7 +7,6 @@ use ringbuf::traits::RingBuffer;
 use ringbuf::{HeapRb, StaticRb};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
-use crate::context::ProcessContext;
 
 #[derive(Debug, Copy, Clone)]
 pub enum BufferSize {

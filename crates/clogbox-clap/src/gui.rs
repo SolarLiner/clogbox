@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use crate::main_thread::Plugin;
 use crate::params::{ParamId, ParamNotifier, ParamStorage};
 use crate::shared::Shared;
@@ -6,6 +5,7 @@ pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostSharedHandle;
+use std::marker::PhantomData;
 
 pub use raw_window_handle::HasRawWindowHandle;
 
@@ -77,12 +77,12 @@ impl<P: Plugin> GuiHandle<P> {
             params: shared.params.clone(),
             dsp_notifier: tx_dsp,
         };
-        self.handle = Some(
-            self.view
-                .as_mut()
-                .unwrap()
-                .create(&window, host_shared_handle, context, &shared.user_data)?,
-        );
+        self.handle = Some(self.view.as_mut().unwrap().create(
+            &window,
+            host_shared_handle,
+            context,
+            &shared.user_data,
+        )?);
         Ok(())
     }
 }

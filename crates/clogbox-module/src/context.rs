@@ -112,7 +112,7 @@ impl<E: Enum, T> AudioStorage<E, T> {
             slice.copy_from_slice(&input.index(e)[..slice.len()]);
         }
     }
-    
+
     pub fn copy_to_output<O: ?Sized + ops::IndexMut<E, Output = [T]>>(&self, output: &mut O)
     where
         T: Copy,

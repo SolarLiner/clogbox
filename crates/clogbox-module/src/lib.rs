@@ -1,16 +1,16 @@
 use crate::eventbuffer::EventSlice;
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
-use std::num::NonZeroU32;
 use context::ProcessContext;
+use std::num::NonZeroU32;
 
 pub mod context;
 pub mod contrib;
+pub mod r#dyn;
 pub mod eventbuffer;
 pub mod macros;
 pub mod modules;
 pub mod note;
-pub mod r#dyn;
 pub mod sample;
 
 pub type Samplerate = Recip<f64>;

@@ -1,7 +1,10 @@
+use crate::PluginData;
+use clogbox_clap::main_thread::Plugin;
 use clogbox_clap::params::{int, polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
+use clogbox_module::context::{OwnedProcessContext, ProcessContext};
 use clogbox_module::modules::env_follower;
 use clogbox_module::modules::env_follower::EnvFollower;
 use clogbox_module::modules::extract::{BufferSize, ExtractAudio};
@@ -9,9 +12,6 @@ use clogbox_module::sample::{SampleModule, SampleModuleWrapper};
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 use std::fmt::Write;
 use std::sync::{Arc, LazyLock};
-use clogbox_clap::main_thread::Plugin;
-use clogbox_module::context::{OwnedProcessContext, ProcessContext};
-use crate::PluginData;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum AudioOut {
@@ -88,7 +88,9 @@ impl Module for Dsp {
         self.extract_context = OwnedProcessContext::new(block_size, 0);
         self.env_follower.prepare(sample_rate, block_size);
         self.extract_audio.prepare(sample_rate, block_size);
-        self.shared_data.cb.store(Arc::new(self.extract_audio.circular_buffer()));
+        self.shared_data
+            .cb
+            .store(Arc::new(self.extract_audio.circular_buffer()));
         PrepareResult { latency: 0.0 }
     }
 
@@ -100,11 +102,16 @@ impl Module for Dsp {
                 slice.push(event.timestamp, event.data);
             }
         }
-        self.env_context.process_with(context.stream_context, |ctx| self.env_follower.process(ctx));
-        
-        self.extract_context.audio_in.copy_from_input(&self.env_context.audio_out);
-        let r2 = self.extract_context.process_with(context.stream_context, |ctx| self.extract_audio.process(ctx));
-        
+        self.env_context
+            .process_with(context.stream_context, |ctx| self.env_follower.process(ctx));
+
+        self.extract_context
+            .audio_in
+            .copy_from_input(&self.env_context.audio_out);
+        let r2 = self
+            .extract_context
+            .process_with(context.stream_context, |ctx| self.extract_audio.process(ctx));
+
         for param in enum_iter::<Self::AudioOut>() {
             let slice = &mut context.audio_out[param];
             match param {
@@ -116,7 +123,7 @@ impl Module for Dsp {
                 }
             }
         }
-        
+
         r2
     }
 }

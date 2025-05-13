@@ -27,13 +27,13 @@ impl<E: ParamId> EguiPluginView for GenericUi<E> {
 }
 
 pub fn display<E: ParamId>(ui: &mut Ui) {
-    const KNOB_SIZE: f32 = 60.0;
+    const KNOB_SIZE: f32 = 40.0;
     let element_width = 2.0 * KNOB_SIZE;
     let gui_context: GuiContext<E> = ui.ctx().data(|data| data.get_temp(gui_context_id()).unwrap());
 
     ui.style_mut().spacing.item_spacing.y = 15.0;
     egui::ScrollArea::new([false, true]).show(ui, |ui| {
-        let rect = ui.max_rect();
+        let rect = ui.available_rect_before_wrap();
         let num_columns = (rect.width() / element_width).floor() as usize;
         egui::Grid::new("knobs").num_columns(num_columns).show(ui, |ui| {
             for (i, param) in enum_iter::<E>().enumerate() {

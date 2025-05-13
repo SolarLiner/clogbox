@@ -571,7 +571,7 @@ mod tests {
                         local_values.push(val);
                         break;
                     } else {
-                        thread::yield_now();
+                        thread::sleep(std::time::Duration::from_millis(50));
                     }
                 }
             }

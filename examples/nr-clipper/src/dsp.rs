@@ -1,19 +1,24 @@
-use crate::gen;
+use crate::{gen, SharedData};
 use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
-use clogbox_enum::{Enum, Stereo};
+use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
 use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_math::{db_to_linear, linear_to_db};
 use clogbox_module::context::StreamContext;
+use clogbox_module::modules::env_follower::EnvFollower;
 use clogbox_module::sample::{SampleModule, SampleModuleWrapper, SampleProcessResult};
 use clogbox_module::{module_wrapper, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use num_traits::Float;
 use std::f32::consts::PI;
 use std::fmt::Write;
+use std::sync::atomic::Ordering;
 use std::sync::LazyLock;
+
+const LED_ENV_ATTACK: f32 = 16e-3;
+const LED_ENV_DECAY: f32 = 50e-3;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum Params {
@@ -62,6 +67,8 @@ pub struct SampleDsp {
     last_s: EnumMapArray<Stereo, f32>,
     last_u: EnumMapArray<Stereo, f32>,
     wstep: f32,
+    pub shared_data: SharedData,
+    led_env_follow: EnvFollower<f32>,
 }
 
 impl SampleModule for SampleDsp {
@@ -73,6 +80,7 @@ impl SampleModule for SampleDsp {
     fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
         self.last_s.as_slice_mut().fill(0.0);
         self.wstep = PI * sample_rate.recip().value() as f32;
+        self.led_env_follow.prepare(sample_rate);
         PrepareResult { latency: 0.0 }
     }
 
@@ -82,15 +90,23 @@ impl SampleModule for SampleDsp {
         inputs: EnumMapArray<Self::AudioIn, Self::Sample>,
         params: EnumMapRef<Self::Params, f32>,
     ) -> SampleProcessResult<Self::AudioOut, Self::Sample> {
+        use crate::dsp::Params::Drive;
         for (param, smoother) in self.params.iter_mut() {
             let x = params[param];
             smoother.set_target(x);
             smoother.next_value();
         }
-        SampleProcessResult {
-            tail: None,
-            output: EnumMapArray::new(|ch| self.process_channel(ch, inputs[ch])),
-        }
+        let output = EnumMapArray::new(|ch| self.process_channel(ch, inputs[ch]));
+        let diff = enum_iter::<Stereo>()
+            .map(|ch| params[Drive] * self.last_u[ch])
+            .map(|x| x.asinh() - x)
+            .sum::<f32>()
+            / 2.0;
+        let env = self
+            .led_env_follow
+            .process_follower(EnumMapArray::from_std_array([diff]));
+        self.shared_data.drive_led.store(env[Mono], Ordering::Relaxed);
+        SampleProcessResult { tail: None, output }
     }
 }
 
@@ -119,6 +135,7 @@ impl SampleDsp {
         }
         let y = gen::y(g, x, s, u);
         let s = gen::s(g, x, y, u);
+
         self.last_u[ch] = u;
         self.last_s[ch] = s;
         2.0 * y * (0.5 * drive).asinh()
@@ -130,7 +147,7 @@ module_wrapper!(Dsp: SampleModuleWrapper<SampleDsp>);
 impl PluginDsp for Dsp {
     type Plugin = super::NrClipper;
 
-    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
+    fn create(context: PluginCreateContext<Self>, shared_data: &SharedData) -> Self {
         let params = EnumMapArray::new(|p| context.params[p]);
         Self(SampleModuleWrapper::new(
             SampleDsp {
@@ -146,6 +163,8 @@ impl PluginDsp for Dsp {
                     )
                 }),
                 wstep: 0.0,
+                shared_data: shared_data.clone(),
+                led_env_follow: EnvFollower::new(LED_ENV_ATTACK, LED_ENV_DECAY),
             },
             params,
         ))

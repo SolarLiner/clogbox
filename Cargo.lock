@@ -444,6 +444,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "clogbox-utils"
+version = "0.1.0"
+
+[[package]]
 name = "cocoa"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -803,6 +807,7 @@ dependencies = [
  "clogbox-enum",
  "clogbox-math",
  "clogbox-module",
+ "clogbox-utils",
  "egui_plot",
  "fixed-ringbuf",
 ]
@@ -1392,10 +1397,12 @@ version = "0.1.0"
 dependencies = [
  "az",
  "clogbox-clap",
+ "clogbox-clap-egui",
  "clogbox-enum",
  "clogbox-math",
  "clogbox-module",
  "clogbox-params",
+ "clogbox-utils",
  "num-traits",
 ]
 

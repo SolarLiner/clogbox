@@ -1,10 +1,20 @@
+use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, PluginMeta};
 use clogbox_module::Module;
+use clogbox_utils::AtomicF32;
+use std::sync::Arc;
 
 mod dsp;
 mod gen;
+mod gui;
+
+pub struct SharedDataInner {
+    drive_led: AtomicF32,
+}
+
+pub type SharedData = Arc<SharedDataInner>;
 
 pub struct NrClipper;
 
@@ -16,7 +26,7 @@ impl PluginMeta for NrClipper {
 impl Plugin for NrClipper {
     type Dsp = dsp::Dsp;
     type Params = dsp::Params;
-    type SharedData = ();
+    type SharedData = SharedData;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
         &[PortLayout::STEREO.main().named("Input")];
@@ -28,7 +38,15 @@ impl Plugin for NrClipper {
     }
 
     fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
-        Ok(())
+        Ok(SharedData::new(SharedDataInner {
+            drive_led: AtomicF32::new(0.0),
+        }))
+    }
+
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
+        gui::create()
     }
 }
 

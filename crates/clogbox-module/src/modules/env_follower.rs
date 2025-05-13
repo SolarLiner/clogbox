@@ -2,7 +2,8 @@ use crate::context::StreamContext;
 use crate::sample::{SampleModule, SampleProcessResult};
 use crate::{PrepareResult, Samplerate};
 use az::CastFrom;
-use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
+use clogbox_enum::generic_array::GenericArray;
 use clogbox_enum::{Enum, Mono};
 use clogbox_math::recip::Recip;
 use num_traits::{Float, Num, Zero};
@@ -70,6 +71,26 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
         self.attack_tau = tau(sample_rate, self.attack);
         self.release_tau = tau(sample_rate, self.release);
     }
+
+    pub fn process_follower(
+        &mut self,
+        inputs: EnumMapArray<Audio, T>,
+    ) -> EnumMap<Audio, GenericArray<T, <Audio as Enum>::Count>>
+    where
+        T: Float,
+    {
+        let output = EnumMapArray::new(|e| {
+            let x = inputs[e].abs();
+            let last = self.last[e];
+            if x < last {
+                last + (x - last) * self.release_tau
+            } else {
+                last + (x - last) * self.attack_tau
+            }
+        });
+        self.last = output.clone();
+        output
+    }
 }
 
 impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio: Enum> SampleModule
@@ -95,18 +116,7 @@ impl<T: 'static + Send + Default + Float + CastFrom<f32> + CastFrom<f64>, Audio:
         self.set_release(T::cast_from(params[Params::Release]));
 
         // Process the input based on the follow mode
-        let value: EnumMapArray<_, _> = inputs.map(|_, x| x.abs());
-
-        let output = EnumMapArray::new(|e| {
-            let x = value[e];
-            let last = self.last[e];
-            if x < last {
-                last + (x - last) * self.release_tau
-            } else {
-                last + (x - last) * self.attack_tau
-            }
-        });
-        self.last = output.clone();
+        let output = self.process_follower(inputs);
 
         SampleProcessResult { output, tail: None }
     }

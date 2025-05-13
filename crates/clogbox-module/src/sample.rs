@@ -17,12 +17,19 @@ pub trait SampleModule {
     type Params: Enum;
 
     fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult;
+
+    #[allow(unused_variables)]
+    fn on_block_begin(&mut self, stream_context: &StreamContext) {}
+
     fn process(
         &mut self,
         stream_context: &StreamContext,
         inputs: EnumMapArray<Self::AudioIn, Self::Sample>,
         params: EnumMapRef<Self::Params, f32>,
     ) -> SampleProcessResult<Self::AudioOut, Self::Sample>;
+
+    #[allow(unused_variables)]
+    fn on_block_end(&mut self, stream_context: &StreamContext) {}
 }
 
 pub struct SampleModuleWrapper<SM: SampleModule> {
@@ -46,6 +53,7 @@ impl<SM: SampleModule<Sample: Copy>> Module for SampleModuleWrapper<SM> {
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
         let mut result = ProcessResult { tail: None };
 
+        self.sample_module.on_block_begin(&context.stream_context);
         for i in 0..context.stream_context.block_size {
             // Update params
             for p in enum_iter::<Self::ParamsIn>() {
@@ -65,6 +73,7 @@ impl<SM: SampleModule<Sample: Copy>> Module for SampleModuleWrapper<SM> {
                 context.audio_out[e][i] = out;
             }
         }
+        self.sample_module.on_block_end(&context.stream_context);
 
         result
     }

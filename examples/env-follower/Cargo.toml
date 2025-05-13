@@ -18,6 +18,7 @@ clogbox-clap-egui = { workspace = true }
 clogbox-enum.workspace = true
 clogbox-math.workspace = true
 clogbox-module.workspace = true
+clogbox-utils.workspace = true
 fixed-ringbuf.workspace = true
 
 arc-swap = "1.7.1"

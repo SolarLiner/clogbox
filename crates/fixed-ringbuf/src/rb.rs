@@ -73,7 +73,7 @@ impl<T> ops::Index<usize> for RingBuffer<T> {
 
     fn index(&self, index: usize) -> &Self::Output {
         let pos = self.get_pos_from_index(index);
-        unsafe { (&*self.buffer[pos].get()).assume_init_ref() }
+        unsafe { (*self.buffer[pos].get()).assume_init_ref() }
     }
 }
 
@@ -224,7 +224,7 @@ impl<T> RingBuffer<T> {
         for _ in 0..amount {
             let ptr = self.buffer[read & self.mask].get();
             unsafe {
-                (&mut *ptr).assume_init_drop();
+                (*ptr).assume_init_drop();
             }
             read = read.wrapping_add(1);
         }

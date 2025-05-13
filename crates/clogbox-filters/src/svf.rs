@@ -3,7 +3,7 @@
 //! Downloaded from <https://www.discodsp.net/VAFilterDesign_2.1.2.pdf>
 //! All references in this module, unless specified otherwise, are taken from this book.
 
-use crate::{Linear, Saturator};
+use crate::Linear;
 use az::{Cast, CastFrom};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
@@ -221,7 +221,7 @@ impl<
     /// The output samples are `(LP, BP, HP)`
     #[replace_float_literals(T::cast_from(literal))]
     pub fn next_sample(&mut self, x: T) -> EnumMapArray<SvfOutput, T> {
-        let SvfSampleOutput { mut y, mut s } = Mode::next_sample(self, x);
+        let SvfSampleOutput { mut y, s } = Mode::next_sample(self, x);
         for x in &mut y {
             if x.is_nan() {
                 x.set_zero();

@@ -27,9 +27,7 @@ pub enum Params {
 impl ParamId for Params {
     fn text_to_value(&self, text: &str) -> Option<f32> {
         let parsed = text.parse::<f32>().ok()?;
-        match self {
-            _ => Some(parsed),
-        }
+        Some(parsed)
     }
 
     fn default_value(&self) -> f32 {

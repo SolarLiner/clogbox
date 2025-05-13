@@ -4,7 +4,7 @@ use crate::root_eq::MultiDifferentiable;
 #[cfg(feature = "linalg")]
 use nalgebra as na;
 #[cfg(feature = "linalg")]
-use nalgebra::{RealField, SimdValue};
+use nalgebra::RealField;
 use num_traits::{Float, NumAssign, Zero};
 
 /// Newton-Raphson solver

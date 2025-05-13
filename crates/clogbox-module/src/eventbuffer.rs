@@ -947,7 +947,7 @@ mod tests {
 
         // Modify timestamps during iteration
         {
-            let mut iter = buffer.iter_mut();
+            let iter = buffer.iter_mut();
             for event in iter {
                 // Reverse the timestamps
                 event.timestamp = 6 - event.timestamp;

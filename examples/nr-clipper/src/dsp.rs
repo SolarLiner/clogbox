@@ -104,8 +104,8 @@ impl SampleModule for SampleDsp {
             / 2.0;
         let env = self
             .led_env_follow
-            .process_follower(EnumMapArray::from_std_array([diff]));
-        self.shared_data.drive_led.store(env[Mono], Ordering::Relaxed);
+            .process_follower(EnumMapArray::from_std_array([diff.powi(2)]));
+        self.shared_data.drive_led.store(env[Mono].sqrt(), Ordering::Relaxed);
         SampleProcessResult { tail: None, output }
     }
 }

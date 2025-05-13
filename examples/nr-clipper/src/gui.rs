@@ -15,8 +15,8 @@ const WIDTHF: f32 = WIDTH as f32;
 struct Led;
 
 fn led_color(current: f32) -> egui::Color32 {
-    let r = 1.0 - (-current).exp();
-    let g = 1.0 - (-current / 3.0).exp();
+    let r = 1.0 - (-current / 3.0).exp();
+    let g = 1.0 - (-current / 16.0).exp();
     let b = g;
     let [r, g, b] = [r, g, b].map(|x| x * 255.0).map(|f| f.round() as u8);
     egui::Color32::from_rgb(r, g, b)
@@ -26,8 +26,7 @@ impl egui::Widget for Led {
     fn ui(self, ui: &mut Ui) -> Response {
         let (response, painter) = ui.allocate_painter(emath::vec2(10.0, 10.0), egui::Sense::empty());
         let shared: crate::SharedData = ui.ctx().data(|data| data.get_temp(shared_data_id())).unwrap();
-        let current = shared.drive_led.load(Ordering::Relaxed).powi(2) * 10.0;
-        let color = led_color(current);
+        let color = led_color(shared.drive_led.load(Ordering::Relaxed));
         let center = response.rect.center();
         let radius = response.rect.size().min_elem() / 2.0;
         painter.circle_filled(center, radius, color);

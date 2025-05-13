@@ -1,5 +1,5 @@
 use crate::{gen, SharedData};
-use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{decibel, frequency, DynMapping, MappingExt, ParamId, ParamInfoFlags};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
@@ -42,8 +42,8 @@ impl ParamId for Params {
     }
 
     fn mapping(&self) -> DynMapping {
-        static CUTOFF: LazyLock<DynMapping> = LazyLock::new(|| polynomial(20.0, 20e3, 2.0).into_dyn());
-        static DRIVE: LazyLock<DynMapping> = LazyLock::new(|| polynomial(1.0, 100.0, 2.0).into_dyn());
+        static CUTOFF: LazyLock<DynMapping> = LazyLock::new(|| frequency(20.0, 20e3).into_dyn());
+        static DRIVE: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 60.0).into_dyn());
         match self {
             Self::Cutoff => CUTOFF.clone(),
             Self::Drive => DRIVE.clone(),

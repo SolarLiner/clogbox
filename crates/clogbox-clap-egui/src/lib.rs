@@ -9,6 +9,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 
+use clogbox_clap::main_thread::Plugin;
 pub use egui;
 pub use egui_baseview;
 
@@ -179,4 +180,29 @@ pub fn view<E: ParamId, SharedData: 'static + Send + Sync + Clone>(
     }
 
     Ok(Box::new(Impl(size, Some(view), PhantomData)))
+}
+
+pub trait GetContextExtra {
+    fn plugin_gui_context<E: ParamId>(&self) -> GuiContext<E>;
+    fn plugin_shared_data<P: Plugin>(&self) -> P::SharedData;
+}
+
+impl GetContextExtra for egui::Context {
+    fn plugin_gui_context<E: ParamId>(&self) -> GuiContext<E> {
+        self.data(|data| data.get_temp(gui_context_id()).unwrap())
+    }
+
+    fn plugin_shared_data<P: Plugin>(&self) -> P::SharedData {
+        self.data(|data| data.get_temp(shared_data_id()).unwrap())
+    }
+}
+
+impl GetContextExtra for egui::Ui {
+    fn plugin_gui_context<E: ParamId>(&self) -> GuiContext<E> {
+        self.ctx().plugin_gui_context::<E>()
+    }
+
+    fn plugin_shared_data<P: Plugin>(&self) -> P::SharedData {
+        self.ctx().plugin_shared_data::<P>()
+    }
 }

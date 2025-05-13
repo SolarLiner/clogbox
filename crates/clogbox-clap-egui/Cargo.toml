@@ -12,6 +12,7 @@ keywords.workspace = true
 [dependencies]
 clogbox-enum.workspace = true
 clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-utils.workspace = true
 
 baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
 egui = "0.31"

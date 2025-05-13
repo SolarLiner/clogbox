@@ -1,4 +1,4 @@
-use crate::gui_context_id;
+use crate::GetContextExtra;
 use clogbox_clap::gui::GuiContext;
 use clogbox_clap::params::{ParamChangeKind, ParamId};
 use egui::emath::normalized_angle;
@@ -14,7 +14,7 @@ pub struct Knob<E: ParamId> {
 
 impl<E: ParamId> Knob<E> {
     pub fn new(ctx: &egui::Context, id: E) -> Self {
-        let gui_context: GuiContext<E> = ctx.data(|data| data.get_temp(gui_context_id()).unwrap());
+        let gui_context = ctx.plugin_gui_context::<E>();
         let cur_value_normalized = gui_context.params[id].get_normalized();
         Self {
             id,

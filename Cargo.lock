@@ -343,6 +343,7 @@ dependencies = [
  "baseview",
  "clogbox-clap",
  "clogbox-enum",
+ "clogbox-utils",
  "egui",
  "egui-baseview",
 ]

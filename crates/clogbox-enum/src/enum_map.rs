@@ -188,6 +188,17 @@ pub type EnumMapMut<'a, E, T> = EnumMap<E, &'a mut [T]>;
 /// assert_eq!(map[Color::Red], 10);
 /// ```
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
+#[cfg_attr(
+    feature = "zerocopy",
+    derive(
+        zerocopy::TryFromBytes,
+        zerocopy::IntoBytes,
+        zerocopy::KnownLayout,
+        zerocopy::Immutable,
+        zerocopy::Unaligned
+    )
+)]
+#[repr(transparent)]
 pub struct EnumMap<E, D> {
     pub(crate) data: D,
     pub(crate) __enum: PhantomData<E>, // <!> This needs to stay PhantomData for the unsafe blocks below!

@@ -16,8 +16,10 @@ generic-array.workspace = true
 numeric-array.workspace = true
 serde = { workspace = true, features = ["derive"], optional = true }
 typenum.workspace = true
+zerocopy = { workspace = true, optional = true, features = ["derive"] }
 
 [features]
 default = ["derive"]
 derive = ["dep:clogbox-derive"]
 serialize = ["dep:serde"]
+zerocopy = ["dep:zerocopy"]

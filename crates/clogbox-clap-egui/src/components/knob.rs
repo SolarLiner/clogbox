@@ -57,7 +57,7 @@ impl<E: ParamId> egui::Widget for Knob<E> {
         if response.dragged() {
             let delta = response.drag_delta().y;
             if delta.abs() > 1e-4 {
-                let step = 0.005;
+                let step = -0.005;
                 let new_value = self.cur_value_normalized + delta * step;
                 let new_value = new_value.clamp(0.0, 1.0);
                 self.cur_value_normalized = new_value;

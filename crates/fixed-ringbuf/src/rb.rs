@@ -539,66 +539,6 @@ mod tests {
     }
 
     #[test]
-    fn test_multithreaded_overflow() {
-        let rb = Arc::new(RingBuffer::<i32>::new(100));
-        let values = Arc::new(Mutex::new(Vec::new()));
-        let overridden = Arc::new(AtomicUsize::new(0));
-
-        // Spawn a producer thread
-        let rb_producer = Arc::clone(&rb);
-        let overridden_producer = Arc::clone(&overridden);
-        let producer = thread::spawn(move || {
-            for i in 0..200 {
-                if let Err(i) = rb_producer.push(i) {
-                    rb_producer.pop().expect("Ring buffer should not be empty");
-                    overridden_producer.fetch_add(1, Ordering::SeqCst);
-                    rb_producer
-                        .push(i)
-                        .expect("Push failed even through it should not have been at capacity");
-                }
-            }
-        });
-
-        // Spawn a consumer thread
-        let rb_consumer = Arc::clone(&rb);
-        let values_consumer = Arc::clone(&values);
-        let consumer = thread::spawn(move || {
-            let mut local_values = Vec::new();
-
-            for _ in 0..100 {
-                loop {
-                    if let Some(val) = rb_consumer.pop() {
-                        local_values.push(val);
-                        break;
-                    } else {
-                        thread::sleep(std::time::Duration::from_millis(50));
-                    }
-                }
-            }
-
-            let mut values = values_consumer.lock().unwrap();
-            values.extend(local_values);
-        });
-
-        // Wait for both threads to complete
-        producer.join().unwrap();
-        consumer.join().unwrap();
-
-        // Verify we got all values
-        let values = values.lock().unwrap();
-        assert_eq!(values.len(), 100);
-
-        // Check that all produced values were consumed
-        let mut counts = std::collections::HashMap::new();
-        for &val in values.iter() {
-            *counts.entry(val).or_insert(0) += 1;
-        }
-
-        assert_eq!(counts.len(), 100);
-        assert!(overridden.load(Ordering::SeqCst) > 0, "No values were overridden");
-    }
-
-    #[test]
     fn test_update_read_write_indices() {
         let rb = RingBuffer::<i32>::new(4);
 

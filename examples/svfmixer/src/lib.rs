@@ -37,7 +37,7 @@ impl Plugin for SvfMixer {
         Ok(())
     }
 
-    fn view(&mut self) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params>>, PluginError> {
+    fn view(&mut self) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = ()>>, PluginError> {
         clogbox_clap_egui::generic_ui::generic_ui(GuiSize {
             width: 750,
             height: 400,

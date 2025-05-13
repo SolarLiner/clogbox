@@ -61,6 +61,21 @@ proptest! {
     }
 
     #[test]
+    fn proptest_push_len(values in prop::collection::vec(0..100i32, 1..100)) {
+        let rb = RingBuffer::new(values.len());
+        for &val in &values {
+            rb.push(val).unwrap();
+        }
+        assert_eq!(values.len(), rb.len());
+
+        for &val in &values {
+            let actual = rb.pop().unwrap();
+            assert_eq!(val, actual);
+        }
+        assert_eq!(0, rb.len());
+    }
+
+    #[test]
     fn proptest_push_until_full(values in prop::collection::vec(0..100i32, 1..200)) {
         let capacity = values.len();
         let rb = RingBuffer::new(capacity);

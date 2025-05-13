@@ -1,10 +1,13 @@
 use crossbeam_utils::CachePadded;
+use std::borrow::Cow;
 use std::cell::{Cell, UnsafeCell};
 use std::mem::MaybeUninit;
+use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{fmt, ops};
 use thread_local::ThreadLocal;
 
-pub struct RingBuffer<T> {
+pub(crate) struct RingBuffer<T> {
     // Read and write indices are padded to avoid false sharing
     read_index: CachePadded<AtomicUsize>,
     // Thread-local cached read index for producers
@@ -23,6 +26,63 @@ pub struct RingBuffer<T> {
 }
 
 unsafe impl<T: Send> Send for RingBuffer<T> {}
+unsafe impl<T: Sync> Sync for RingBuffer<T> {}
+
+impl<T> UnwindSafe for RingBuffer<T> {}
+impl<T> RefUnwindSafe for RingBuffer<T> {}
+
+impl<T> fmt::Debug for RingBuffer<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RingBuffer")
+            .field(
+                "read_index",
+                &format!(
+                    "<atomic: {}, cached: {}>",
+                    self.read_index.load(Ordering::Relaxed),
+                    self.read_index_cached
+                        .get()
+                        .map(|c| std::borrow::Cow::Owned(c.get().to_string()))
+                        .unwrap_or(Cow::Borrowed("<uncached>"))
+                ),
+            )
+            .field(
+                "write_index",
+                &format!(
+                    "<atomic: {}, cached: {}>",
+                    self.write_index.load(Ordering::Relaxed),
+                    self.write_index_cached
+                        .get()
+                        .map(|c| std::borrow::Cow::Owned(c.get().to_string()))
+                        .unwrap_or(Cow::Borrowed("<uncached>"))
+                ),
+            )
+            .field("len", &self.len())
+            .field("is_full", &self.is_full())
+            .field("is_empty", &self.is_empty())
+            .field("available", &self.free_slots())
+            .field("read_pos", &self.read_pos())
+            .field("write_pos", &self.write_pos())
+            .field("mask", &format!("0x{:X}", self.mask))
+            .field("buffer", &format!("<buffer capacity: {}>", self.capacity()))
+            .finish()
+    }
+}
+
+impl<T> ops::Index<usize> for RingBuffer<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        let pos = self.get_pos_from_index(index);
+        unsafe { (&*self.buffer[pos].get()).assume_init_ref() }
+    }
+}
+
+impl<T> ops::IndexMut<usize> for RingBuffer<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        let pos = self.get_pos_from_index(index);
+        unsafe { self.buffer[pos].get_mut().assume_init_mut() }
+    }
+}
 
 impl<T> RingBuffer<T> {
     /// Creates a new ring buffer with the given capacity.
@@ -57,7 +117,7 @@ impl<T> RingBuffer<T> {
         self.write_index().wrapping_sub(self.read_index())
     }
 
-    pub fn available(&self) -> usize {
+    pub fn free_slots(&self) -> usize {
         self.capacity() - self.len()
     }
 
@@ -107,7 +167,7 @@ impl<T> RingBuffer<T> {
     {
         self.reload_indices();
         let mut write = self.write_index();
-        let available = self.available().min(slice.len());
+        let available = self.free_slots().min(slice.len());
         for x in &slice[..available] {
             unsafe {
                 let ptr = &self.buffer[write & self.mask];
@@ -145,7 +205,7 @@ impl<T> RingBuffer<T> {
     pub fn pop_slice(&self, slice: &mut [T]) -> usize {
         self.reload_indices();
         let mut read = self.read_index();
-        let available = self.write_index().wrapping_sub(read).min(slice.len());
+        let available = self.len().min(slice.len());
         for x in &mut slice[..available] {
             unsafe {
                 let ptr = &self.buffer[read & self.mask];
@@ -170,6 +230,23 @@ impl<T> RingBuffer<T> {
         }
         self.update_read_index(read);
         amount
+    }
+
+    pub fn read_pos(&self) -> usize {
+        self.read_index() & self.mask
+    }
+
+    pub fn write_pos(&self) -> usize {
+        self.write_index() & self.mask
+    }
+
+    pub(crate) fn reload_indices(&self) {
+        if let Some(read_cell) = self.read_index_cached.get() {
+            read_cell.set(self.read_index.load(Ordering::SeqCst));
+        }
+        if let Some(write_cell) = self.write_index_cached.get() {
+            write_cell.set(self.write_index.load(Ordering::SeqCst));
+        }
     }
 
     fn read_index(&self) -> usize {
@@ -198,13 +275,13 @@ impl<T> RingBuffer<T> {
         self.write_index.store(index, Ordering::SeqCst);
     }
 
-    fn reload_indices(&self) {
-        if let Some(read_cell) = self.read_index_cached.get() {
-            read_cell.set(self.read_index.load(Ordering::SeqCst));
-        }
-        if let Some(write_cell) = self.write_index_cached.get() {
-            write_cell.set(self.write_index.load(Ordering::SeqCst));
-        }
+    fn get_pos_from_index(&self, index: usize) -> usize {
+        assert!(
+            index < self.len(),
+            "Index out of bounds (index {index} >= len {len})",
+            len = self.len()
+        );
+        self.read_index().wrapping_add(index) & self.mask
     }
 }
 
@@ -393,7 +470,7 @@ mod tests {
                 rb.push(DropCounter {
                     counter: Arc::clone(&counter),
                 })
-                .unwrap();
+                .expect("Ring buffer should not be full");
             }
 
             // At this point, nothing should have been dropped
@@ -526,19 +603,56 @@ mod tests {
         let rb = RingBuffer::<i32>::new(4);
 
         // Check initial state
-        assert_eq!(rb.read_index(), 0);
-        assert_eq!(rb.write_index(), 0);
+        assert_eq!(rb.read_pos(), 0);
+        assert_eq!(rb.write_pos(), 0);
 
         // Update indices
         rb.update_read_index(2);
         rb.update_write_index(3);
 
         // Check updated values
-        assert_eq!(rb.read_index(), 2);
-        assert_eq!(rb.write_index(), 3);
+        assert_eq!(rb.read_pos(), 2);
+        assert_eq!(rb.write_pos(), 3);
 
         // Check atomic values directly
         assert_eq!(rb.read_index.load(Ordering::SeqCst), 2);
         assert_eq!(rb.write_index.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_index_access() {
+        let rb = RingBuffer::<i32>::new(4);
+
+        // Test normal case
+        rb.push(1).unwrap();
+        rb.push(2).unwrap();
+        rb.push(3).unwrap();
+
+        assert_eq!(rb[0], 1); // Oldest value
+        assert_eq!(rb[1], 2);
+        assert_eq!(rb[2], 3); // Newest value
+
+        // Test wrapping case
+        rb.pop();
+        rb.pop(); // Remove 1,2
+        rb.push(4).unwrap();
+        rb.push(5).unwrap();
+
+        assert_eq!(rb[0], 3); // Oldest
+        assert_eq!(rb[1], 4);
+        assert_eq!(rb[2], 5); // Newest
+
+        // Test out of bounds
+        std::panic::catch_unwind(|| {
+            let _v = rb[3]; // Should panic
+        })
+        .expect_err("Index past length should panic");
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_index_access_empty() {
+        let rb = RingBuffer::<i32>::new(4);
+        let _v = rb[0];
     }
 }

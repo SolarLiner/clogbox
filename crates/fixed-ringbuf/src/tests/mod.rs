@@ -30,13 +30,19 @@ fn test_producer_push_overriding() {
 fn test_producer_push_slice_overriding() {
     let (producer, _) = create(2);
     producer.push_slice_overriding(&[1, 2]);
+    assert!(producer.is_full());
+    assert!(!producer.is_empty());
     producer.push_slice_overriding(&[3, 4]);
+    assert!(producer.is_full());
+    assert!(!producer.is_empty());
     let mut result = vec![0; 2];
     let consumer = Consumer {
         rb: producer.rb.clone(),
-        _marker: PhantomData,
     };
-    assert_eq!(consumer.pop_slice(&mut result), 2);
+    let i = consumer.pop_slice(&mut result);
+    assert!(!producer.is_full());
+    assert!(producer.is_empty());
+    assert_eq!(i, 2);
     assert_eq!(result, vec![3, 4]);
 }
 
@@ -55,7 +61,8 @@ fn test_consumer_pop_slice() {
     let (producer, consumer) = create(4);
     producer.push_slice(&[1, 2, 3, 4]);
     let mut result = vec![0; 2];
-    assert_eq!(consumer.pop_slice(&mut result), 2);
+    let i = consumer.pop_slice(&mut result);
+    assert_eq!(i, 2);
     assert_eq!(result, vec![1, 2]);
 }
 

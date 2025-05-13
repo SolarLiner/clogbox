@@ -37,7 +37,7 @@ impl ParamId for Params {
     }
 
     fn mapping(&self) -> DynMapping {
-        static DELAYTIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.01, 10.0, 2.5).into_dyn());
+        static DELAYTIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.01, 10.0, 1.0).into_dyn());
         static FEEDBACK: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.0, 1.5, 0.5).into_dyn());
         static DRYWET: LazyLock<DynMapping> = LazyLock::new(|| linear(0.0, 1.0).into_dyn());
 
@@ -78,7 +78,7 @@ impl PluginDsp for Dsp {
                 shared.set_value(default[param])
             }
             let delay = || {
-                (pass() | var(&params[Params::DelayTime]))
+                (pass() | (var(&params[Params::DelayTime]) >> lowpole_hz(10.0)))
                     >> (tap(0.0, 10.0) * var(&params[Params::Feedback]))
                     >> shape(Tanh(1.0))
             };

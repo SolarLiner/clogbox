@@ -958,6 +958,7 @@ name = "fundsp-plugin"
 version = "0.1.0"
 dependencies = [
  "clogbox-clap",
+ "clogbox-clap-egui",
  "clogbox-enum",
  "clogbox-module",
  "fundsp",

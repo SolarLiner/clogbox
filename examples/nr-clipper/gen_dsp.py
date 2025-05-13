@@ -16,6 +16,10 @@ from clogbox.codegen import generate_differentiable, ClogboxCodegen, codegen_mod
 from clogbox.filters import linear_integrator, IntegratorInput, drive
 
 
+def hyperbolic_unbounded(x):
+    return 2 * x / (1 + sp.sqrt(1 + sp.Abs(4 * x)))
+
+
 def main() -> None:
     this_dir = Path(__file__).parent
     dest = this_dir / "src" / "gen.rs"
@@ -23,7 +27,7 @@ def main() -> None:
     g, k_drive = sp.symbols("g k_drive", real=True, positive=True)
     x, u, y, s = sp.symbols("x u y s", real=True)
 
-    sat = drive(sp.asinh, k_drive)
+    sat = drive(hyperbolic_unbounded, k_drive)
     eq_y = linear_integrator(IntegratorInput(s, g, x - u))
     eq = sp.Eq(sat(u), eq_y)
     eq_s = linear_integrator(IntegratorInput(y, g, x - u))

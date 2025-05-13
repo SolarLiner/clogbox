@@ -371,6 +371,7 @@ dependencies = [
  "numeric-array",
  "serde",
  "typenum",
+ "zerocopy 0.8.25",
 ]
 
 [[package]]
@@ -425,10 +426,10 @@ dependencies = [
  "az",
  "clogbox-enum",
  "clogbox-math",
+ "fixed-ringbuf",
  "fundsp",
  "num-traits",
  "numeric_literals",
- "ringbuf",
  "typenum",
 ]
 
@@ -803,6 +804,7 @@ dependencies = [
  "clogbox-math",
  "clogbox-module",
  "egui_plot",
+ "fixed-ringbuf",
 ]
 
 [[package]]

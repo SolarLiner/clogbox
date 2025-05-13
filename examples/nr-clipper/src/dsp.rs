@@ -118,27 +118,23 @@ impl SampleDsp {
         let g = self.wstep * cutoff;
         let s = self.last_s[ch];
 
-        const NR: NewtonRaphson<f32> = NewtonRaphson {
-            tolerance: 1e-4,
-            max_iterations: 1000,
-            over_relaxation: 1.0,
-        };
+        const NR: NewtonRaphson<f32> = NewtonRaphson::new(1000, 1e-6);
         let eq = gen::Equation {
             g,
             s,
             x,
             k_drive: drive,
         };
-        let u = NR.solve(&eq, self.last_u[ch]).value;
+        let mut u = NR.solve(&eq, self.last_u[ch]).value;
         if !u.is_finite() {
-            return gen::y(x, 0.0, s, g) / drive;
+            u = self.last_u[ch];
         }
         let y = gen::y(g, x, s, u);
         let s = gen::s(g, x, y, u);
 
         self.last_u[ch] = u;
         self.last_s[ch] = s;
-        2.0 * y * (0.5 * drive).asinh()
+        y * drive.sqrt()
     }
 }
 

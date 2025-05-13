@@ -11,16 +11,13 @@ from pathlib import Path
 
 import sympy as sp
 
-from clogbox.filters import drive, ota_integrator
+from clogbox.filters import (
+    drive,
+    ota_integrator,
+    hyperbolic_unbounded,
+    hyperbolic_bounded,
+)
 from clogbox.filters.svf import SvfInput
-
-
-def hyperbolic_bounded(x):
-    return x / sp.sqrt(1 + x**2)
-
-
-def hyperbolic_unbounded(x):
-    return 2 * x / (1 + sp.sqrt(1 + sp.Abs(4 * x)))
 
 
 def main() -> None:

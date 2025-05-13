@@ -13,11 +13,12 @@ from pathlib import Path
 import sympy as sp
 
 from clogbox.codegen import generate_differentiable, ClogboxCodegen, codegen_module
-from clogbox.filters import linear_integrator, IntegratorInput, drive
-
-
-def hyperbolic_unbounded(x):
-    return 2 * x / (1 + sp.sqrt(1 + sp.Abs(4 * x)))
+from clogbox.filters import (
+    linear_integrator,
+    IntegratorInput,
+    drive,
+    hyperbolic_unbounded,
+)
 
 
 def main() -> None:

@@ -1,6 +1,8 @@
 use egui::{emath, epaint, Color32, Response, Ui};
 use std::ops::Add;
 
+pub const DEFAULT_RADIUS: f32 = 10.0;
+
 /// LED light component.
 pub struct Led {
     /// Radius of the LED
@@ -17,7 +19,7 @@ pub struct Led {
 impl Default for Led {
     fn default() -> Self {
         Self {
-            radius: 10.0,
+            radius: DEFAULT_RADIUS,
             current: 0.0,
             color: Color32::RED,
             bg_color: Color32::BLACK,
@@ -49,9 +51,9 @@ impl egui::Widget for Led {
 }
 
 fn led_color(bg: Color32, fg: Color32, current: f32) -> Color32 {
-    let brightness = 1.0 - (-current * 1.5).exp();
+    let brightness = 1.0 - (-current * 3.0).exp();
     let colored_component = fg.to_array().map(|b| b as f32 / 255.0).map(|f| f * brightness);
-    let white_component = 1.0 - (-current / 3.0).exp();
+    let white_component = 1.0 - (-current / 9.0).exp();
     let [r, g, b, _] = colored_component
         .map(|f| f + white_component)
         .map(|f| f.clamp(0.0, 1.0) * 255.0)

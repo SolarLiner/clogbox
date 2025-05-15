@@ -381,16 +381,13 @@ version = "0.1.0"
 dependencies = [
  "az",
  "clogbox-enum",
- "clogbox-math",
+ "clogbox-module",
  "clogbox-params",
  "generic-array 1.1.0",
  "nalgebra",
- "num-complex",
  "num-traits",
- "numeric-array",
  "numeric_literals",
  "profiling",
- "serde_json",
  "typenum",
 ]
 
@@ -2155,18 +2152,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.87",
-]
-
-[[package]]
-name = "serde_json"
-version = "1.0.132"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d726bfaff4b320266d395898905d0eba0345aae23b54aee3a737e260fd46db03"
-dependencies = [
- "itoa",
- "memchr",
- "ryu",
- "serde",
 ]
 
 [[package]]

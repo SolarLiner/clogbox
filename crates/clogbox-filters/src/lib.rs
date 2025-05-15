@@ -9,6 +9,7 @@ use clogbox_enum::{Empty, Enum};
 use num_traits::{Float, Num};
 use std::marker::PhantomData;
 
+pub mod biquad;
 pub mod svf;
 
 /// A trait representing a saturator that can saturate mono signals.

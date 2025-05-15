@@ -11,7 +11,7 @@ mod gen;
 mod gui;
 
 pub struct SharedDataInner {
-    drive_led: AtomicF32,
+    drive_led: [AtomicF32; dsp::NUM_STAGES],
 }
 
 pub type SharedData = Arc<SharedDataInner>;
@@ -39,7 +39,7 @@ impl Plugin for NrClipper {
 
     fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
         Ok(SharedData::new(SharedDataInner {
-            drive_led: AtomicF32::new(0.0),
+            drive_led: std::array::from_fn(|_| AtomicF32::new(0.0)),
         }))
     }
 

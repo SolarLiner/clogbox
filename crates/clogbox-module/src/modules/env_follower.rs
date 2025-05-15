@@ -15,6 +15,7 @@ pub enum Params {
     Release,
 }
 
+#[derive(Debug, Clone)]
 pub struct EnvFollower<T: 'static + Send, Audio: Enum = Mono> {
     sample_rate: Option<Recip<T>>,
     attack: T,

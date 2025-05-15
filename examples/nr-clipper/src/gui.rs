@@ -8,9 +8,9 @@ use clogbox_clap_egui::egui::{emath, Context};
 use clogbox_clap_egui::egui_baseview::Queue;
 use clogbox_clap_egui::{components, egui, generic_ui, EguiPluginView, GetContextExtra};
 
-const WIDTH: u32 = 350;
+const WIDTH: u32 = 250;
 const WIDTHF: f32 = WIDTH as f32;
-const HEIGHT: u32 = 150;
+const HEIGHT: u32 = 250;
 
 struct View;
 
@@ -26,11 +26,15 @@ impl EguiPluginView for View {
                 ui.allocate_ui(generic_size, |ui| {
                     generic_ui::display::<Self::Params>(ui);
                 });
-                Driven::by_atomic(&ui.plugin_shared_data::<crate::NrClipper>().drive_led).show(ui, |ui, current| {
-                    ui.add(components::Led {
-                        current,
-                        ..Default::default()
-                    });
+                ui.vertical(|ui| {
+                    for led in ui.plugin_shared_data::<crate::NrClipper>().drive_led.iter().rev() {
+                        Driven::by_atomic(led).show(ui, |ui, current| {
+                            ui.add(components::Led {
+                                current,
+                                ..Default::default()
+                            });
+                        });
+                    }
                 });
             });
         });

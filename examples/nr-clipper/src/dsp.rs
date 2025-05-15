@@ -67,7 +67,12 @@ impl ParamId for Params {
             Self::Cutoff => write!(f, "{:.2} Hz", denormalized),
             Self::Drive => write!(f, "{:.2} dB", linear_to_db(denormalized)),
             Self::Bias => write!(f, "{:2.1} %", denormalized),
-            Self::NumStages => write!(f, "{:.0} stages", denormalized.round()),
+            Self::NumStages => write!(
+                f,
+                "{:.0} stage{}",
+                denormalized.round(),
+                if denormalized.round() == 1.0 { "" } else { "s" }
+            ),
         }
     }
 

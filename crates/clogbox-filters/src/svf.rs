@@ -1,14 +1,16 @@
-//! Implementation of various blocks of DSP code from the VA Filter Design book.
+//! Implementation of the State-Variable Filter from the VA Filter Design book.
 //!
 //! Downloaded from <https://www.discodsp.net/VAFilterDesign_2.1.2.pdf>
 //! All references in this module, unless specified otherwise, are taken from this book.
 
-use crate::Linear;
-use az::{Cast, CastFrom};
-use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::Enum;
+use crate::saturators::Linear;
+use az::CastFrom;
+use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clogbox_enum::{Enum, Mono};
+use clogbox_module::context::StreamContext;
+use clogbox_module::sample::{SampleModule, SampleProcessResult};
+use clogbox_module::{PrepareResult, Samplerate};
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
-use nalgebra::{self as na, SimdRealField};
 use num_traits::{Float, FloatConst, Num, NumAssign, Zero};
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
@@ -134,14 +136,12 @@ impl<T: Copy + Float + FloatConst + CastFrom<f64> + Num, Mode> Svf<T, Mode> {
     /// Create a new SVF filter with the provided sample rate, frequency cutoff (in Hz) and resonance amount
     /// (in 0..1 for stable filters, otherwise use nonlinearities).
     #[replace_float_literals(T::cast_from(literal))]
-    pub fn new(sample_rate: T, cutoff: f32, resonance: f32) -> Self {
-        let fc = T::cast_from(cutoff as _);
-        let q = T::cast_from(resonance as _);
+    pub fn new(sample_rate: T, cutoff: T, resonance: T) -> Self {
         let mut this = Self {
             s: [0.; 2],
             last_out: [0.; 3],
-            q,
-            fc,
+            q: resonance,
+            fc: cutoff,
             g: 0.,
             d: 0.,
             sample_rate,
@@ -152,8 +152,22 @@ impl<T: Copy + Float + FloatConst + CastFrom<f64> + Num, Mode> Svf<T, Mode> {
         this.update_coefficients();
         this
     }
+
+    /// Sets the sample rate of the audio signal going through this module.
+    ///
+    /// You will need to call [`Self::update_coefficients`] after calling this.
+    pub fn set_samplerate_no_update(&mut self, sample_rate: T) {
+        self.sample_rate = sample_rate;
+        self.w_step = T::PI() / sample_rate;
+    }
+
+    /// Sets the sample rate of the audio signal going through this module.
+    pub fn set_samplerate(&mut self, sample_rate: T) {
+        self.set_samplerate_no_update(sample_rate);
+        self.update_coefficients();
+    }
 }
-impl<T: Cast<f64> + CastFrom<f64> + Float, Mode> Svf<T, Mode> {
+impl<T: CastFrom<f64> + Float, Mode> Svf<T, Mode> {
     /// Set the new filter cutoff frequency (in Hz).
     pub fn set_cutoff(&mut self, freq: T) {
         self.set_cutoff_no_update(freq);
@@ -161,7 +175,7 @@ impl<T: Cast<f64> + CastFrom<f64> + Float, Mode> Svf<T, Mode> {
     }
 
     /// Sets the cutoff frequency (in Hz) without triggering a recomputation of internal parameters.
-    /// It's required to call [`Self::update_coefficients`] after a call to this, and before
+    /// It's required to call [`Self::update_coefficients`] after a call to this and before
     /// processing the next sample.
     pub fn set_cutoff_no_update(&mut self, freq: T) {
         self.fc = freq;
@@ -181,14 +195,18 @@ impl<T: Cast<f64> + CastFrom<f64> + Float, Mode> Svf<T, Mode> {
         self.q = q;
     }
 
+    /// Set the filter drive amount (in linear amplitude).
     pub fn set_drive(&mut self, drive: T) {
         self.drive = drive;
     }
-}
-
-#[replace_float_literals(T::cast_from(literal))]
-fn resonance_compensation<T: CastFrom<f64> + Float>(x: T) -> T {
-    (0.99 + x.tan()).recip()
+    /// Set a parameter using the [`SvfParams`] [`Enum`].
+    pub fn set_param(&mut self, param: SvfParams, value: f32) {
+        match param {
+            SvfParams::Cutoff => self.set_cutoff(T::cast_from(value as _)),
+            SvfParams::Resonance => self.set_resonance(T::cast_from(value as _)),
+            SvfParams::Drive => self.drive = T::cast_from(value as _),
+        }
+    }
 }
 
 impl<T: Float + CastFrom<f64>, Mode> Svf<T, Mode> {
@@ -197,29 +215,14 @@ impl<T: Float + CastFrom<f64>, Mode> Svf<T, Mode> {
     #[replace_float_literals(T::cast_from(literal))]
     pub fn update_coefficients(&mut self) {
         self.g = self.w_step * self.fc;
-        self.d = (1. + 2. * self.q * self.g + self.g * self.g).recip();
+        self.d = (1. + (2. * self.q + self.g) * self.g).recip();
     }
 }
 
-impl<
-        T: 'static
-            + Copy
-            + Send
-            + Cast<f64>
-            + CastFrom<f64>
-            + Float
-            + na::RealField
-            + FloatConst
-            + na::Scalar
-            + SimdRealField
-            + NumAssign,
-        Mode: SvfImpl<T>,
-    > Svf<T, Mode>
-{
-    /// Process the next sample of this filter, with the given input sample.
+impl<T: Float, Mode: SvfImpl<T>> Svf<T, Mode> {
+    /// Process the next sample of this filter with the given input sample.
     ///
     /// The output samples are `(LP, BP, HP)`
-    #[replace_float_literals(T::cast_from(literal))]
     pub fn next_sample(&mut self, x: T) -> EnumMapArray<SvfOutput, T> {
         let SvfSampleOutput { mut y, s } = Mode::next_sample(self, x);
         for x in &mut y {
@@ -238,15 +241,6 @@ impl<
             SvfOutput::Highpass => y[2],
         })
     }
-
-    /// Set a parameter using the [`SvfParams`] [`Enum`].
-    pub fn set_param(&mut self, param: SvfParams, value: f32) {
-        match param {
-            SvfParams::Cutoff => self.set_cutoff(T::cast_from(value as _)),
-            SvfParams::Resonance => self.set_resonance(T::cast_from(value as _)),
-            SvfParams::Drive => self.drive = T::cast_from(value as _),
-        }
-    }
 }
 
 /// Enum representing different types of audio filters.
@@ -254,19 +248,19 @@ impl<
 pub enum FilterType {
     /// No filtering, signal is passed unchanged.
     Bypass,
-    /// Low pass filter.
+    /// Low-pass filter.
     #[display = "Low pass"]
     Lowpass,
     /// Band pass filter.
     #[display = "Band pass"]
     Bandpass,
-    /// High pass filter.
+    /// High-pass filter.
     #[display = "High pass"]
     Highpass,
-    /// Low shelf filter.
+    /// Low-shelf filter.
     #[display = "Low shelf"]
     Lowshelf,
-    /// High shelf filter.
+    /// High-shelf filter.
     #[display = "High shelf"]
     Highshelf,
     /// Peak (Sharp) filter.
@@ -369,5 +363,31 @@ impl<T: 'static + Copy + Send + Float + NumAssign + ops::Neg<Output = T> + CastF
             .map(|(k, x)| k * x)
             .reduce(ops::Add::add)
             .unwrap_or(T::zero())
+    }
+}
+
+impl<T: CastFrom<f64> + Float + FloatConst, Mode: SvfImpl<T>> SampleModule for Svf<T, Mode> {
+    type Sample = T;
+    type AudioIn = Mono;
+    type AudioOut = SvfOutput;
+    type Params = SvfParams;
+
+    fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
+        self.set_samplerate(T::cast_from(sample_rate.value()));
+        PrepareResult { latency: 0.0 }
+    }
+
+    fn process(
+        &mut self,
+        _stream_context: &StreamContext,
+        inputs: EnumMapArray<Self::AudioIn, Self::Sample>,
+        params: EnumMapRef<Self::Params, f32>,
+    ) -> SampleProcessResult<Self::AudioOut, Self::Sample> {
+        self.set_cutoff_no_update(T::cast_from(params[SvfParams::Cutoff] as _));
+        self.set_resonance(T::cast_from(params[SvfParams::Resonance] as _));
+        self.set_drive(T::cast_from(params[SvfParams::Drive] as _));
+
+        let output = self.next_sample(inputs[Mono]);
+        SampleProcessResult { tail: None, output }
     }
 }

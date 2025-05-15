@@ -3,6 +3,7 @@ use clogbox_clap::params::{decibel, frequency, int, linear, DynMapping, MappingE
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
+use clogbox_filters::DcBlocker;
 use clogbox_math::interpolation::Linear;
 use clogbox_math::root_eq::nr::NewtonRaphson;
 use clogbox_math::{db_to_linear, linear_to_db};
@@ -140,6 +141,7 @@ impl Stage {
 
 pub struct SampleDsp {
     stages: [Stage; NUM_STAGES],
+    dc_blocker: EnumMapArray<Stereo, DcBlocker<f32>>,
     num_active: usize,
     params: EnumMapArray<Params, LinearSmoother<f32>>,
     pub shared_data: SharedData,
@@ -167,7 +169,7 @@ impl SampleModule for SampleDsp {
         for (param, smoother) in self.params.iter_mut() {
             let x = params[param];
             let x = if matches!(param, Params::Bias) {
-                0.15 * x / 100.0
+                0.45 * x / 100.0
             } else {
                 x
             };
@@ -190,6 +192,9 @@ impl SampleModule for SampleDsp {
             };
             self.shared_data.drive_led[i].store(led, Ordering::Relaxed);
         }
+        for ch in enum_iter::<Stereo>() {
+            output[ch] = self.dc_blocker[ch].next_sample(output[ch]);
+        }
         SampleProcessResult { tail: None, output }
     }
 }
@@ -200,17 +205,10 @@ impl PluginDsp for Dsp {
     type Plugin = super::NrClipper;
 
     fn create(context: PluginCreateContext<Self>, shared_data: &SharedData) -> Self {
+        let samplerate = context.audio_config.sample_rate as f32;
         let params = EnumMapArray::new(|p| context.params[p]);
         let num_active = params[Params::NumStages] as usize;
-        let smoothers = EnumMapArray::new(|p| {
-            LinearSmoother::new(
-                Linear,
-                context.audio_config.sample_rate as _,
-                10e-3,
-                params[p],
-                params[p],
-            )
-        });
+        let smoothers = EnumMapArray::new(|p| LinearSmoother::new(Linear, samplerate, 10e-3, params[p], params[p]));
         let stage = Stage {
             last_s: EnumMapArray::new(|_| 0.0),
             last_u: EnumMapArray::new(|_| 0.0),
@@ -222,6 +220,7 @@ impl PluginDsp for Dsp {
                 params: smoothers,
                 num_active,
                 stages: std::array::from_fn(|_| stage.clone()),
+                dc_blocker: EnumMapArray::new(|_| DcBlocker::new(samplerate)),
                 shared_data: shared_data.clone(),
             },
             params,

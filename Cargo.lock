@@ -1398,6 +1398,7 @@ dependencies = [
  "clogbox-clap",
  "clogbox-clap-egui",
  "clogbox-enum",
+ "clogbox-filters",
  "clogbox-math",
  "clogbox-module",
  "clogbox-params",

@@ -1,5 +1,5 @@
 use crate::{gen, SharedData};
-use clogbox_clap::params::{decibel, frequency, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{decibel, frequency, linear, DynMapping, MappingExt, ParamId, ParamInfoFlags};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
@@ -24,6 +24,7 @@ const LED_ENV_DECAY: f32 = 50e-3;
 pub enum Params {
     Cutoff,
     Drive,
+    Bias,
 }
 
 impl ParamId for Params {
@@ -31,6 +32,7 @@ impl ParamId for Params {
         match self {
             Self::Cutoff => text.parse().ok(),
             Self::Drive => text.parse().ok().map(db_to_linear),
+            Self::Bias => text.parse().ok(),
         }
     }
 
@@ -38,15 +40,18 @@ impl ParamId for Params {
         match self {
             Self::Cutoff => 1000.0,
             Self::Drive => 1.0,
+            Self::Bias => 0.0,
         }
     }
 
     fn mapping(&self) -> DynMapping {
         static CUTOFF: LazyLock<DynMapping> = LazyLock::new(|| frequency(20.0, 20e3).into_dyn());
         static DRIVE: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 60.0).into_dyn());
+        static BIAS: LazyLock<DynMapping> = LazyLock::new(|| linear(-1.0, 1.0).into_dyn());
         match self {
             Self::Cutoff => CUTOFF.clone(),
             Self::Drive => DRIVE.clone(),
+            Self::Bias => BIAS.clone(),
         }
     }
 
@@ -54,6 +59,7 @@ impl ParamId for Params {
         match self {
             Self::Cutoff => write!(f, "{:.2} Hz", denormalized),
             Self::Drive => write!(f, "{:.2} dB", linear_to_db(denormalized)),
+            Self::Bias => write!(f, "{:.2}", denormalized),
         }
     }
 
@@ -115,6 +121,7 @@ impl SampleDsp {
         use Params::*;
         let cutoff = self.params[Cutoff].current_value();
         let drive = self.params[Drive].current_value();
+        let bias = self.params[Bias].current_value();
         let g = self.wstep * cutoff;
         let s = self.last_s[ch];
 
@@ -124,6 +131,7 @@ impl SampleDsp {
             s,
             x,
             k_drive: drive,
+            k_bias: bias,
         };
         let mut u = NR.solve(&eq, self.last_u[ch]).value;
         if !u.is_finite() {

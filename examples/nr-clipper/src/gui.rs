@@ -8,8 +8,9 @@ use clogbox_clap_egui::egui::{emath, Context};
 use clogbox_clap_egui::egui_baseview::Queue;
 use clogbox_clap_egui::{components, egui, generic_ui, EguiPluginView, GetContextExtra};
 
-const WIDTH: u32 = 250;
+const WIDTH: u32 = 350;
 const WIDTHF: f32 = WIDTH as f32;
+const HEIGHT: u32 = 150;
 
 struct View;
 
@@ -40,7 +41,7 @@ pub(crate) fn create() -> Result<Box<dyn PluginView<Params = Params, SharedData 
     clogbox_clap_egui::view(
         GuiSize {
             width: WIDTH,
-            height: 150,
+            height: HEIGHT,
         },
         View,
     )

@@ -50,4 +50,4 @@ def drive(shaper: Shaper, drive: sp.Basic) -> Shaper:
 
 
 def bias(shaper: Shaper, bias: sp.Basic) -> Shaper:
-    return lambda x: shaper(x + bias)
+    return lambda x: shaper(x + bias) - shaper(bias)

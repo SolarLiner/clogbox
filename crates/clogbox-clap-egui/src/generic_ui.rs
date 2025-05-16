@@ -27,12 +27,12 @@ impl<E: ParamId> EguiPluginView for GenericUi<E> {
 }
 
 pub const KNOB_SIZE: f32 = 40.0;
+const SPACING: f32 = 10.0;
 
 pub fn display_with<E: ParamId>(ui: &mut Ui, mut display_fn: impl FnMut(&mut Ui, emath::Rect, E)) {
-    const SPACING: f32 = 10.0;
     let element_width = 2.0 * KNOB_SIZE + SPACING;
     ui.style_mut().spacing.item_spacing.y = SPACING;
-    egui::ScrollArea::new([false, true]).show(ui, |ui| {
+    egui::ScrollArea::new(true).show(ui, |ui| {
         let rect = ui.available_rect_before_wrap();
         let num_columns = (rect.width() / element_width).floor() as usize;
         egui::Grid::new("knobs").num_columns(num_columns).show(ui, |ui| {
@@ -52,7 +52,9 @@ pub fn display_with<E: ParamId>(ui: &mut Ui, mut display_fn: impl FnMut(&mut Ui,
 }
 
 pub fn display<E: ParamId>(ui: &mut Ui) {
-    display_with::<E>(ui, |ui, rect, param| show_knob(ui, rect.width(), param));
+    display_with::<E>(ui, |ui, rect, param| {
+        show_knob(ui, (rect.width() - SPACING) / 2.0, param)
+    });
 }
 
 pub fn show_knob<E: ParamId>(ui: &mut Ui, knob_width: f32, param: E) {

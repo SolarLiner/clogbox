@@ -6,6 +6,8 @@ use nalgebra as na;
 #[cfg(feature = "linalg")]
 use nalgebra::RealField;
 use num_traits::Float;
+#[cfg(feature = "linalg")]
+use num_traits::{NumAssign, Zero};
 use std::ops;
 
 /// Newton-Raphson solver
@@ -77,7 +79,7 @@ impl<T: Copy + na::Scalar + NumAssign + RealField + PartialOrd + Zero> NewtonRap
     {
         for i in 0..self.max_iterations {
             let (fx, inv_j) = function.eval_with_inv_jacobian(value.as_view());
-            let delta = inv_j * fx * self.over_relaxation;
+            let delta = inv_j * fx;
 
             if delta.iter().any(|x| !x.is_finite()) {
                 return SolveResult {

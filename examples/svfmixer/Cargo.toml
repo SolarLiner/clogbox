@@ -17,7 +17,7 @@ clogbox-clap = { workspace = true, features = ["gui"] }
 clogbox-clap-egui.workspace = true
 clogbox-enum.workspace = true
 clogbox-filters.workspace = true
-clogbox-math.workspace = true
+clogbox-math = { workspace = true, features = ["linalg"] }
 clogbox-module.workspace = true
 clogbox-params.workspace = true
 

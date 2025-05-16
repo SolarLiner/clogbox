@@ -19,7 +19,6 @@ impl SvfImpl<f32> for OtaTanh {
     #[inline]
     fn next_sample(svf: &mut Svf<f32, Self>, input: f32) -> SvfSampleOutput<f32> {
         const NR: NewtonRaphson<f32> = NewtonRaphson {
-            over_relaxation: 1.0,
             max_iterations: 500,
             tolerance: 1e-4,
         };

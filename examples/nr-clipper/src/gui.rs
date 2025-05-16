@@ -2,7 +2,7 @@ use crate::dsp;
 use crate::dsp::{Params, NUM_STAGES};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::params::{ParamChangeKind, ParamId};
+use clogbox_clap::params::{ParamChangeEvent, ParamChangeKind, ParamId};
 use clogbox_clap::processor::PluginError;
 use clogbox_clap_egui::components::driven::Driven;
 use clogbox_clap_egui::egui::{emath, Align, Context, Layout};
@@ -35,7 +35,7 @@ impl EguiPluginView for View {
                             Params::NumStages => {
                                 let gui_context = ui.plugin_gui_context::<Params>();
                                 let mut value = gui_context.params[Params::NumStages].get() as u8;
-                                eprintln!("rect: {}x{} around {}", rect.width(), rect.height(), rect.center());
+                                log::debug!("rect: {}x{} around {}", rect.width(), rect.height(), rect.center());
                                 ui.allocate_ui(rect.size(), |ui| {
                                     let response = ui.add(
                                         egui::DragValue::new(&mut value)
@@ -47,16 +47,23 @@ impl EguiPluginView for View {
                                             .range(1..=NUM_STAGES as _),
                                     );
                                     if response.drag_started() {
-                                        gui_context.dsp_notifier.notify(param, ParamChangeKind::GestureBegin);
+                                        gui_context.notifier.notify(ParamChangeEvent {
+                                            id: param,
+                                            kind: ParamChangeKind::GestureBegin,
+                                        });
                                     }
                                     if response.drag_stopped() {
-                                        gui_context.dsp_notifier.notify(param, ParamChangeKind::GestureEnd);
+                                        gui_context.notifier.notify(ParamChangeEvent {
+                                            id: param,
+                                            kind: ParamChangeKind::GestureBegin,
+                                        });
                                     }
                                     if response.changed() {
                                         gui_context.params[Params::NumStages].set(value as f32);
-                                        gui_context
-                                            .dsp_notifier
-                                            .notify(param, ParamChangeKind::ValueChange(value as f32));
+                                        gui_context.notifier.notify(ParamChangeEvent {
+                                            id: param,
+                                            kind: ParamChangeKind::ValueChange(value as f32),
+                                        });
                                     }
                                     ui.set_clip_rect(ui.available_rect_before_wrap());
                                 });

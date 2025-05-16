@@ -1,3 +1,0 @@
-[submodule "submodules/egui-baseview"]
-	path = submodules/egui-baseview
-	url = git@github.com:SolarLiner/egui-baseview.git

@@ -1,6 +1,6 @@
 use crate::GetContextExtra;
 use clogbox_clap::gui::GuiContext;
-use clogbox_clap::params::{ParamChangeKind, ParamId};
+use clogbox_clap::params::{ParamChangeEvent, ParamChangeKind, ParamId};
 use egui::emath::normalized_angle;
 use egui::{Response, Ui, Vec2};
 use std::f32::consts::TAU;
@@ -94,19 +94,26 @@ impl<E: ParamId> egui::Widget for Knob<E> {
 
 impl<E: ParamId> Knob<E> {
     fn gesture_begin(&self) {
-        self.guictx.dsp_notifier.notify(self.id, ParamChangeKind::GestureBegin);
+        self.guictx.notifier.notify(ParamChangeEvent {
+            id: self.id,
+            kind: ParamChangeKind::GestureBegin,
+        });
     }
 
     fn gesture_end(&self) {
-        self.guictx.dsp_notifier.notify(self.id, ParamChangeKind::GestureEnd);
+        self.guictx.notifier.notify(ParamChangeEvent {
+            id: self.id,
+            kind: ParamChangeKind::GestureEnd,
+        });
     }
 
     fn param_changed(&self, normalized: f32) {
         let value = self.id.mapping().denormalize(normalized);
         self.guictx.params.set(self.id, value);
-        self.guictx
-            .dsp_notifier
-            .notify(self.id, ParamChangeKind::ValueChange(value));
+        self.guictx.notifier.notify(ParamChangeEvent {
+            id: self.id,
+            kind: ParamChangeKind::ValueChange(value),
+        });
     }
 }
 

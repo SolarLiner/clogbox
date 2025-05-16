@@ -1,7 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
 #[cfg(feature = "gui")]
 use crate::params::ParamListener;
-use crate::params::{ParamChangeKind, ParamId, ParamIdExt};
+use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt, ParamNotifier};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
@@ -43,10 +43,9 @@ pub struct Processor<'a, P: PluginDsp> {
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
     params: EventStorage<P::ParamsIn, f32>,
+    params_rx: ParamListener<P::ParamsIn>,
     sample_rate: Samplerate,
     tail: Option<NonZeroU32>,
-    #[cfg(feature = "gui")]
-    dsp_listener: ParamListener<P::ParamsIn>,
 }
 
 impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::Plugin>, MainThread<'a, P::Plugin>>
@@ -73,20 +72,22 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
         let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
         let params = EventStorage::with_capacity(512);
-        #[cfg(feature = "gui")]
-        let dsp_listener = main_thread.dsp_listener.take().unwrap();
         dsp.prepare(
             Samplerate::new(audio_config.sample_rate),
             audio_config.max_frames_count as _,
         );
+
+        let (tx, rx) = create_notifier_listener(1024);
+        shared.notifier.add_listener(move |event| {
+            tx.notify(event.id, event.kind);
+        });
         Ok(Self {
             shared,
             dsp,
             audio_in,
             audio_out,
             params,
-            #[cfg(feature = "gui")]
-            dsp_listener,
+            params_rx: rx,
             sample_rate: Samplerate::new(audio_config.sample_rate),
             tail: None,
         })
@@ -155,7 +156,7 @@ impl<P: PluginDsp> Processor<'_, P> {
 
         // Retrieve (and publish to host) params received by the GUI
         #[cfg(feature = "gui")]
-        for event in &mut self.dsp_listener {
+        for event in &mut self.params_rx {
             let clap_id = ClapId::new(event.id.to_usize() as _);
             let result = match event.kind {
                 ParamChangeKind::GestureBegin => events.output.try_push(ParamGestureBeginEvent::new(0, clap_id)),
@@ -166,7 +167,7 @@ impl<P: PluginDsp> Processor<'_, P> {
                         0,
                         clap_id,
                         Pckn::match_all(),
-                        event.id.mapping().normalize(v) as _,
+                        event.id.denormalized_to_clap_value(v),
                         Cookie::empty(),
                     ))
                 }
@@ -182,6 +183,10 @@ impl<P: PluginDsp> Processor<'_, P> {
                 continue;
             };
             self.shared.params.set(param, value);
+            self.shared.notifier.notify(ParamChangeEvent {
+                id: param,
+                kind: ParamChangeKind::ValueChange(value),
+            });
         }
         Ok(())
     }

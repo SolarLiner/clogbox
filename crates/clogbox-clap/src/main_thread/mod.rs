@@ -1,4 +1,5 @@
-use crate::params::ParamIdExt;
+use crate::notifier::Notifier;
+use crate::params::{ParamChangeEvent, ParamIdExt};
 use crate::params::{ParamChangeKind, ParamId, ParamStorage};
 #[cfg(feature = "gui")]
 use crate::params::{ParamListener, ParamNotifier};
@@ -85,19 +86,12 @@ pub struct MainThread<'host, P: Plugin> {
     pub(crate) shared: Shared<P>,
     pub(crate) gui: GuiHandle<P>,
     pub(crate) plugin: P,
-    #[cfg(feature = "gui")]
-    pub(crate) param_notifier: ParamNotifier<P::Params>,
-    #[cfg(feature = "gui")]
-    pub(crate) dsp_listener: Option<ParamListener<P::Params>>,
-    #[cfg(feature = "log")]
     log_extension: Option<log::LogExtension>,
 }
 
 impl<'host, P: Plugin> MainThread<'host, P> {
     pub(crate) fn new(mut host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
         let plugin = P::create(host.shared())?;
-        #[cfg(feature = "gui")]
-        let (notifier, listener) = crate::params::create_notifier_listener(1024);
         #[cfg(feature = "log")]
         let log_extension = log::init(&mut host);
         Ok(Self {
@@ -105,23 +99,9 @@ impl<'host, P: Plugin> MainThread<'host, P> {
             shared: shared.clone(),
             gui: GuiHandle::default(),
             plugin,
-            #[cfg(feature = "gui")]
-            param_notifier: notifier,
-            #[cfg(feature = "gui")]
-            dsp_listener: Some(listener),
             #[cfg(feature = "log")]
             log_extension,
         })
-    }
-
-    #[cfg(feature = "gui")]
-    fn notify_param_change(&mut self, id: P::Params, value: f32) {
-        self.param_notifier.notify(id, ParamChangeKind::ValueChange(value));
-    }
-
-    #[cfg(not(feature = "gui"))]
-    fn notify_param_change(&mut self, _: P::Params, _: f32) {
-        // Do nothing
     }
 }
 
@@ -185,6 +165,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
     }
 
     fn flush(&mut self, events: &InputEvents, _: &mut OutputEvents) {
+        ::log::debug!("MainThread::flush");
         for event in events {
             let Some(event) = event.as_event::<ParamValueEvent>() else {
                 continue;
@@ -196,7 +177,10 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
                 continue;
             };
             self.shared.params.set_clap_value(id, event.value());
-            self.notify_param_change(id, id.clap_value_to_denormalized(event.value()));
+            self.shared.notifier.notify(ParamChangeEvent {
+                id,
+                kind: ParamChangeKind::ValueChange(id.clap_value_to_denormalized(event.value())),
+            });
         }
     }
 }

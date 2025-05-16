@@ -1,5 +1,5 @@
 use crate::main_thread::Plugin;
-use crate::params::{ParamId, ParamNotifier, ParamStorage};
+use crate::params::{ParamChangeEvent, ParamId, ParamNotifier, ParamStorage};
 use crate::shared::Shared;
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
@@ -7,10 +7,11 @@ use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostSharedHandle;
 use std::marker::PhantomData;
 
+use crate::notifier::Notifier;
+use crate::shared;
 pub use raw_window_handle::HasRawWindowHandle;
 
-pub enum GuiEvent<E> {
-    ParamChange(E),
+pub enum GuiEvent {
     Resize(GuiSize),
     SetTitle(String),
     SetScale(f64),
@@ -19,7 +20,7 @@ pub enum GuiEvent<E> {
 #[derive(Clone)]
 pub struct GuiContext<E: ParamId> {
     pub params: ParamStorage<E>,
-    pub dsp_notifier: ParamNotifier<E>,
+    pub notifier: Notifier<ParamChangeEvent<E>>,
 }
 
 pub trait PluginViewHandle {
@@ -35,7 +36,7 @@ pub trait PluginViewHandle {
         None
     }
     fn get_size(&self) -> Option<GuiSize>;
-    fn send_event(&self, event: GuiEvent<Self::Params>) -> Result<(), PluginError>;
+    fn send_event(&self, event: GuiEvent) -> Result<(), PluginError>;
 }
 
 pub trait PluginView {
@@ -71,12 +72,6 @@ impl<P: Plugin> GuiHandle<P> {
         load_data: None,
     };
 
-    pub fn notify_param_change(&self, param: P::Params) {
-        if let Some(instance) = &self.handle {
-            let _ = instance.send_event(GuiEvent::ParamChange(param));
-        }
-    }
-
     pub fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
         if let Some(view) = self.handle.as_deref_mut() {
             view.load(data)?;
@@ -98,12 +93,11 @@ impl<P: Plugin> GuiHandle<P> {
         host_shared_handle: HostSharedHandle,
         window: Window,
         shared: Shared<P>,
-        tx_dsp: ParamNotifier<P::Params>,
     ) -> Result<(), PluginError> {
         log::debug!("Creating GUI instance");
         let context = GuiContext {
             params: shared.params.clone(),
-            dsp_notifier: tx_dsp,
+            notifier: shared.notifier.clone(),
         };
         let mut handle = self
             .view
@@ -184,22 +178,14 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
         log::debug!("[set_parent] <window>");
-        self.gui.create_instance(
-            self.host.shared(),
-            window,
-            self.shared.clone(),
-            self.param_notifier.clone(),
-        )
+        self.gui
+            .create_instance(self.host.shared(), window, self.shared.clone())
     }
 
     fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
         log::debug!("[set_transient] <window>");
-        self.gui.create_instance(
-            self.host.shared(),
-            window,
-            self.shared.clone(),
-            self.param_notifier.clone(),
-        )
+        self.gui
+            .create_instance(self.host.shared(), window, self.shared.clone())
     }
 
     fn suggest_title(&mut self, title: &str) {

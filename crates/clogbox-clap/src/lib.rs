@@ -1,4 +1,5 @@
 use crate::main_thread::{MainThread, Plugin};
+use crate::notifier::Notifier;
 use crate::processor::Processor;
 use crate::shared::{Shared, SharedData};
 use clack_extensions::audio_ports::PluginAudioPorts;
@@ -12,9 +13,12 @@ use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
+
+mod atomic_linked_list;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod main_thread;
+mod notifier;
 pub mod params;
 pub mod processor;
 pub mod shared;
@@ -53,6 +57,7 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
     fn new_shared(host: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
         Ok(SharedData {
             params: Default::default(),
+            notifier: Notifier::new(),
             user_data: P::shared_data(host)?,
         })
     }

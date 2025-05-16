@@ -72,7 +72,7 @@ pub struct EguiHandle<E: ParamId, SharedData> {
     __paramid: PhantomData<E>,
     __shared_data: PhantomData<SharedData>,
     pub handle: WindowHandle,
-    tx: Sender<GuiEvent<E>>,
+    tx: Sender<GuiEvent>,
     current_size: ArcSize,
     egui_context: egui::Context,
 }
@@ -98,8 +98,8 @@ impl<E: ParamId, SharedData> PluginViewHandle for EguiHandle<E, SharedData> {
         Some(self.current_size.get())
     }
 
-    fn send_event(&self, event: GuiEvent<E>) -> Result<(), PluginError> {
-        log::info!("Send event: request repaint");
+    fn send_event(&self, event: GuiEvent) -> Result<(), PluginError> {
+        log::info!("Sending event: request repaint");
         self.egui_context.request_repaint();
         self.tx.send(event).map_err(|err| PluginError::Error(Box::new(err)))
     }
@@ -116,7 +116,7 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
     ) -> Result<Self, PluginError> {
         struct GuiState<E: ParamId> {
             current_size: ArcSize,
-            rx: Receiver<GuiEvent<E>>,
+            rx: Receiver<GuiEvent>,
             instance: Box<dyn EguiPluginView<Params = E>>,
         }
 
@@ -147,8 +147,16 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
                 let egui_context = egui_context.clone();
                 move |ctx, queue, state| {
                     let GuiState { instance, .. } = state;
+                    let context = context.take().unwrap();
+                    context.notifier.add_listener({
+                        let ctx = ctx.clone();
+                        move |event| {
+                            ctx.request_repaint();
+                        }
+                    });
+
                     ctx.data_mut(|data| {
-                        data.insert_temp(gui_context_id(), context.take().unwrap());
+                        data.insert_temp(gui_context_id(), context);
                         data.insert_temp(shared_data_id(), shared_data.take().unwrap());
                     });
                     egui_context.lock().unwrap().replace(ctx.clone());
@@ -165,7 +173,6 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
                             });
                             state.current_size.set(size.width, size.height);
                         }
-                        GuiEvent::ParamChange(_) => ctx.request_repaint(),
                         _ => {}
                     }
                 }

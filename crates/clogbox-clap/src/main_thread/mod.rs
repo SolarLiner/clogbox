@@ -27,6 +27,8 @@ type GuiHandle<E> = std::marker::PhantomData<E>;
 #[cfg(feature = "gui")]
 use super::gui::GuiHandle;
 
+mod log;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
     pub name: &'static str,
@@ -87,13 +89,17 @@ pub struct MainThread<'host, P: Plugin> {
     pub(crate) param_notifier: ParamNotifier<P::Params>,
     #[cfg(feature = "gui")]
     pub(crate) dsp_listener: Option<ParamListener<P::Params>>,
+    #[cfg(feature = "log")]
+    log_extension: Option<log::LogExtension>,
 }
 
 impl<'host, P: Plugin> MainThread<'host, P> {
-    pub(crate) fn new(host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
+    pub(crate) fn new(mut host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
         let plugin = P::create(host.shared())?;
         #[cfg(feature = "gui")]
         let (notifier, listener) = crate::params::create_notifier_listener(1024);
+        #[cfg(feature = "log")]
+        let log_extension = log::init(&mut host);
         Ok(Self {
             host,
             shared: shared.clone(),
@@ -103,6 +109,8 @@ impl<'host, P: Plugin> MainThread<'host, P> {
             param_notifier: notifier,
             #[cfg(feature = "gui")]
             dsp_listener: Some(listener),
+            #[cfg(feature = "log")]
+            log_extension,
         })
     }
 
@@ -234,40 +242,85 @@ impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     }
 }
 
-struct Encode<'a, E: Enum>(&'a ParamStorage<E>);
+struct Encode<'a, E: Enum> {
+    params: &'a ParamStorage<E>,
+    #[cfg(feature = "gui")]
+    gui: Option<serde_json::Value>,
+}
 
 impl<E: Enum> bincode::Encode for Encode<'_, E> {
     fn encode<Enc: Encoder>(&self, encoder: &mut Enc) -> Result<(), EncodeError> {
-        for (e, v) in self.0.read_all_values() {
+        for (e, v) in self.params.read_all_values() {
             bincode::Encode::encode(&e.to_usize(), encoder)?;
             bincode::Encode::encode(&v, encoder)?;
+        }
+        #[cfg(feature = "gui")]
+        {
+            bincode::serde::Compat(&self.gui).encode(encoder)?;
         }
         Ok(())
     }
 }
 
-struct Decode<E: Enum>(EnumMapArray<E, f32>);
+#[cfg(feature = "log")]
+impl<P: Plugin> clack_extensions::timer::PluginTimerImpl for MainThread<'_, P> {
+    fn on_timer(&mut self, timer_id: clack_extensions::timer::TimerId) {
+        if let Some(ext) = &mut self.log_extension {
+            ext.on_timer(self.host.shared(), timer_id);
+        }
+    }
+}
+
+struct Decode<E: Enum> {
+    params: EnumMapArray<E, f32>,
+    #[cfg(feature = "gui")]
+    gui: Option<serde_json::Value>,
+}
 
 impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut values = EnumMapArray::new(|_| 0.0);
+        let mut params = EnumMapArray::new(|_| 0.0);
         for _ in 0..count::<E>() {
             let e = E::from_usize(usize::decode(decoder)?);
-            values[e] = f32::decode(decoder)?;
+            params[e] = f32::decode(decoder)?;
         }
-        Ok(Self(values))
+        #[cfg(feature = "gui")]
+        {
+            let gui = bincode::serde::Compat::<Option<serde_json::Value>>::decode(decoder)?.0;
+            Ok(Self { params, gui })
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            Ok(Self { params })
+        }
     }
 }
 
 impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
     fn save(&mut self, output: &mut OutputStream) -> Result<(), PluginError> {
-        bincode::encode_into_std_write(Encode(&self.shared.params), output, bincode::config::standard())?;
+        bincode::encode_into_std_write(
+            Encode {
+                params: &self.shared.params,
+                #[cfg(feature = "gui")]
+                gui: self.gui.save()?,
+            },
+            output,
+            bincode::config::standard(),
+        )?;
         Ok(())
     }
 
     fn load(&mut self, input: &mut InputStream) -> Result<(), PluginError> {
-        let Decode(values) = bincode::decode_from_std_read(input, bincode::config::standard())?;
-        self.shared.params.store_all_values(values);
+        let Decode {
+            params,
+            #[cfg(feature = "gui")]
+            gui,
+        } = bincode::decode_from_std_read(input, bincode::config::standard())?;
+        self.shared.params.store_all_values(params);
+        #[cfg(feature = "gui")]
+        if let Some(gui) = gui {
+            self.gui.load(gui)?;
+        }
         Ok(())
     }
 }

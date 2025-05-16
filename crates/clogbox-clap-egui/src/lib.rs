@@ -7,11 +7,12 @@ use egui::Id;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use clogbox_clap::main_thread::Plugin;
 pub use egui;
 pub use egui_baseview;
+use serde_json::Value;
 
 pub mod components;
 pub mod generic_ui;
@@ -70,23 +71,42 @@ fn arc_size(width: u32, height: u32) -> ArcSize {
 pub struct EguiHandle<E: ParamId, SharedData> {
     __paramid: PhantomData<E>,
     __shared_data: PhantomData<SharedData>,
+    pub handle: WindowHandle,
     tx: Sender<GuiEvent<E>>,
     current_size: ArcSize,
-    pub handle: WindowHandle,
+    egui_context: egui::Context,
 }
 
 impl<E: ParamId, SharedData> PluginViewHandle for EguiHandle<E, SharedData> {
     type Params = E;
+    fn load(&mut self, data: Value) -> Result<(), PluginError> {
+        self.egui_context.memory_mut(|mem| {
+            *mem = serde_json::from_value(data)?;
+            Ok(())
+        })
+    }
+    fn save(&mut self) -> Result<Option<Value>, PluginError> {
+        self.egui_context.memory(|mem| {
+            Ok(serde_json::to_value(mem).map(Some).unwrap_or_else(|err| {
+                log::error!("Failed to serialize egui memory: {}", err);
+                None
+            }))
+        })
+    }
+
     fn get_size(&self) -> Option<GuiSize> {
         Some(self.current_size.get())
     }
 
     fn send_event(&self, event: GuiEvent<E>) -> Result<(), PluginError> {
+        log::info!("Send event: request repaint");
+        self.egui_context.request_repaint();
         self.tx.send(event).map_err(|err| PluginError::Error(Box::new(err)))
     }
 }
 
 impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, SharedData> {
+    //noinspection RsUnwrap
     fn create(
         window: &dyn HasRawWindowHandle,
         context: GuiContext<E>,
@@ -102,6 +122,7 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
 
         let mut context = Some(context);
         let mut shared_data = Some(shared_data.clone());
+        let egui_context = Arc::new(Mutex::new(None));
         let (tx, rx) = std::sync::mpsc::channel();
         let current_size = arc_size(size.width, size.height);
         let state = GuiState {
@@ -122,13 +143,17 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
             open_options,
             graphics_config,
             state,
-            move |ctx, queue, state| {
-                let GuiState { instance, .. } = state;
-                ctx.data_mut(|data| {
-                    data.insert_temp(gui_context_id(), context.take().unwrap());
-                    data.insert_temp(shared_data_id(), shared_data.take().unwrap());
-                });
-                instance.build(ctx, queue);
+            {
+                let egui_context = egui_context.clone();
+                move |ctx, queue, state| {
+                    let GuiState { instance, .. } = state;
+                    ctx.data_mut(|data| {
+                        data.insert_temp(gui_context_id(), context.take().unwrap());
+                        data.insert_temp(shared_data_id(), shared_data.take().unwrap());
+                    });
+                    egui_context.lock().unwrap().replace(ctx.clone());
+                    instance.build(ctx, queue);
+                }
             },
             |ctx, queue, state| {
                 for event in state.rx.try_iter() {
@@ -153,6 +178,10 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
             handle,
             tx,
             current_size,
+            egui_context: {
+                let mut guard = egui_context.lock().unwrap();
+                guard.take().unwrap()
+            },
         })
     }
 }

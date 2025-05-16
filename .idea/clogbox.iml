@@ -26,6 +26,8 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/fixed-ringbuf/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-utils/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/python/clogbox/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

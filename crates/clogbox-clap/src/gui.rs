@@ -24,6 +24,16 @@ pub struct GuiContext<E: ParamId> {
 
 pub trait PluginViewHandle {
     type Params: ParamId;
+    #[allow(unused_variables)]
+    fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
+        Ok(())
+    }
+    fn save(&mut self) -> Result<Option<serde_json::Value>, PluginError> {
+        Ok(None)
+    }
+    fn get_parent(&self) -> Option<Window> {
+        None
+    }
     fn get_size(&self) -> Option<GuiSize>;
     fn send_event(&self, event: GuiEvent<Self::Params>) -> Result<(), PluginError>;
 }
@@ -44,6 +54,7 @@ pub struct GuiHandle<P: Plugin> {
     __plugin: PhantomData<P>,
     view: Option<Box<dyn PluginView<Params = P::Params, SharedData = P::SharedData>>>,
     handle: Option<Box<dyn PluginViewHandle<Params = P::Params>>>,
+    load_data: Option<serde_json::Value>,
 }
 
 impl<P: Plugin> Default for GuiHandle<P> {
@@ -57,12 +68,29 @@ impl<P: Plugin> GuiHandle<P> {
         __plugin: PhantomData,
         handle: None,
         view: None,
+        load_data: None,
     };
 
     pub fn notify_param_change(&self, param: P::Params) {
         if let Some(instance) = &self.handle {
             let _ = instance.send_event(GuiEvent::ParamChange(param));
         }
+    }
+
+    pub fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
+        if let Some(view) = self.handle.as_deref_mut() {
+            view.load(data)?;
+        } else {
+            self.load_data = Some(data);
+        }
+        Ok(())
+    }
+
+    pub fn save(&mut self) -> Result<Option<serde_json::Value>, PluginError> {
+        let Some(instance) = self.handle.as_deref_mut() else {
+            return Ok(None);
+        };
+        instance.save()
     }
 
     fn create_instance(
@@ -72,17 +100,20 @@ impl<P: Plugin> GuiHandle<P> {
         shared: Shared<P>,
         tx_dsp: ParamNotifier<P::Params>,
     ) -> Result<(), PluginError> {
-        eprintln!("Creating GUI instance");
+        log::debug!("Creating GUI instance");
         let context = GuiContext {
             params: shared.params.clone(),
             dsp_notifier: tx_dsp,
         };
-        self.handle = Some(self.view.as_mut().unwrap().create(
-            &window,
-            host_shared_handle,
-            context,
-            &shared.user_data,
-        )?);
+        let mut handle = self
+            .view
+            .as_mut()
+            .unwrap()
+            .create(&window, host_shared_handle, context, &shared.user_data)?;
+        if let Some(data) = self.load_data.take() {
+            handle.load(data)?;
+        }
+        self.handle = Some(handle);
         Ok(())
     }
 }
@@ -92,19 +123,19 @@ macro_rules! delegate_gui_method {
         let Some(handle) = $self.gui.handle.as_mut() else {
             return $error;
         };
-        eprintln!("Calling GUI method: {}(...)", stringify!($name));
+        log::debug!("Calling GUI method: {}(...)", stringify!($name));
         handle.$name($($arg),*)
     }};
 }
 
 impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     fn is_api_supported(&mut self, gui_config: clap_gui::GuiConfiguration) -> bool {
-        eprintln!("[is_api_supported] {gui_config:?}");
+        log::debug!("[is_api_supported] {gui_config:?}");
         self.get_preferred_api().map_or(false, |api| api == gui_config)
     }
 
     fn get_preferred_api(&mut self) -> Option<clap_gui::GuiConfiguration> {
-        eprintln!("[get_preferred_api]");
+        log::debug!("[get_preferred_api]");
         if cfg!(target_os = "macos") {
             Some(clap_gui::GuiConfiguration {
                 api_type: clap_gui::GuiApiType::COCOA,
@@ -126,7 +157,7 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn create(&mut self, _configuration: clap_gui::GuiConfiguration) -> Result<(), PluginError> {
-        eprintln!("[create]");
+        log::debug!("[create]");
         if self.gui.view.is_none() {
             self.gui.view = Some(self.plugin.view()?);
         }
@@ -134,7 +165,7 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn destroy(&mut self) {
-        eprintln!("[destroy]");
+        log::debug!("[destroy]");
         self.gui.view.take();
         self.gui.handle.take();
     }
@@ -152,7 +183,7 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn set_parent(&mut self, window: Window) -> Result<(), PluginError> {
-        eprintln!("[set_parent] <window>");
+        log::debug!("[set_parent] <window>");
         self.gui.create_instance(
             self.host.shared(),
             window,
@@ -162,7 +193,7 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn set_transient(&mut self, window: Window) -> Result<(), PluginError> {
-        eprintln!("[set_transient] <window>");
+        log::debug!("[set_transient] <window>");
         self.gui.create_instance(
             self.host.shared(),
             window,
@@ -172,7 +203,7 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn suggest_title(&mut self, title: &str) {
-        eprintln!("[suggest_title] {title}");
+        log::debug!("[suggest_title] {title}");
         match delegate_gui_method!(self: send_event(GuiEvent::SetTitle(title.to_string())); ()) {
             Ok(()) => {}
             Err(err) => eprintln!("Error setting title: {err}"),
@@ -180,12 +211,12 @@ impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     }
 
     fn show(&mut self) -> Result<(), PluginError> {
-        eprintln!("[show]");
+        log::debug!("[show]");
         Err(PluginError::Message("Not implemented"))
     }
 
     fn hide(&mut self) -> Result<(), PluginError> {
-        eprintln!("[hide]");
+        log::debug!("[hide]");
         Err(PluginError::Message("Not implemented"))
     }
 }

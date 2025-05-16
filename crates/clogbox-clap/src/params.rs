@@ -353,7 +353,7 @@ pub struct ParamNotifier<E> {
 impl<E> ParamNotifier<E> {
     pub fn notify(&self, id: E, kind: ParamChangeKind) {
         if self.get_producer().try_push(ParamChangeEvent { id, kind }).is_err() {
-            eprintln!("ParamNotifier: ring buffer full");
+            log::debug!("ParamNotifier: ring buffer full");
         }
     }
 
@@ -361,7 +361,7 @@ impl<E> ParamNotifier<E> {
         match self.producer.lock() {
             Ok(p) => p,
             Err(err) => {
-                eprintln!("ParamNotifier: Mutex poisoned, recovering: {err}");
+                log::debug!("ParamNotifier: Mutex poisoned, recovering: {err}");
                 err.into_inner()
             }
         }

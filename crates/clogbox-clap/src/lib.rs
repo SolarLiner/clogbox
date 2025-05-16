@@ -12,7 +12,6 @@ use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
-
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod main_thread;
@@ -23,8 +22,8 @@ pub mod shared;
 pub trait PluginMeta {
     const ID: &'static str;
     const NAME: &'static str;
-    const VERSION: &'static str = "0.0.0";
-    const FEATURES: &'static [&'static CStr] = &[];
+    const VERSION: &'static str;
+    const FEATURES: &'static [&'static CStr];
 }
 
 pub struct PluginEntry<P: Plugin>(PhantomData<P>);

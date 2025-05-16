@@ -16,8 +16,6 @@ use clogbox_enum::{count, enum_iter, Empty, Enum};
 use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
 use clogbox_module::eventbuffer::Timestamped;
 use clogbox_module::{Module, Samplerate};
-#[cfg(feature = "gui")]
-use ringbuf::traits::Consumer;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 
@@ -174,7 +172,7 @@ impl<P: PluginDsp> Processor<'_, P> {
                 }
             };
             if let Err(err) = result {
-                eprintln!("Failed to push event: {}", err);
+                log::debug!("Failed to push event: {}", err);
             }
         }
 

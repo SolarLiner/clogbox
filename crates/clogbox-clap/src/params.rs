@@ -280,7 +280,13 @@ pub trait ParamId: Sync + Enum {
     fn default_value(&self) -> f32;
     fn mapping(&self) -> DynMapping;
     fn value_to_text(&self, f: &mut dyn fmt::Write, denormalized: f32) -> fmt::Result;
-    fn flags(&self) -> ParamInfoFlags;
+
+    fn is_automatable(&self) -> bool {
+        true
+    }
+    fn discrete(&self) -> Option<usize> {
+        None
+    }
 
     fn value_to_string(&self, denormalized: f32) -> Result<String, fmt::Error> {
         let mut buf = String::new();
@@ -288,6 +294,41 @@ pub trait ParamId: Sync + Enum {
         Ok(buf)
     }
 }
+
+pub trait ParamIdExt: ParamId {
+    fn flags(&self) -> ParamInfoFlags {
+        let mut flags = ParamInfoFlags::empty();
+        flags.set(ParamInfoFlags::IS_AUTOMATABLE, self.is_automatable());
+        flags.set(ParamInfoFlags::IS_STEPPED, self.discrete().is_some());
+        flags
+    }
+
+    fn normalized_to_clap_value(&self, normalized: f32) -> f64 {
+        if let Some(num_values) = self.discrete() {
+            normalized as f64 * num_values as f64
+        } else {
+            normalized as f64
+        }
+    }
+
+    fn denormalized_to_clap_value(&self, denormalized: f32) -> f64 {
+        self.normalized_to_clap_value(self.mapping().normalize(denormalized))
+    }
+
+    fn clap_value_to_normalized(&self, clap_value: f64) -> f32 {
+        if let Some(num_values) = self.discrete() {
+            clap_value as f32 / num_values as f32
+        } else {
+            clap_value as f32
+        }
+    }
+
+    fn clap_value_to_denormalized(&self, clap_value: f64) -> f32 {
+        self.mapping().denormalize(self.clap_value_to_normalized(clap_value))
+    }
+}
+
+impl<P: ParamId> ParamIdExt for P {}
 
 #[derive(Debug, Copy, Clone)]
 pub enum ParamChangeKind {
@@ -398,6 +439,14 @@ impl<E: Enum> ParamStorage<E> {
     }
 
     #[inline]
+    pub fn get_clap_value(&self, id: E) -> f64
+    where
+        E: ParamId,
+    {
+        id.normalized_to_clap_value(self.get_normalized(id))
+    }
+
+    #[inline]
     pub fn read_all_values(&self) -> EnumMapArray<E, f32> {
         EnumMapArray::new(|p| self.0[p].get())
     }
@@ -410,6 +459,13 @@ impl<E: Enum> ParamStorage<E> {
     #[inline]
     pub fn set_normalized(&self, id: E, value: f32) {
         self.0[id].set_normalized(value);
+    }
+
+    pub fn set_clap_value(&self, id: E, value: f64)
+    where
+        E: ParamId,
+    {
+        self.set_normalized(id, id.clap_value_to_normalized(value));
     }
 
     pub fn store_all_values(&self, values: EnumMapArray<E, f32>) {
@@ -433,10 +489,6 @@ impl ParamId for Empty {
     }
 
     fn value_to_text(&self, _f: &mut dyn Write, _denormalized: f32) -> fmt::Result {
-        unreachable!()
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
         unreachable!()
     }
 }

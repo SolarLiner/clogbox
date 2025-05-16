@@ -1,3 +1,4 @@
+use crate::params::ParamIdExt;
 use crate::params::{ParamChangeKind, ParamId, ParamStorage};
 #[cfg(feature = "gui")]
 use crate::params::{ParamListener, ParamNotifier};
@@ -125,8 +126,11 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
         let index = param_index as usize;
         if index < count::<P::Params>() {
             let p = P::Params::from_usize(index);
-            let mapping = p.mapping();
-            let range = 0.0..1.0;
+            let range = if let Some(num_values) = p.discrete() {
+                0.0..num_values as _
+            } else {
+                0.0..1.0
+            };
             let name = p.name();
             info.set(&ParamInfo {
                 id: ClapId::new(param_index),
@@ -136,7 +140,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
                 module: b"",
                 min_value: range.start as _,
                 max_value: range.end as _,
-                default_value: mapping.normalize(p.default_value()) as _,
+                default_value: p.denormalized_to_clap_value(p.default_value()),
             });
         }
     }
@@ -144,8 +148,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
     fn get_value(&mut self, param_id: ClapId) -> Option<f64> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
-            let id = P::Params::from_usize(index);
-            Some(self.shared.params.get_normalized(id) as _)
+            Some(self.shared.params.get_clap_value(P::Params::from_usize(index)))
         } else {
             None
         }
@@ -155,8 +158,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
             let param = P::Params::from_usize(index);
-            let mapping = param.mapping();
-            param.value_to_text(writer, mapping.denormalize(value as _))
+            param.value_to_text(writer, param.clap_value_to_denormalized(value))
         } else {
             writer.write_str("ERROR: Invalid parameter index")
         }
@@ -176,17 +178,17 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
 
     fn flush(&mut self, events: &InputEvents, _: &mut OutputEvents) {
         for event in events {
-            if let Some(event) = event.as_event::<ParamValueEvent>() {
-                let id = event.param_id().into_iter().find_map(|id| {
-                    let index = id.get() as usize;
-                    (index < count::<P::Params>()).then(|| P::Params::from_usize(index))
-                });
-                if let Some(id) = id {
-                    let value = event.value() as _;
-                    self.shared.params.set_normalized(id, value);
-                    self.notify_param_change(id, value);
-                }
-            }
+            let Some(event) = event.as_event::<ParamValueEvent>() else {
+                continue;
+            };
+            let Some(id) = event.param_id().and_then(|id| {
+                let index = id.get() as usize;
+                (index < count::<P::Params>()).then(|| P::Params::from_usize(index))
+            }) else {
+                continue;
+            };
+            self.shared.params.set_clap_value(id, event.value());
+            self.notify_param_change(id, id.clap_value_to_denormalized(event.value()));
         }
     }
 }

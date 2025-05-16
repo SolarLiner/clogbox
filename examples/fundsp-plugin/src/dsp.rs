@@ -1,4 +1,4 @@
-use clogbox_clap::params::{linear, polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{linear, polynomial, DynMapping, MappingExt, ParamId};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
@@ -59,10 +59,6 @@ impl ParamId for Params {
             }
             Params::Feedback | Params::DryWet => write!(f, "{:.2} %", 100.0 * denormalized),
         }
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
-        ParamInfoFlags::IS_AUTOMATABLE
     }
 }
 

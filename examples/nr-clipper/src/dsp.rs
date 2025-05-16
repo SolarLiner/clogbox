@@ -1,5 +1,5 @@
 use crate::{gen, SharedData};
-use clogbox_clap::params::{decibel, frequency, int, linear, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{decibel, frequency, int, linear, DynMapping, MappingExt, ParamId};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
@@ -74,10 +74,6 @@ impl ParamId for Params {
                 if denormalized.round() == 1.0 { "" } else { "s" }
             ),
         }
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
-        ParamInfoFlags::IS_AUTOMATABLE
     }
 }
 

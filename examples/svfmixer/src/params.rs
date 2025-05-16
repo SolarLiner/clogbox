@@ -1,6 +1,4 @@
-use clogbox_clap::params::{
-    decibel, enum_, frequency, polynomial_raw, DynMapping, MappingExt, ParamId, ParamInfoFlags,
-};
+use clogbox_clap::params::{decibel, enum_, frequency, polynomial_raw, DynMapping, MappingExt, ParamId};
 use clogbox_enum::Enum;
 use clogbox_filters::svf::FilterType;
 use std::fmt;
@@ -58,9 +56,5 @@ impl ParamId for Param {
                 write!(f, "{}", e.name())
             }
         }
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
-        ParamInfoFlags::IS_AUTOMATABLE
     }
 }

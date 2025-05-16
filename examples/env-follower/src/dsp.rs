@@ -1,6 +1,6 @@
 use crate::SharedData;
 use clogbox_clap::main_thread::Plugin;
-use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
@@ -55,10 +55,6 @@ impl ParamId for Params {
                 }
             }
         }
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
-        ParamInfoFlags::IS_AUTOMATABLE
     }
 }
 

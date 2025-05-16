@@ -1,7 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
 #[cfg(feature = "gui")]
 use crate::params::ParamListener;
-use crate::params::{ParamChangeKind, ParamId};
+use crate::params::{ParamChangeKind, ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
@@ -20,8 +20,6 @@ use clogbox_module::{Module, Samplerate};
 use ringbuf::traits::Consumer;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
-use std::ops;
-use std::ops::DerefMut;
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,
@@ -154,8 +152,7 @@ impl<P: PluginDsp> Processor<'_, P> {
             }) else {
                 continue;
             };
-            let mapping = param.mapping();
-            (*self.params)[param].push(ev.time() as _, mapping.denormalize(ev.value() as _));
+            (*self.params)[param].push(ev.time() as _, param.clap_value_to_denormalized(ev.value()));
         }
 
         // Retrieve (and publish to host) params received by the GUI

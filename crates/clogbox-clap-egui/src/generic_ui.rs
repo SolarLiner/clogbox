@@ -31,7 +31,7 @@ const SPACING: f32 = 10.0;
 
 pub fn display_with<E: ParamId>(ui: &mut Ui, mut display_fn: impl FnMut(&mut Ui, emath::Rect, E)) {
     let element_width = 2.0 * KNOB_SIZE + SPACING;
-    ui.style_mut().spacing.item_spacing.y = SPACING;
+    ui.style_mut().spacing.item_spacing = emath::vec2(SPACING, SPACING);
     egui::ScrollArea::new(true).show(ui, |ui| {
         let rect = ui.available_rect_before_wrap();
         let num_columns = (rect.width() / element_width).floor() as usize;
@@ -52,14 +52,12 @@ pub fn display_with<E: ParamId>(ui: &mut Ui, mut display_fn: impl FnMut(&mut Ui,
 }
 
 pub fn display<E: ParamId>(ui: &mut Ui) {
-    display_with::<E>(ui, |ui, rect, param| {
-        show_knob(ui, (rect.width() - SPACING) / 2.0, param)
-    });
+    display_with::<E>(ui, |ui, rect, param| show_knob(ui, rect.width(), param));
 }
 
-pub fn show_knob<E: ParamId>(ui: &mut Ui, knob_width: f32, param: E) {
+pub fn show_knob<E: ParamId>(ui: &mut Ui, element_width: f32, param: E) {
     let gui_context = ui.plugin_gui_context::<E>();
-    let element_width = 2.0 * knob_width;
+    let knob_width = element_width / 2.0;
     ui.allocate_ui_with_layout(
         emath::vec2(element_width, element_width),
         Layout::top_down(Align::Center),

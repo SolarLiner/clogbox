@@ -33,14 +33,14 @@ impl Plugin for SvfMixer {
         Ok(Self)
     }
 
-    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
+    fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
         Ok(())
     }
 
     fn view(&mut self) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = ()>>, PluginError> {
         clogbox_clap_egui::generic_ui::generic_ui(GuiSize {
-            width: 750,
-            height: 400,
+            width: 500,
+            height: 100,
         })
     }
 }

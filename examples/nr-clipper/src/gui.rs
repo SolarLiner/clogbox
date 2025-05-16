@@ -7,7 +7,7 @@ use clogbox_clap::processor::PluginError;
 use clogbox_clap_egui::components::driven::Driven;
 use clogbox_clap_egui::egui::{emath, Align, Context, Layout};
 use clogbox_clap_egui::egui_baseview::Queue;
-use clogbox_clap_egui::generic_ui::{show_knob, KNOB_SIZE};
+use clogbox_clap_egui::generic_ui::show_knob;
 use clogbox_clap_egui::{components, egui, generic_ui, EguiPluginView, GetContextExtra};
 
 const WINDOW_PADDING: f32 = 10.0;
@@ -61,7 +61,7 @@ impl EguiPluginView for View {
                                     ui.set_clip_rect(ui.available_rect_before_wrap());
                                 });
                             }
-                            _ => show_knob(ui, KNOB_SIZE, param),
+                            _ => show_knob(ui, rect.width(), param),
                         });
                     });
                     ui.allocate_ui_with_layout(emath::vec2(LED_WIDTH, height), Layout::top_down(Align::Center), |ui| {

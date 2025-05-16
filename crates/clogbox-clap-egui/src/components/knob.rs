@@ -34,7 +34,7 @@ impl<E: ParamId> egui::Widget for Knob<E> {
     fn ui(mut self, ui: &mut Ui) -> Response {
         let knob_size = Vec2::splat(self.knob_size);
 
-        let (rect, mut response) = ui.allocate_exact_size(knob_size, egui::Sense::drag());
+        let (rect, mut response) = ui.allocate_exact_size(knob_size, egui::Sense::click_and_drag());
         let visuals = ui.style().interact(&response);
 
         let side_length = rect.width().min(rect.height());
@@ -51,13 +51,29 @@ impl<E: ParamId> egui::Widget for Knob<E> {
         let end = rect.center() + 0.45 * side_length * dir;
         ui.painter().line_segment([start, end], visuals.fg_stroke);
 
+        if response.clicked() {
+            self.gesture_begin();
+            self.gesture_end();
+        }
+        if response.double_clicked() {
+            let default_value = self.id.default_value();
+            self.cur_value_normalized = self.id.mapping().normalize(default_value);
+            response.mark_changed();
+        }
+
         if response.drag_started() {
             self.gesture_begin();
         }
         if response.dragged() {
             let delta = response.drag_delta().y;
+            let shift_pressed = ui.input(|input| input.modifiers.shift);
             if delta.abs() > 1e-4 {
-                let step = -0.005;
+                const DEFAULT_STEP: f32 = -0.005;
+                let step = if shift_pressed {
+                    0.01 * DEFAULT_STEP
+                } else {
+                    DEFAULT_STEP
+                };
                 let new_value = self.cur_value_normalized + delta * step;
                 let new_value = new_value.clamp(0.0, 1.0);
                 self.cur_value_normalized = new_value;

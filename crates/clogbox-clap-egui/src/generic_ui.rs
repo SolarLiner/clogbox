@@ -32,22 +32,20 @@ const SPACING: f32 = 10.0;
 pub fn display_with<E: ParamId>(ui: &mut Ui, mut display_fn: impl FnMut(&mut Ui, emath::Rect, E)) {
     let element_width = 2.0 * KNOB_SIZE + SPACING;
     ui.style_mut().spacing.item_spacing = emath::vec2(SPACING, SPACING);
-    egui::ScrollArea::new(true).show(ui, |ui| {
-        let rect = ui.available_rect_before_wrap();
-        let num_columns = (rect.width() / element_width).floor() as usize;
-        egui::Grid::new("knobs").num_columns(num_columns).show(ui, |ui| {
-            for (i, param) in enum_iter::<E>().enumerate() {
-                let rect = {
-                    let mut r = ui.available_rect_before_wrap();
-                    r.set_width(element_width);
-                    r
-                };
-                display_fn(ui, rect, param);
-                if i % num_columns == num_columns - 1 {
-                    ui.end_row();
-                }
+    let rect = ui.available_rect_before_wrap();
+    let num_columns = (rect.width() / element_width).floor() as usize;
+    egui::Grid::new("knobs").num_columns(num_columns).show(ui, |ui| {
+        for (i, param) in enum_iter::<E>().enumerate() {
+            let rect = {
+                let mut r = ui.available_rect_before_wrap();
+                r.set_width(element_width);
+                r
+            };
+            display_fn(ui, rect, param);
+            if i % num_columns == num_columns - 1 {
+                ui.end_row();
             }
-        });
+        }
     });
 }
 

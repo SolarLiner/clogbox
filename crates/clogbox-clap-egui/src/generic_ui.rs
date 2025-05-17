@@ -2,10 +2,10 @@ use crate::components::Knob;
 use crate::{EguiPluginView, GetContextExtra};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::params::ParamId;
+use clogbox_clap::params::{ParamChangeEvent, ParamChangeKind, ParamId};
 use clogbox_clap::processor::PluginError;
 use clogbox_enum::enum_iter;
-use egui::{emath, Align, Layout, Ui};
+use egui::{emath, Align, ComboBox, Layout, Ui};
 use std::marker::PhantomData;
 
 pub fn generic_ui<E: ParamId, SharedData: 'static + Send + Sync + Clone>(
@@ -54,20 +54,63 @@ pub fn display<E: ParamId>(ui: &mut Ui) {
 }
 
 pub fn show_knob<E: ParamId>(ui: &mut Ui, element_width: f32, param: E) {
-    let gui_context = ui.plugin_gui_context::<E>();
     let knob_width = element_width / 2.0;
     ui.allocate_ui_with_layout(
         emath::vec2(element_width, element_width),
-        Layout::top_down(Align::Center),
+        Layout::top_down(Align::Center).with_cross_align(Align::Center),
         |ui| {
             ui.set_min_width(element_width);
-            ui.add(Knob::new(ui.ctx(), param).with_knob_size(knob_width));
-            let value = gui_context.params[param].get();
-            ui.label(format!(
-                "{}: {}",
-                param.name(),
-                param.value_to_string(value).unwrap_or_else(|_| String::from("<error>"))
-            ))
+            if let Some(num_values) = param.discrete() {
+                discrete_knob(ui, param, num_values);
+            } else {
+                continuous_knob(ui, param, knob_width);
+            }
         },
     );
+}
+
+fn continuous_knob<E: ParamId>(ui: &mut Ui, param: E, knob_width: f32) {
+    ui.add(Knob::new(ui.ctx(), param).with_knob_size(knob_width));
+    let value = ui.plugin_gui_context::<E>().params[param].get();
+    ui.label(format!(
+        "{}: {}",
+        param.name(),
+        param.value_to_string(value).unwrap_or_else(|_| String::from("<error>"))
+    ));
+}
+
+fn discrete_knob<E: ParamId>(ui: &mut Ui, param: E, num_values: usize) {
+    let valuef = ui.plugin_gui_context::<E>().params[param].get();
+    let mut value = valuef.round() as usize;
+    let size = ui.available_size_before_wrap();
+    let response =
+        ComboBox::new(param.name(), "")
+            .width(size.x)
+            .truncate()
+            .show_index(ui, &mut value, num_values, |i| {
+                param
+                    .value_to_string(i as _)
+                    .unwrap_or_else(|_| String::from("<error>"))
+            });
+
+    let gui_context = ui.plugin_gui_context::<E>();
+    if response.drag_started() {
+        gui_context.notifier.notify(ParamChangeEvent {
+            id: param,
+            kind: ParamChangeKind::GestureBegin,
+        });
+    }
+    if response.changed() {
+        gui_context.params[param].set(value as _);
+        gui_context.notifier.notify(ParamChangeEvent {
+            id: param,
+            kind: ParamChangeKind::ValueChange(value as _),
+        });
+    }
+    if response.drag_stopped() {
+        gui_context.notifier.notify(ParamChangeEvent {
+            id: param,
+            kind: ParamChangeKind::GestureEnd,
+        });
+    }
 }

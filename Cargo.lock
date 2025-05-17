@@ -2456,6 +2456,7 @@ dependencies = [
  "clogbox-math",
  "clogbox-module",
  "clogbox-params",
+ "egui_plot",
  "nalgebra",
  "num-traits",
 ]

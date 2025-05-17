@@ -1,8 +1,8 @@
 mod dsp;
 mod gen;
+mod gui;
 mod params;
 
-use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
@@ -38,10 +38,7 @@ impl Plugin for SvfMixer {
     }
 
     fn view(&mut self) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = ()>>, PluginError> {
-        clogbox_clap_egui::generic_ui::generic_ui(GuiSize {
-            width: 500,
-            height: 100,
-        })
+        gui::view()
     }
 }
 

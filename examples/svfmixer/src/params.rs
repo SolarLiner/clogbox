@@ -1,5 +1,5 @@
 use clogbox_clap::params::{decibel, enum_, frequency, polynomial_raw, DynMapping, MappingExt, ParamId};
-use clogbox_enum::Enum;
+use clogbox_enum::{count, Enum};
 use clogbox_filters::svf::FilterType;
 use std::fmt;
 use std::fmt::Write;
@@ -55,6 +55,14 @@ impl ParamId for Param {
                 let e = FilterType::from_usize(denormalized as _);
                 write!(f, "{}", e.name())
             }
+        }
+    }
+
+    fn discrete(&self) -> Option<usize> {
+        if matches!(self, Self::FilterType) {
+            Some(count::<FilterType>())
+        } else {
+            None
         }
     }
 }

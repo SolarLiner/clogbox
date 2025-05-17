@@ -451,6 +451,10 @@ impl<E: Enum> ParamStorage<E> {
         EnumMapArray::new(|p| self.0[p].get())
     }
 
+    pub fn get_enum<E2: Enum>(&self, id: E) -> E2 {
+        E2::from_usize(self.get(id).round() as _)
+    }
+
     #[inline]
     pub fn set(&self, id: E, value: f32) {
         self.0[id].set(value);
@@ -466,6 +470,10 @@ impl<E: Enum> ParamStorage<E> {
         E: ParamId,
     {
         self.set_normalized(id, id.clap_value_to_normalized(value));
+    }
+
+    pub fn set_enum<E2: Enum>(&self, id: E, value: E2) {
+        self.set_normalized(id, value.to_usize() as f32 / count::<E2>() as f32);
     }
 
     pub fn store_all_values(&self, values: EnumMapArray<E, f32>) {

@@ -1,15 +1,16 @@
 use crate::main_thread::Plugin;
+use crate::notifier::Notifier;
 use crate::params::{ParamChangeEvent, ParamId, ParamNotifier, ParamStorage};
+use crate::shared;
 use crate::shared::Shared;
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::HostSharedHandle;
-use std::marker::PhantomData;
-
-use crate::notifier::Notifier;
-use crate::shared;
 pub use raw_window_handle::HasRawWindowHandle;
+use std::marker::PhantomData;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
 pub enum GuiEvent {
     Resize(GuiSize),
@@ -21,6 +22,14 @@ pub enum GuiEvent {
 pub struct GuiContext<E: ParamId> {
     pub params: ParamStorage<E>,
     pub notifier: Notifier<ParamChangeEvent<E>>,
+    sample_rate: Arc<AtomicU64>,
+}
+
+impl<E: ParamId> GuiContext<E> {
+    pub fn sample_rate(&self) -> f64 {
+        let u = self.sample_rate.load(std::sync::atomic::Ordering::Relaxed);
+        f64::from_bits(u)
+    }
 }
 
 pub trait PluginViewHandle {
@@ -98,6 +107,7 @@ impl<P: Plugin> GuiHandle<P> {
         let context = GuiContext {
             params: shared.params.clone(),
             notifier: shared.notifier.clone(),
+            sample_rate: shared.sample_rate.clone(),
         };
         let mut handle = self
             .view

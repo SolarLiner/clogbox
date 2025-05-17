@@ -13,6 +13,8 @@ use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
 mod atomic_linked_list;
 #[cfg(feature = "gui")]
@@ -59,6 +61,7 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
             params: Default::default(),
             notifier: Notifier::new(),
             user_data: P::shared_data(host)?,
+            sample_rate: Arc::new(AtomicU64::new(0)),
         })
     }
 

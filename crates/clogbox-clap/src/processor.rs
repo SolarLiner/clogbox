@@ -1,7 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
 #[cfg(feature = "gui")]
 use crate::params::ParamListener;
-use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt, ParamNotifier};
+use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
@@ -18,6 +18,7 @@ use clogbox_module::eventbuffer::Timestamped;
 use clogbox_module::{Module, Samplerate};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
+use std::sync::atomic::Ordering;
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,
@@ -58,6 +59,8 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
         let params = shared.params.read_all_values();
+        let sample_rate = Samplerate::new(audio_config.sample_rate);
+        let block_size = audio_config.max_frames_count as usize;
         let audio_config = PluginAudioConfiguration {
             min_frames_count: 1,
             ..audio_config
@@ -69,13 +72,14 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             audio_config,
         };
         let mut dsp = P::create(context, &shared.user_data);
-        let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
-        let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
+        let audio_in = AudioStorage::default(block_size);
+        let audio_out = AudioStorage::default(block_size);
         let params = EventStorage::with_capacity(512);
-        dsp.prepare(
-            Samplerate::new(audio_config.sample_rate),
-            audio_config.max_frames_count as _,
-        );
+        dsp.prepare(sample_rate, audio_config.max_frames_count as _);
+
+        shared
+            .sample_rate
+            .store(sample_rate.value().to_bits(), Ordering::Relaxed);
 
         let (tx, rx) = create_notifier_listener(1024);
         shared.notifier.add_listener(move |event| {
@@ -88,7 +92,7 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             audio_out,
             params,
             params_rx: rx,
-            sample_rate: Samplerate::new(audio_config.sample_rate),
+            sample_rate,
             tail: None,
         })
     }

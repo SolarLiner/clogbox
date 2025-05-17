@@ -1,9 +1,10 @@
 use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
-use clogbox_clap::{export_plugin, PluginMeta};
+use clogbox_clap::{export_plugin, features, PluginMeta};
 use clogbox_module::Module;
 use clogbox_utils::AtomicF32;
+use std::ffi::CStr;
 use std::sync::Arc;
 
 mod dsp;
@@ -21,6 +22,13 @@ pub struct NrClipper;
 impl PluginMeta for NrClipper {
     const ID: &'static str = "dev.solarliner.clogbox.nr-clipper";
     const NAME: &'static str = "NR Clipper";
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    const FEATURES: &'static [&'static CStr] = &[
+        features::STEREO,
+        features::AUDIO_EFFECT,
+        features::DISTORTION,
+        features::FILTER,
+    ];
 }
 
 impl Plugin for NrClipper {

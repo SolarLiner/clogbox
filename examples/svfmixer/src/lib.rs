@@ -16,7 +16,7 @@ impl PluginMeta for SvfMixer {
     const ID: &'static str = "dev.solarliner.clogbox.SvfMixer";
     const NAME: &'static str = "SVF Mixer";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const FEATURES: &'static [&'static CStr] = &[features::AUDIO_EFFECT, features::STEREO, features::FILTER];
+    const FEATURES: &'static [&'static CStr] = &[features::STEREO, features::AUDIO_EFFECT, features::FILTER];
 }
 
 impl Plugin for SvfMixer {

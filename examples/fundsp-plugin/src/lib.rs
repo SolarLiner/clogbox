@@ -1,6 +1,9 @@
+use clogbox_clap::gui::clap_gui::GuiSize;
+use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap_egui::generic_ui;
 use clogbox_enum::{seq, Sequential};
 use clogbox_module::Module;
 use fundsp::prelude::U2;
@@ -29,11 +32,26 @@ impl PluginMeta for FundspPlugin {
 impl Plugin for FundspPlugin {
     type Dsp = dsp::Dsp;
     type Params = dsp::Params;
+    type SharedData = ();
+
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[port_layout()];
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[port_layout()];
 
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)
+    }
+
+    fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
+        Ok(())
+    }
+
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
+        generic_ui(GuiSize {
+            width: 400,
+            height: 250,
+        })
     }
 }
 

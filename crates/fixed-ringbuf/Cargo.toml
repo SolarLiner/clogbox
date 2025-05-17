@@ -1,0 +1,18 @@
+[package]
+name = "fixed-ringbuf"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords = ["thread-safe", "ring-buffer", "circular-buffer"]
+
+[dependencies]
+crossbeam-utils = "0.8.21"
+thread_local = "1.1"
+zerocopy.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

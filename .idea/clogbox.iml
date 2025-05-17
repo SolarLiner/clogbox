@@ -2,7 +2,7 @@
 <module type="EMPTY_MODULE" version="4">
   <component name="FacetManager">
     <facet type="Python" name="Python facet">
-      <configuration sdkName="uv (clogbox)" />
+      <configuration sdkName="uv (clogbox) (2)" />
     </facet>
   </component>
   <component name="NewModuleRootManager">
@@ -21,12 +21,18 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-module/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/fundsp-plugin/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/nr-clipper/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-clap-egui/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/env-follower/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/fixed-ringbuf/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-utils/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/python/clogbox/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="uv (clogbox) interpreter library" level="application" />
+    <orderEntry type="library" name="uv (clogbox) (2) interpreter library" level="application" />
   </component>
 </module>

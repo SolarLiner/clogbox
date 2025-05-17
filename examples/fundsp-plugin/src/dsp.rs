@@ -1,4 +1,4 @@
-use clogbox_clap::params::{linear, polynomial, DynMapping, MappingExt, ParamId, ParamInfoFlags};
+use clogbox_clap::params::{linear, polynomial, DynMapping, MappingExt, ParamId};
 use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
@@ -37,7 +37,7 @@ impl ParamId for Params {
     }
 
     fn mapping(&self) -> DynMapping {
-        static DELAYTIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.01, 10.0, 2.5).into_dyn());
+        static DELAYTIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.01, 10.0, 1.0).into_dyn());
         static FEEDBACK: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.0, 1.5, 0.5).into_dyn());
         static DRYWET: LazyLock<DynMapping> = LazyLock::new(|| linear(0.0, 1.0).into_dyn());
 
@@ -60,10 +60,6 @@ impl ParamId for Params {
             Params::Feedback | Params::DryWet => write!(f, "{:.2} %", 100.0 * denormalized),
         }
     }
-
-    fn flags(&self) -> ParamInfoFlags {
-        ParamInfoFlags::IS_AUTOMATABLE
-    }
 }
 
 module_wrapper!(Dsp: SampleModuleWrapper<FundspModule<Unit<U2, U2>, Params>>);
@@ -71,14 +67,14 @@ module_wrapper!(Dsp: SampleModuleWrapper<FundspModule<Unit<U2, U2>, Params>>);
 impl PluginDsp for Dsp {
     type Plugin = super::FundspPlugin;
 
-    fn create(context: PluginCreateContext<Self>) -> Self {
+    fn create(context: PluginCreateContext<Self>, _: &()) -> Self {
         let default = EnumMapArray::new(|p: Params| p.default_value());
         let dsp = FundspModule::create(|mut params| {
             for (param, shared) in params.iter_mut() {
                 shared.set_value(default[param])
             }
             let delay = || {
-                (pass() | var(&params[Params::DelayTime]))
+                (pass() | (var(&params[Params::DelayTime]) >> lowpole_hz(10.0)))
                     >> (tap(0.0, 10.0) * var(&params[Params::Feedback]))
                     >> shape(Tanh(1.0))
             };

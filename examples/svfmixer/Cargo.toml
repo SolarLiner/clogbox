@@ -13,13 +13,15 @@ keywords.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-clogbox-clap.workspace = true
+clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-clap-egui.workspace = true
 clogbox-enum.workspace = true
 clogbox-filters.workspace = true
-clogbox-math.workspace = true
+clogbox-math = { workspace = true, features = ["linalg"] }
 clogbox-module.workspace = true
 clogbox-params.workspace = true
 
 az.workspace = true
+egui_plot = "0.32.1"
 nalgebra.workspace = true
 num-traits.workspace = true

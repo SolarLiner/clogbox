@@ -1,4 +1,8 @@
-use crate::params::{ParamId, ParamStorage};
+use crate::notifier::Notifier;
+use crate::params::{ParamChangeEvent, ParamIdExt};
+use crate::params::{ParamChangeKind, ParamId, ParamStorage};
+#[cfg(feature = "gui")]
+use crate::params::{ParamListener, ParamNotifier};
 use crate::processor::PluginDsp;
 use crate::shared::Shared;
 use bincode::de::Decoder;
@@ -17,6 +21,14 @@ use clogbox_enum::{count, Enum, Mono, Stereo};
 use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
+
+#[cfg(not(feature = "gui"))]
+type GuiHandle<E> = std::marker::PhantomData<E>;
+
+#[cfg(feature = "gui")]
+use super::gui::GuiHandle;
+
+mod log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PortLayout<E: 'static> {
@@ -54,29 +66,46 @@ impl PortLayout<Stereo> {
 pub trait Plugin: 'static + Sized {
     type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
     type Params: ParamId;
+    type SharedData: 'static + Clone + Send + Sync;
 
     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
+
+    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
+
+    #[cfg(feature = "gui")]
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
 }
 
-pub struct MainThread<P: Plugin> {
-    shared: Shared<P::Params>,
-    pub(crate) processor_main_thread: P,
+pub struct MainThread<'host, P: Plugin> {
+    pub(crate) host: HostMainThreadHandle<'host>,
+    pub(crate) shared: Shared<P>,
+    pub(crate) gui: GuiHandle<P>,
+    pub(crate) plugin: P,
+    log_extension: Option<log::LogExtension>,
 }
 
-impl<P: Plugin> MainThread<P> {
-    pub(crate) fn new(host: HostMainThreadHandle, shared: &Shared<P::Params>) -> Result<Self, PluginError> {
-        let processor_main_thread = P::create(host.shared())?;
+impl<'host, P: Plugin> MainThread<'host, P> {
+    pub(crate) fn new(mut host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
+        let plugin = P::create(host.shared())?;
+        #[cfg(feature = "log")]
+        let log_extension = log::init(&mut host);
         Ok(Self {
+            host,
             shared: shared.clone(),
-            processor_main_thread,
+            gui: GuiHandle::default(),
+            plugin,
+            #[cfg(feature = "log")]
+            log_extension,
         })
     }
 }
 
-impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
+impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
     fn count(&mut self) -> u32 {
         count::<P::Params>() as _
     }
@@ -85,8 +114,11 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_index as usize;
         if index < count::<P::Params>() {
             let p = P::Params::from_usize(index);
-            let mapping = p.mapping();
-            let range = 0.0..1.0;
+            let range = if let Some(num_values) = p.discrete() {
+                0.0..num_values as _
+            } else {
+                0.0..1.0
+            };
             let name = p.name();
             info.set(&ParamInfo {
                 id: ClapId::new(param_index),
@@ -96,7 +128,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
                 module: b"",
                 min_value: range.start as _,
                 max_value: range.end as _,
-                default_value: mapping.normalize(p.default_value()) as _,
+                default_value: p.denormalized_to_clap_value(p.default_value()),
             });
         }
     }
@@ -104,8 +136,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
     fn get_value(&mut self, param_id: ClapId) -> Option<f64> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
-            let id = P::Params::from_usize(index);
-            Some(self.shared.params.get_normalized(id) as _)
+            Some(self.shared.params.get_clap_value(P::Params::from_usize(index)))
         } else {
             None
         }
@@ -115,8 +146,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
         let index = param_id.get() as usize;
         if index < count::<P::Params>() {
             let param = P::Params::from_usize(index);
-            let mapping = param.mapping();
-            param.value_to_text(writer, mapping.denormalize(value as _))
+            param.value_to_text(writer, param.clap_value_to_denormalized(value))
         } else {
             writer.write_str("ERROR: Invalid parameter index")
         }
@@ -135,24 +165,29 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<P> {
     }
 
     fn flush(&mut self, events: &InputEvents, _: &mut OutputEvents) {
+        ::log::debug!("MainThread::flush");
         for event in events {
-            if let Some(event) = event.as_event::<ParamValueEvent>() {
-                let id = event.param_id().into_iter().find_map(|id| {
-                    let index = id.get() as usize;
-                    (index < count::<P::Params>()).then(|| P::Params::from_usize(index))
-                });
-                if let Some(id) = id {
-                    let value = event.value() as _;
-                    self.shared.params.set_normalized(id, value);
-                }
-            }
+            let Some(event) = event.as_event::<ParamValueEvent>() else {
+                continue;
+            };
+            let Some(id) = event.param_id().and_then(|id| {
+                let index = id.get() as usize;
+                (index < count::<P::Params>()).then(|| P::Params::from_usize(index))
+            }) else {
+                continue;
+            };
+            self.shared.params.set_clap_value(id, event.value());
+            self.shared.notifier.notify(ParamChangeEvent {
+                id,
+                kind: ParamChangeKind::ValueChange(id.clap_value_to_denormalized(event.value())),
+            });
         }
     }
 }
 
-impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P::Params>> for MainThread<P> {}
+impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P>> for MainThread<'a, P> {}
 
-impl<P: Plugin> PluginAudioPortsImpl for MainThread<P> {
+impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     fn count(&mut self, is_input: bool) -> u32 {
         if is_input {
             P::INPUT_LAYOUT.len() as _
@@ -191,40 +226,85 @@ impl<P: Plugin> PluginAudioPortsImpl for MainThread<P> {
     }
 }
 
-struct Encode<'a, E: Enum>(&'a ParamStorage<E>);
+struct Encode<'a, E: Enum> {
+    params: &'a ParamStorage<E>,
+    #[cfg(feature = "gui")]
+    gui: Option<serde_json::Value>,
+}
 
 impl<E: Enum> bincode::Encode for Encode<'_, E> {
     fn encode<Enc: Encoder>(&self, encoder: &mut Enc) -> Result<(), EncodeError> {
-        for (e, v) in self.0.read_all_values() {
+        for (e, v) in self.params.read_all_values() {
             bincode::Encode::encode(&e.to_usize(), encoder)?;
             bincode::Encode::encode(&v, encoder)?;
+        }
+        #[cfg(feature = "gui")]
+        {
+            bincode::serde::Compat(&self.gui).encode(encoder)?;
         }
         Ok(())
     }
 }
 
-struct Decode<E: Enum>(EnumMapArray<E, f32>);
-
-impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
-    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut values = EnumMapArray::new(|_| 0.0);
-        for _ in 0..count::<E>() {
-            let e = E::from_usize(usize::decode(decoder)?);
-            values[e] = f32::decode(decoder)?;
+#[cfg(feature = "log")]
+impl<P: Plugin> clack_extensions::timer::PluginTimerImpl for MainThread<'_, P> {
+    fn on_timer(&mut self, timer_id: clack_extensions::timer::TimerId) {
+        if let Some(ext) = &mut self.log_extension {
+            ext.on_timer(self.host.shared(), timer_id);
         }
-        Ok(Self(values))
     }
 }
 
-impl<P: Plugin> PluginStateImpl for MainThread<P> {
+struct Decode<E: Enum> {
+    params: EnumMapArray<E, f32>,
+    #[cfg(feature = "gui")]
+    gui: Option<serde_json::Value>,
+}
+
+impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
+    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let mut params = EnumMapArray::new(|_| 0.0);
+        for _ in 0..count::<E>() {
+            let e = E::from_usize(usize::decode(decoder)?);
+            params[e] = f32::decode(decoder)?;
+        }
+        #[cfg(feature = "gui")]
+        {
+            let gui = bincode::serde::Compat::<Option<serde_json::Value>>::decode(decoder)?.0;
+            Ok(Self { params, gui })
+        }
+        #[cfg(not(feature = "gui"))]
+        {
+            Ok(Self { params })
+        }
+    }
+}
+
+impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
     fn save(&mut self, output: &mut OutputStream) -> Result<(), PluginError> {
-        bincode::encode_into_std_write(Encode(&self.shared.params), output, bincode::config::standard())?;
+        bincode::encode_into_std_write(
+            Encode {
+                params: &self.shared.params,
+                #[cfg(feature = "gui")]
+                gui: self.gui.save()?,
+            },
+            output,
+            bincode::config::standard(),
+        )?;
         Ok(())
     }
 
     fn load(&mut self, input: &mut InputStream) -> Result<(), PluginError> {
-        let Decode(values) = bincode::decode_from_std_read(input, bincode::config::standard())?;
-        self.shared.params.store_all_values(values);
+        let Decode {
+            params,
+            #[cfg(feature = "gui")]
+            gui,
+        } = bincode::decode_from_std_read(input, bincode::config::standard())?;
+        self.shared.params.store_all_values(params);
+        #[cfg(feature = "gui")]
+        if let Some(gui) = gui {
+            self.gui.load(gui)?;
+        }
         Ok(())
     }
 }

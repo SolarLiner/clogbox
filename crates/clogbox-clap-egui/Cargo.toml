@@ -1,0 +1,21 @@
+[package]
+name = "clogbox-clap-egui"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-enum.workspace = true
+clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-utils.workspace = true
+log.workspace = true
+serde_json.workspace = true
+
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
+egui = { version = "0.31", features = ["persistence", "serde"] }
+egui-baseview = { git = "https://github.com/BillyDM/egui-baseview.git", branch = "main" }

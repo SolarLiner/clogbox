@@ -13,7 +13,8 @@ keywords.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-clogbox-clap.workspace = true
+clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-clap-egui.workspace = true
 clogbox-enum.workspace = true
 clogbox-module = { workspace = true, features = ["fundsp"] }
 

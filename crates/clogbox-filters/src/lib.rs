@@ -3,228 +3,159 @@
 //!
 //! This module provides a number of non-linear filters that can be used to modify the
 //! amplitude of audio signals.
-use az::CastFrom;
-use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{Empty, Enum};
-use num_traits::{Float, Num};
-use std::marker::PhantomData;
 
+use az::CastFrom;
+use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clogbox_enum::{Empty, Enum, Mono};
+use clogbox_module::context::StreamContext;
+use clogbox_module::sample::{SampleModule, SampleProcessResult};
+use clogbox_module::{PrepareResult, Samplerate};
+use num_traits::{Float, FloatConst, Num};
+use std::num::NonZeroU32;
+
+pub mod biquad;
+pub mod saturators;
 pub mod svf;
 
-/// A trait representing a saturator that can saturate mono signals.
-pub trait Saturator {
-    /// The type of sample that the saturator works with.
-    type Sample;
-    type Params: Enum;
+pub use saturators::Saturator;
 
-    /// Saturates a single value.
-    ///
-    /// # Parameters
-    ///
-    /// - `value`: The value to be saturated.
-    ///
-    /// # Returns
-    ///
-    /// The saturated value.
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample;
+/// Type of parameters in a [`Multimode`] module.
+#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Enum)]
+pub enum MultimodeParams {
+    /// Cutoff parameter
+    Cutoff,
+}
 
-    fn set_param(&mut self, param: Self::Params, value: f32);
+/// 1-pole multi-mode filter producing a low-pass output.
+///
+/// High-pass can be generated with $y_{hp} = x - y$, and all-pass with $y - y_{hp} = 2 y - x$.
+pub struct Multimode<T> {
+    s: T,
+    cutoff: T,
+    wstep: T,
+    g: T,
+    g1: T,
+}
 
-    /// Saturates a buffer of values in place.
+impl<T: Float + FloatConst> Multimode<T> {
+    /// Create a new [`Multimode`] filter running at the given sample rate with the given cutoff.
     ///
-    /// # Parameters
-    /// - `buffer`: The buffer containing the values to be saturated.
-    #[inline]
-    #[profiling::function]
-    fn saturate_buffer_in_place(&mut self, buffer: &mut [Self::Sample])
-    where
-        Self::Sample: Copy,
-    {
-        for buf in buffer.iter_mut() {
-            *buf = self.saturate(*buf);
+    /// # Arguments
+    ///
+    /// * `samplerate`: Sample rate of the audio signal (Hz)
+    /// * `cutoff`: Cutoff frequency of the filter (Hz)
+    pub fn new(samplerate: T, cutoff: T) -> Self {
+        let wstep = T::TAU() / samplerate;
+        let g = wstep * cutoff;
+        let g1 = g / (T::one() + g);
+        Self {
+            s: T::zero(),
+            cutoff,
+            wstep,
+            g,
+            g1,
         }
     }
 
-    /// Saturates a buffer of values, storing the results in an output buffer.
-    ///
-    /// # Parameters
-    /// - `input`: The input buffer containing the values to be saturated.
-    /// - `output`: The output buffer where the saturated values will be stored.
+    /// Set the sample rate of the signal running through this filter (in Hz).
+    pub fn set_samplerate(&mut self, samplerate: T) {
+        self.wstep = T::TAU() / samplerate;
+        self.g = self.wstep * self.cutoff;
+    }
+}
+
+impl<T: Float> Multimode<T> {
+    /// Set the cutoff frequency of the filter (in Hz).
+    pub fn set_cutoff(&mut self, cutoff: T) {
+        if self.cutoff == cutoff {
+            return;
+        }
+        self.cutoff = cutoff;
+        self.g = self.wstep * self.cutoff;
+        self.g1 = self.g / (T::one() + self.g);
+    }
+
+    /// Set a parameter to this module
+    pub fn set_param(&mut self, _: MultimodeParams, value: T) {
+        self.set_cutoff(value);
+    }
+
+    /// Compute the output sample of an audio signal being filtered through this Multimode filter.
     #[inline]
-    #[profiling::function]
-    fn saturate_buffer(&mut self, input: &[Self::Sample], output: &mut [Self::Sample])
-    where
-        Self::Sample: Copy,
-    {
-        output.copy_from_slice(input);
-        self.saturate_buffer_in_place(output);
+    pub fn next_sample(&mut self, input: T) -> T {
+        let v = (input - self.s) * self.g1;
+        let y = v + self.s;
+        self.s = y + v;
+        y
     }
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SaturatorInputs<P> {
-    AudioInput,
-    Params(P),
-}
-
-/// A "no-op" saturator. This saturator does not modify the input signal.
-#[derive(Debug, Copy, Clone)]
-pub struct Linear<T>(PhantomData<T>);
-
-impl<T> Default for Linear<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> Saturator for Linear<T> {
+impl<T: CastFrom<f64> + Float + FloatConst> SampleModule for Multimode<T> {
     type Sample = T;
+    type AudioIn = Mono;
+    type AudioOut = Mono;
+    type Params = MultimodeParams;
+
+    fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
+        self.set_samplerate(T::cast_from(sample_rate.value()));
+        PrepareResult { latency: 0.0 }
+    }
+
+    fn process(
+        &mut self,
+        _stream_context: &StreamContext,
+        inputs: EnumMapArray<Self::AudioIn, Self::Sample>,
+        params: EnumMapRef<Self::Params, f32>,
+    ) -> SampleProcessResult<Self::AudioOut, Self::Sample> {
+        self.set_cutoff(T::cast_from(params[MultimodeParams::Cutoff] as _));
+        let out = self.next_sample(inputs[Mono]);
+        let output = EnumMapArray::from_std_array([out]);
+        SampleProcessResult {
+            tail: NonZeroU32::new((T::cast_from(5.0) / self.cutoff).to_u32().unwrap_or(0)),
+            output,
+        }
+    }
+}
+
+/// DC Blocker filter running a high-pass filter pre-configured at 7 Hz.
+pub struct DcBlocker<T> {
+    mm: Multimode<T>,
+}
+
+impl<T: CastFrom<f64> + Float + FloatConst> DcBlocker<T> {
+    /// Create a new DC blocker module
+    pub fn new(samplerate: T) -> Self {
+        Self {
+            mm: Multimode::new(samplerate, T::cast_from(7.0)),
+        }
+    }
+
+    /// Compute a single sample of the audio signal running through this module.
+    pub fn next_sample(&mut self, input: T) -> T {
+        let lp = self.mm.next_sample(input);
+        input - lp
+    }
+}
+
+impl<T: CastFrom<f64> + Float + FloatConst> SampleModule for DcBlocker<T> {
+    type Sample = T;
+    type AudioIn = Mono;
+    type AudioOut = Mono;
     type Params = Empty;
 
-    #[inline]
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        value
+    fn prepare(&mut self, sample_rate: Samplerate) -> PrepareResult {
+        self.mm.set_samplerate(T::cast_from(sample_rate.value()));
+        PrepareResult { latency: 0.0 }
     }
 
-    #[inline]
-    fn set_param(&mut self, _param: Self::Params, _value: f32) {}
-}
-
-/// A [`Saturator`] that can use any memoryless function to saturate the signal.
-#[derive(Debug, Copy, Clone)]
-pub struct Memoryless<T, F>(PhantomData<T>, F);
-
-impl<T, F> Memoryless<T, F> {
-    /// Creates a new [`Memoryless`] instance with the provided function.
-    ///
-    /// # Parameters
-    ///
-    /// - `f`: The function to be used by the [`Memoryless`] instance.
-    ///
-    /// # Returns
-    ///
-    /// A new [`Memoryless`] instance.
-    pub const fn new(f: F) -> Memoryless<T, F> {
-        Self(PhantomData, f)
-    }
-}
-
-impl<T: Copy + Send, F: Send + Fn(T) -> T> Saturator for Memoryless<T, F> {
-    type Sample = T;
-    type Params = Empty;
-
-    #[inline]
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        self.1(value)
-    }
-
-    #[inline]
-    fn set_param(&mut self, _param: Self::Params, _value: f32) {}
-}
-
-pub type SimpleSaturator<T> = Memoryless<T, fn(T) -> T>;
-
-/// Creates a new `Memoryless` instance using the hyperbolic tangent function.
-///
-/// # Returns
-///
-/// A new `Memoryless` instance for the `tanh` function.
-pub const fn tanh<T: Float>() -> Memoryless<T, fn(T) -> T> {
-    Memoryless::new(T::tanh)
-}
-
-/// Creates a `Memoryless` instance for the hyperbolic arcsine function.
-///
-/// # Returns
-///
-/// A `Memoryless` instance that uses the `asinh` function.
-pub const fn asinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
-    Memoryless::new(T::asinh)
-}
-
-/// Creates a `Memoryless` instance for the hyperbolic sine function.
-///
-/// # Returns
-///
-/// A `Memoryless` instance that uses the `asinh` function.
-pub const fn sinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
-    Memoryless::new(T::sinh)
-}
-
-/// Creates a `Memoryless` instance that clamps input values between `min` and `max`.
-///
-/// # Parameters
-///
-/// - `min`: The minimum value of the clamp range.
-/// - `max`: The maximum value of the clamp range.
-///
-/// # Returns
-///
-/// A `Memoryless` instance that clamps input values.
-pub fn hard_clip<T: Float>(min: T, max: T) -> Memoryless<T, impl Copy + Fn(T) -> T> {
-    Memoryless::new(move |x: T| x.clamp(min, max))
-}
-
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum DrivenParams<SatParams> {
-    Drive,
-    Inner(SatParams),
-}
-
-#[derive(Debug, Clone)]
-pub struct Driven<Sat: Saturator>
-where
-    DrivenParams<Sat::Params>: Enum,
-{
-    pub saturator: Sat,
-    pub params: EnumMapArray<DrivenParams<Sat::Params>, Sat::Sample>,
-}
-
-impl<Sat: Saturator<Sample: Copy + Num + CastFrom<f32>>> Saturator for Driven<Sat>
-where
-    DrivenParams<Sat::Params>: Enum,
-{
-    type Sample = Sat::Sample;
-    type Params = DrivenParams<Sat::Params>;
-
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        let amp = self.params[DrivenParams::Drive];
-        self.saturator.saturate(amp * value) / amp
-    }
-
-    fn set_param(&mut self, param: Self::Params, value: f32) {
-        self.params[param] = Sat::Sample::cast_from(value);
-    }
-}
-
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum BiasedParams<SatParams> {
-    Bias,
-    Inner(SatParams),
-}
-
-#[derive(Debug, Clone)]
-pub struct Biased<Sat: Saturator>
-where
-    BiasedParams<Sat::Params>: Enum,
-{
-    pub saturator: Sat,
-    pub params: EnumMapArray<BiasedParams<Sat::Params>, Sat::Sample>,
-}
-
-impl<Sat: Saturator<Sample: Copy + Num + CastFrom<f32>>> Saturator for Biased<Sat>
-where
-    BiasedParams<Sat::Params>: Enum,
-{
-    type Sample = Sat::Sample;
-    type Params = BiasedParams<Sat::Params>;
-
-    fn saturate(&mut self, value: Self::Sample) -> Self::Sample {
-        let bias = self.params[BiasedParams::Bias];
-        self.saturator.saturate(value + bias) - bias
-    }
-
-    fn set_param(&mut self, param: Self::Params, value: f32) {
-        self.params[param] = Sat::Sample::cast_from(value);
+    fn process(
+        &mut self,
+        _stream_context: &StreamContext,
+        inputs: EnumMapArray<Self::AudioIn, Self::Sample>,
+        _params: EnumMapRef<Self::Params, f32>,
+    ) -> SampleProcessResult<Self::AudioOut, Self::Sample> {
+        let out = self.next_sample(inputs[Mono]);
+        let output = EnumMapArray::from_std_array([out]);
+        SampleProcessResult { tail: None, output }
     }
 }

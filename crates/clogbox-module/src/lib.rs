@@ -1,14 +1,15 @@
 use crate::eventbuffer::EventSlice;
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
-use std::marker::PhantomData;
+use context::ProcessContext;
 use std::num::NonZeroU32;
-use std::ops;
 
+pub mod context;
 pub mod contrib;
 pub mod r#dyn;
 pub mod eventbuffer;
-mod macros;
+pub mod macros;
+pub mod modules;
 pub mod note;
 pub mod sample;
 
@@ -16,23 +17,6 @@ pub type Samplerate = Recip<f64>;
 pub type ParamSlice = EventSlice<f32>;
 
 pub type NoteSlice = EventSlice<note::NoteEvent>;
-
-#[derive(Debug, Copy, Clone)]
-pub struct StreamContext {
-    pub sample_rate: Samplerate,
-    pub block_size: usize,
-}
-
-pub struct ProcessContext<'a, M: ?Sized + Module> {
-    pub audio_in: &'a dyn ops::Index<M::AudioIn, Output = [M::Sample]>,
-    pub audio_out: &'a mut dyn ops::IndexMut<M::AudioOut, Output = [M::Sample]>,
-    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamSlice>,
-    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamSlice>,
-    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteSlice>,
-    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteSlice>,
-    pub stream_context: &'a StreamContext,
-    pub __phantom: PhantomData<&'a M>,
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct PrepareResult {

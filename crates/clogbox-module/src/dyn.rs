@@ -1,4 +1,5 @@
-use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessContext, ProcessResult, Samplerate, StreamContext};
+use crate::context::{ProcessContext, StreamContext};
+use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::{count, Enum};
 use std::borrow::Cow;
 use std::marker::PhantomData;

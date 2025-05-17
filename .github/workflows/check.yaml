@@ -30,6 +30,8 @@ jobs:
         with:
           command: install
           args: --debug cargo-make
+      - name: Install system dependencies
+        run: sudo apt update && sudo apt install -y libgl-dev libx11-xcb-dev libxcb1-dev
       - name: Run CI linting
         run: cargo make ci-lint
   ruff:

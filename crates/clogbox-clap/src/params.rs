@@ -2,11 +2,14 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Empty, Enum};
 use std::fmt::{Formatter, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, ops};
 
 pub use clack_extensions::params::ParamInfoFlags;
+use clack_plugin::events::io::InputEventBuffer;
 use clogbox_math::{db_to_linear, linear_to_db};
+#[cfg(feature = "gui")]
+use ringbuf::traits::{Consumer, Producer, Split};
 
 /// Mapping from and to a normalized range.
 pub trait Mapping: Send + Sync {
@@ -277,7 +280,132 @@ pub trait ParamId: Sync + Enum {
     fn default_value(&self) -> f32;
     fn mapping(&self) -> DynMapping;
     fn value_to_text(&self, f: &mut dyn fmt::Write, denormalized: f32) -> fmt::Result;
-    fn flags(&self) -> ParamInfoFlags;
+
+    fn is_automatable(&self) -> bool {
+        true
+    }
+    fn discrete(&self) -> Option<usize> {
+        None
+    }
+
+    fn value_to_string(&self, denormalized: f32) -> Result<String, fmt::Error> {
+        let mut buf = String::new();
+        self.value_to_text(&mut buf, denormalized)?;
+        Ok(buf)
+    }
+}
+
+pub trait ParamIdExt: ParamId {
+    fn flags(&self) -> ParamInfoFlags {
+        let mut flags = ParamInfoFlags::empty();
+        flags.set(ParamInfoFlags::IS_AUTOMATABLE, self.is_automatable());
+        flags.set(ParamInfoFlags::IS_STEPPED, self.discrete().is_some());
+        flags
+    }
+
+    fn normalized_to_clap_value(&self, normalized: f32) -> f64 {
+        if let Some(num_values) = self.discrete() {
+            normalized as f64 * num_values as f64
+        } else {
+            normalized as f64
+        }
+    }
+
+    fn denormalized_to_clap_value(&self, denormalized: f32) -> f64 {
+        self.normalized_to_clap_value(self.mapping().normalize(denormalized))
+    }
+
+    fn clap_value_to_normalized(&self, clap_value: f64) -> f32 {
+        if let Some(num_values) = self.discrete() {
+            clap_value as f32 / num_values as f32
+        } else {
+            clap_value as f32
+        }
+    }
+
+    fn clap_value_to_denormalized(&self, clap_value: f64) -> f32 {
+        self.mapping().denormalize(self.clap_value_to_normalized(clap_value))
+    }
+}
+
+impl<P: ParamId> ParamIdExt for P {}
+
+#[derive(Debug, Copy, Clone)]
+pub enum ParamChangeKind {
+    GestureBegin,
+    GestureEnd,
+    ValueChange(f32),
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct ParamChangeEvent<E> {
+    pub id: E,
+    pub kind: ParamChangeKind,
+}
+
+#[cfg(feature = "gui")]
+#[derive(Clone)]
+pub struct ParamNotifier<E> {
+    producer: Arc<Mutex<ringbuf::HeapProd<ParamChangeEvent<E>>>>,
+}
+
+#[cfg(feature = "gui")]
+impl<E> ParamNotifier<E> {
+    pub fn notify(&self, id: E, kind: ParamChangeKind) {
+        if self.get_producer().try_push(ParamChangeEvent { id, kind }).is_err() {
+            log::debug!("ParamNotifier: ring buffer full");
+        }
+    }
+
+    fn get_producer(&self) -> impl '_ + Drop + ops::DerefMut<Target = ringbuf::HeapProd<ParamChangeEvent<E>>> {
+        match self.producer.lock() {
+            Ok(p) => p,
+            Err(err) => {
+                log::debug!("ParamNotifier: Mutex poisoned, recovering: {err}");
+                err.into_inner()
+            }
+        }
+    }
+
+    fn construct(producer: ringbuf::HeapProd<ParamChangeEvent<E>>) -> Self {
+        Self {
+            producer: Arc::new(Mutex::new(producer)),
+        }
+    }
+}
+
+#[cfg(feature = "gui")]
+pub struct ParamListener<E: Enum> {
+    consumer: ringbuf::HeapCons<ParamChangeEvent<E>>,
+    received_values: EnumMapArray<E, f32>,
+}
+
+#[cfg(feature = "gui")]
+impl<'a, E: Enum> Iterator for &'a mut ParamListener<E> {
+    type Item = ParamChangeEvent<E>;
+    fn next(&mut self) -> Option<ParamChangeEvent<E>> {
+        self.consumer.try_pop()
+    }
+}
+
+#[cfg(feature = "gui")]
+impl<E: Enum> ParamListener<E> {
+    pub fn value_of(&self, id: E) -> Option<f32> {
+        Some(self.received_values[id]).filter(|v| !v.is_nan())
+    }
+
+    fn construct(consumer: ringbuf::HeapCons<ParamChangeEvent<E>>) -> Self {
+        Self {
+            consumer,
+            received_values: EnumMapArray::new(|p| f32::NAN),
+        }
+    }
+}
+
+#[cfg(feature = "gui")]
+pub fn create_notifier_listener<E: Enum>(capacity: usize) -> (ParamNotifier<E>, ParamListener<E>) {
+    let (producer, consumer) = ringbuf::HeapRb::new(capacity).split();
+    (ParamNotifier::construct(producer), ParamListener::construct(consumer))
 }
 
 #[derive(Debug, Clone)]
@@ -288,6 +416,14 @@ impl<E: ParamId> Default for ParamStorage<E> {
         Self(Arc::new(EnumMapArray::new(|p: E| {
             ParamValue::new_dyn(p.mapping(), p.default_value())
         })))
+    }
+}
+
+impl<E: ParamId> ops::Index<E> for ParamStorage<E> {
+    type Output = ParamValue;
+
+    fn index(&self, index: E) -> &Self::Output {
+        &self.0[index]
     }
 }
 
@@ -303,8 +439,20 @@ impl<E: Enum> ParamStorage<E> {
     }
 
     #[inline]
+    pub fn get_clap_value(&self, id: E) -> f64
+    where
+        E: ParamId,
+    {
+        id.normalized_to_clap_value(self.get_normalized(id))
+    }
+
+    #[inline]
     pub fn read_all_values(&self) -> EnumMapArray<E, f32> {
         EnumMapArray::new(|p| self.0[p].get())
+    }
+
+    pub fn get_enum<E2: Enum>(&self, id: E) -> E2 {
+        E2::from_usize(self.get(id).round() as _)
     }
 
     #[inline]
@@ -315,6 +463,17 @@ impl<E: Enum> ParamStorage<E> {
     #[inline]
     pub fn set_normalized(&self, id: E, value: f32) {
         self.0[id].set_normalized(value);
+    }
+
+    pub fn set_clap_value(&self, id: E, value: f64)
+    where
+        E: ParamId,
+    {
+        self.set_normalized(id, id.clap_value_to_normalized(value));
+    }
+
+    pub fn set_enum<E2: Enum>(&self, id: E, value: E2) {
+        self.set_normalized(id, value.to_usize() as f32 / count::<E2>() as f32);
     }
 
     pub fn store_all_values(&self, values: EnumMapArray<E, f32>) {
@@ -338,10 +497,6 @@ impl ParamId for Empty {
     }
 
     fn value_to_text(&self, _f: &mut dyn Write, _denormalized: f32) -> fmt::Result {
-        unreachable!()
-    }
-
-    fn flags(&self) -> ParamInfoFlags {
         unreachable!()
     }
 }

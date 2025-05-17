@@ -13,7 +13,13 @@ from pathlib import Path
 import sympy as sp
 
 from clogbox.codegen import generate_differentiable, ClogboxCodegen, codegen_module
-from clogbox.filters import linear_integrator, IntegratorInput, drive
+from clogbox.filters import (
+    linear_integrator,
+    IntegratorInput,
+    drive,
+    bias,
+    hyperbolic_unbounded,
+)
 
 
 def main() -> None:
@@ -21,9 +27,9 @@ def main() -> None:
     dest = this_dir / "src" / "gen.rs"
 
     g, k_drive = sp.symbols("g k_drive", real=True, positive=True)
-    x, u, y, s = sp.symbols("x u y s", real=True)
+    x, u, y, s, k_bias = sp.symbols("x u y s k_bias", real=True)
 
-    sat = drive(sp.asinh, k_drive)
+    sat = bias(drive(hyperbolic_unbounded, k_drive), k_bias)
     eq_y = linear_integrator(IntegratorInput(s, g, x - u))
     eq = sp.Eq(sat(u), eq_y)
     eq_s = linear_integrator(IntegratorInput(y, g, x - u))

@@ -1,20 +1,24 @@
 use crate::main_thread::{MainThread, Plugin};
-use crate::params::ParamId;
+#[cfg(feature = "gui")]
+use crate::params::ParamListener;
+use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
-use clack_plugin::events::event_types::ParamValueEvent;
+use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
 use clack_plugin::host::HostAudioProcessorHandle;
 pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
-use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clack_plugin::utils::Cookie;
+use clogbox_enum::enum_map::EnumMapRef;
 use clogbox_enum::{count, enum_iter, Empty, Enum};
-use clogbox_module::eventbuffer::{EventBuffer, EventSlice, Timestamped};
-use clogbox_module::{Module, ProcessContext, Samplerate, StreamContext};
+use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
+use clogbox_module::eventbuffer::Timestamped;
+use clogbox_module::{Module, Samplerate};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
-use std::ops;
+use std::sync::atomic::Ordering;
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,
@@ -31,104 +35,32 @@ pub trait PluginDsp:
 {
     type Plugin: Plugin<Dsp = Self, Params = Self::ParamsIn>;
 
-    fn create(context: PluginCreateContext<Self>) -> Self;
-}
-
-#[derive(Debug, Clone)]
-struct AudioStorage<E: Enum, T> {
-    storage: EnumMapArray<E, Box<[T]>>,
-}
-
-impl<E: Enum, T> AudioStorage<E, T> {
-    pub fn new(fill: impl Fn(E) -> Box<[T]>) -> Self {
-        Self {
-            storage: EnumMapArray::new(fill),
-        }
-    }
-
-    pub fn default(capacity: usize) -> Self
-    where
-        T: Default,
-    {
-        Self::new(|_| Box::from_iter(std::iter::repeat_with(T::default).take(capacity)))
-    }
-}
-
-impl<E: Enum, T> ops::Index<E> for AudioStorage<E, T> {
-    type Output = [T];
-
-    fn index(&self, index: E) -> &Self::Output {
-        &self.storage[index][..]
-    }
-}
-
-impl<E: Enum, T> ops::IndexMut<E> for AudioStorage<E, T> {
-    fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        &mut self.storage[index][..]
-    }
-}
-
-struct EventStorage<E: Enum, T> {
-    storage: EnumMapArray<E, EventBuffer<T>>,
-}
-
-impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
-    type Output = EventSlice<T>;
-
-    fn index(&self, index: E) -> &Self::Output {
-        self.storage[index].as_slice()
-    }
-}
-
-impl<E: Enum, T> ops::IndexMut<E> for EventStorage<E, T> {
-    fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        self.storage[index].as_mut_slice()
-    }
-}
-
-impl<E: Enum, T> EventStorage<E, T> {
-    pub fn new() -> Self {
-        Self {
-            storage: EnumMapArray::new(|_| EventBuffer::new()),
-        }
-    }
-
-    pub fn with_capacity(capacity: usize) -> Self
-    where
-        T: Default,
-    {
-        Self {
-            storage: EnumMapArray::new(|_| EventBuffer::with_capacity(capacity)),
-        }
-    }
-}
-
-impl<T> EventStorage<Empty, T> {
-    pub const fn empty() -> Self {
-        Self {
-            storage: EnumMapArray::CONST_DEFAULT,
-        }
-    }
+    fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self;
 }
 
 pub struct Processor<'a, P: PluginDsp> {
-    shared: &'a Shared<P::ParamsIn>,
+    shared: &'a Shared<P::Plugin>,
     dsp: P,
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
     params: EventStorage<P::ParamsIn, f32>,
+    params_rx: ParamListener<P::ParamsIn>,
     sample_rate: Samplerate,
     tail: Option<NonZeroU32>,
 }
 
-impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainThread<P::Plugin>> for Processor<'a, P> {
+impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::Plugin>, MainThread<'a, P::Plugin>>
+    for Processor<'a, P>
+{
     fn activate(
         host: HostAudioProcessorHandle<'a>,
         main_thread: &mut MainThread<P::Plugin>,
-        shared: &'a Shared<P::ParamsIn>,
+        shared: &'a Shared<P::Plugin>,
         audio_config: PluginAudioConfiguration,
     ) -> Result<Self, PluginError> {
         let params = shared.params.read_all_values();
+        let sample_rate = Samplerate::new(audio_config.sample_rate);
+        let block_size = audio_config.max_frames_count as usize;
         let audio_config = PluginAudioConfiguration {
             min_frames_count: 1,
             ..audio_config
@@ -136,31 +68,43 @@ impl<'a, P: 'a + PluginDsp> PluginAudioProcessor<'a, Shared<P::ParamsIn>, MainTh
         let context = PluginCreateContext {
             host: host.shared(),
             params: params.to_ref(),
-            processor_main_thread: &mut main_thread.processor_main_thread,
+            processor_main_thread: &mut main_thread.plugin,
             audio_config,
         };
-        let mut dsp = P::create(context);
-        let audio_in = AudioStorage::default(audio_config.max_frames_count as usize);
-        let audio_out = AudioStorage::default(audio_config.max_frames_count as usize);
+        let mut dsp = P::create(context, &shared.user_data);
+        let audio_in = AudioStorage::default(block_size);
+        let audio_out = AudioStorage::default(block_size);
         let params = EventStorage::with_capacity(512);
-        dsp.prepare(
-            Samplerate::new(audio_config.sample_rate),
-            audio_config.max_frames_count as _,
-        );
+        dsp.prepare(sample_rate, audio_config.max_frames_count as _);
+
+        shared
+            .sample_rate
+            .store(sample_rate.value().to_bits(), Ordering::Relaxed);
+
+        let (tx, rx) = create_notifier_listener(1024);
+        shared.notifier.add_listener(move |event| {
+            tx.notify(event.id, event.kind);
+        });
         Ok(Self {
             shared,
             dsp,
             audio_in,
             audio_out,
             params,
-            sample_rate: Samplerate::new(audio_config.sample_rate),
+            params_rx: rx,
+            sample_rate,
             tail: None,
         })
     }
 
-    fn process(&mut self, _process: Process, mut audio: Audio, events: Events) -> Result<ProcessStatus, PluginError> {
+    fn process(
+        &mut self,
+        _process: Process,
+        mut audio: Audio,
+        mut events: Events,
+    ) -> Result<ProcessStatus, PluginError> {
         self.copy_inputs(&audio)?;
-        self.copy_events(&events)?;
+        self.copy_events(&mut events)?;
         let process_status = self.process_audio(&StreamContext {
             block_size: audio.frames_count() as _,
             sample_rate: self.sample_rate,
@@ -193,8 +137,8 @@ impl<P: PluginDsp> Processor<'_, P> {
         Ok(())
     }
 
-    fn copy_events(&mut self, events: &Events) -> Result<(), PluginError> {
-        for buf in self.params.storage.values_mut() {
+    fn copy_events(&mut self, events: &mut Events) -> Result<(), PluginError> {
+        for buf in self.params.values_mut() {
             buf.clear();
         }
         for event in events.input.iter() {
@@ -211,15 +155,42 @@ impl<P: PluginDsp> Processor<'_, P> {
             }) else {
                 continue;
             };
-            let mapping = param.mapping();
-            self.params.storage[param].push(ev.time() as _, mapping.denormalize(ev.value() as _));
+            (*self.params)[param].push(ev.time() as _, param.clap_value_to_denormalized(ev.value()));
         }
+
+        // Retrieve (and publish to host) params received by the GUI
+        #[cfg(feature = "gui")]
+        for event in &mut self.params_rx {
+            let clap_id = ClapId::new(event.id.to_usize() as _);
+            let result = match event.kind {
+                ParamChangeKind::GestureBegin => events.output.try_push(ParamGestureBeginEvent::new(0, clap_id)),
+                ParamChangeKind::GestureEnd => events.output.try_push(ParamGestureEndEvent::new(0, clap_id)),
+                ParamChangeKind::ValueChange(v) => {
+                    (*self.params)[event.id].push(0, v);
+                    events.output.try_push(ParamValueEvent::new(
+                        0,
+                        clap_id,
+                        Pckn::match_all(),
+                        event.id.denormalized_to_clap_value(v),
+                        Cookie::empty(),
+                    ))
+                }
+            };
+            if let Err(err) = result {
+                log::debug!("Failed to push event: {}", err);
+            }
+        }
+
         // Send last param values to the shared state
         for param in enum_iter::<P::ParamsIn>() {
-            let Some(&Timestamped { data: value, .. }) = self.params.storage[param].last() else {
+            let Some(&Timestamped { data: value, .. }) = self.params[param].last() else {
                 continue;
             };
             self.shared.params.set(param, value);
+            self.shared.notifier.notify(ParamChangeEvent {
+                id: param,
+                kind: ParamChangeKind::ValueChange(value),
+            });
         }
         Ok(())
     }
@@ -289,45 +260,5 @@ impl<P: PluginDsp> PluginAudioProcessorParams for Processor<'_, P> {
             };
             self.shared.params.set_normalized(param, ev.value() as _);
         }
-    }
-}
-
-struct Indexed<T, I> {
-    inner: *mut T,
-    inner_len: usize,
-    index: I,
-}
-
-impl<T, I> Indexed<T, I> {
-    // Safety: This hides a mutable borrow as a shared one, it is manually needed to check that the entire passed
-    // slice is not borrowed elsewhere.
-    unsafe fn new(slice: &[T], index: I) -> Self {
-        Self {
-            inner: slice.as_ptr().cast_mut(),
-            inner_len: slice.len(),
-            index,
-        }
-    }
-}
-
-impl<'a, T, I: Clone> ops::Deref for Indexed<T, I>
-where
-    [T]: ops::Index<I>,
-{
-    type Target = <[T] as ops::Index<I>>::Output;
-
-    fn deref(&self) -> &Self::Target {
-        let slice = unsafe { std::slice::from_raw_parts(self.inner.cast(), self.inner_len) };
-        &slice[self.index.clone()]
-    }
-}
-
-impl<'a, T, I: Clone> ops::DerefMut for Indexed<T, I>
-where
-    [T]: ops::IndexMut<I>,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        let slice = unsafe { std::slice::from_raw_parts_mut(self.inner.cast(), self.inner_len) };
-        &mut slice[self.index.clone()]
     }
 }

@@ -12,8 +12,13 @@ keywords.workspace = true
 [dependencies]
 clogbox-enum.workspace = true
 clogbox-math.workspace = true
+fixed-ringbuf.workspace = true
 
+az.workspace = true
 fundsp = { version = "0.20", optional = true }
+num-traits.workspace = true
+numeric_literals.workspace = true
+typenum.workspace = true
 
 [features]
 fundsp = ["dep:fundsp"]

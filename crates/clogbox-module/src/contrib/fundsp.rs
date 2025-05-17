@@ -1,5 +1,6 @@
+use crate::context::StreamContext;
 use crate::sample::{SampleModule, SampleProcessResult};
-use crate::{Module, PrepareResult, Samplerate, StreamContext};
+use crate::{Module, PrepareResult, Samplerate};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
 use clogbox_enum::{Count, Empty, Enum, Sequential};
 use fundsp::prelude::*;

@@ -1,6 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
+use crate::notifier::Notifier;
 use crate::processor::Processor;
-use crate::shared::Shared;
+use crate::shared::{Shared, SharedData};
 use clack_extensions::audio_ports::PluginAudioPorts;
 use clack_extensions::params::PluginParams;
 use clack_extensions::state::PluginState;
@@ -12,7 +13,14 @@ use clack_plugin::plugin::{PluginDescriptor, PluginError};
 use clack_plugin::prelude::*;
 use std::ffi::CStr;
 use std::marker::PhantomData;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
+
+mod atomic_linked_list;
+#[cfg(feature = "gui")]
+pub mod gui;
 pub mod main_thread;
+mod notifier;
 pub mod params;
 pub mod processor;
 pub mod shared;
@@ -20,22 +28,24 @@ pub mod shared;
 pub trait PluginMeta {
     const ID: &'static str;
     const NAME: &'static str;
-    const VERSION: &'static str = "0.0.0";
-    const FEATURES: &'static [&'static CStr] = &[];
+    const VERSION: &'static str;
+    const FEATURES: &'static [&'static CStr];
 }
 
 pub struct PluginEntry<P: Plugin>(PhantomData<P>);
 
 impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
     type AudioProcessor<'a> = Processor<'a, P::Dsp>;
-    type Shared<'a> = Shared<P::Params>;
-    type MainThread<'a> = MainThread<P>;
+    type Shared<'a> = Shared<P>;
+    type MainThread<'a> = MainThread<'a, P>;
 
     fn declare_extensions(builder: &mut PluginExtensions<Self>, _: Option<&Self::Shared<'_>>) {
         builder
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
             .register::<PluginState>();
+        #[cfg(feature = "gui")]
+        builder.register::<clack_extensions::gui::PluginGui>();
     }
 }
 
@@ -46,8 +56,13 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
             .with_features(P::FEATURES.iter().copied())
     }
 
-    fn new_shared(_: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
-        Ok(Shared::default())
+    fn new_shared(host: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
+        Ok(SharedData {
+            params: Default::default(),
+            notifier: Notifier::new(),
+            user_data: P::shared_data(host)?,
+            sample_rate: Arc::new(AtomicU64::new(0)),
+        })
     }
 
     fn new_main_thread<'a>(

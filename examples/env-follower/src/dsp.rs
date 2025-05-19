@@ -1,7 +1,8 @@
 use crate::SharedData;
-use clogbox_clap::main_thread::Plugin;
+use clogbox_clap::dsp::PluginCreateContext;
+use clogbox_clap::dsp::PluginDsp;
 use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId};
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
+use clogbox_clap::Plugin;
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
 use clogbox_module::context::{OwnedProcessContext, ProcessContext};
@@ -80,7 +81,7 @@ impl Module for Dsp {
         self.extract_context = OwnedProcessContext::new(block_size, 128);
         self.env_follower.prepare(sample_rate, block_size);
         let (tx, rx) = fixed_ringbuf::create(sample_rate.value() as usize);
-        self.extract_audio.set_tx(tx);
+        self.extract_audio.connect(tx);
         self.shared_data.cb.store(Arc::new(Some(rx)));
         self.extract_audio.prepare(sample_rate, block_size);
         self.shared_data
@@ -126,7 +127,7 @@ impl PluginDsp for Dsp {
     type Plugin = super::EnvFollowerPlugin;
 
     fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self {
-        let extract_audio = ExtractAudio::CONST_NEW;
+        let extract_audio = ExtractAudio::CONST_DEFAULT;
         Self {
             env_context: OwnedProcessContext::new(0, 0),
             env_follower: SampleModuleWrapper::new(

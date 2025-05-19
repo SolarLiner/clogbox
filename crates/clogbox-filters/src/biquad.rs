@@ -1,3 +1,4 @@
+//! Biquad filter, implemented on top of the [`Svf`] filter in linear mode.
 use crate::svf::{Svf, SvfOutput};
 use az::CastFrom;
 use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
@@ -136,8 +137,8 @@ impl<T: CastFrom<f64> + Float> Biquad<T> {
     ) -> (T, T, EnumMap<SvfOutput, GenericArray<T, <SvfOutput as Enum>::Count>>) {
         let wc = a[0].sqrt();
         let r = a[1] / wc;
-        // r = 2 * (1 - q) <=> q = -(r/2 + 1)
-        let q = -(r / 2. + 1.);
+        // r = 2 * (1 - q) <=> q = 1 - r/2
+        let q = 1.0 - r / 2.0;
         let out_coeffs = EnumMapArray::new(|e| match e {
             SvfOutput::Lowpass => b[0] / (wc * wc),
             SvfOutput::Bandpass => b[1] / wc,

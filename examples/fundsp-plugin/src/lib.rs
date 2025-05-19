@@ -1,8 +1,6 @@
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::main_thread::{Plugin, PortLayout};
-use clogbox_clap::processor::{HostSharedHandle, PluginError};
-use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap::{export_plugin, features, HostSharedHandle, Plugin, PluginError, PluginMeta, PortLayout};
 use clogbox_clap_egui::generic_ui;
 use clogbox_enum::{seq, Sequential};
 use clogbox_module::Module;

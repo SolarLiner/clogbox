@@ -1,3 +1,4 @@
+//! Peak envelope follower module
 use crate::context::StreamContext;
 use crate::sample::{SampleModule, SampleProcessResult};
 use crate::{PrepareResult, Samplerate};
@@ -9,12 +10,16 @@ use clogbox_math::recip::Recip;
 use num_traits::{Float, Num, Zero};
 use numeric_literals::replace_float_literals;
 
+/// Parameters of the envelope follower
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum Params {
+    /// Attack time (s) (rising edge) of the envelope follower
     Attack,
+    /// Release time (s) (falling edge) of the envelope follower
     Release,
 }
 
+/// Computes the envelope of an input signal.
 #[derive(Debug, Clone)]
 pub struct EnvFollower<T: 'static + Send, Audio: Enum = Mono> {
     sample_rate: Option<Recip<T>>,
@@ -26,6 +31,20 @@ pub struct EnvFollower<T: 'static + Send, Audio: Enum = Mono> {
 }
 
 impl<T: 'static + Send + Copy + Zero, Audio: Enum> EnvFollower<T, Audio> {
+    /// Create a new envelope follower module.
+    ///
+    /// # Arguments
+    ///
+    /// * `attack`: Attack time (s)
+    /// * `release`: Release time (s)
+    ///
+    /// returns: EnvFollower<T, Audio>
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///
+    /// ```
     pub fn new(attack: T, release: T) -> Self {
         Self {
             sample_rate: None,
@@ -44,6 +63,11 @@ fn tau<T: Copy + Num + CastFrom<f64>>(samplerate: Recip<T>, rt60: T) -> T {
 }
 
 impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T, Audio> {
+    /// Changes the attack time of this envelope follower.
+    ///
+    /// # Arguments
+    ///
+    /// * `release`: Attack time (s)
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_attack(&mut self, attack: T) {
         self.attack = attack;
@@ -53,6 +77,11 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
         self.attack_tau = tau(sample_rate, attack);
     }
 
+    /// Changes the release time of this envelope follower.
+    ///
+    /// # Arguments
+    ///
+    /// * `release`: Release time (s)
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_release(&mut self, release: T) {
         self.release = release;
@@ -62,6 +91,11 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
         self.release_tau = tau(sample_rate, release);
     }
 
+    /// Sets the sample rate of this module.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample_rate`: New sample rate (Hz)
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_sample_rate(&mut self, sample_rate: Samplerate)
     where
@@ -73,6 +107,11 @@ impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T,
         self.release_tau = tau(sample_rate, self.release);
     }
 
+    /// Directly process a single frame of audio through this module.
+    ///
+    /// # Arguments
+    ///
+    /// * `inputs`: Input frame, where each sample corresponds to the channel of `Audio`.
     pub fn process_follower(
         &mut self,
         inputs: EnumMapArray<Audio, T>,

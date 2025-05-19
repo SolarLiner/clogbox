@@ -23,6 +23,8 @@
 //!     println!("{:?}", variant);
 //! }
 //! ```
+
+#![warn(missing_docs)]
 pub use generic_array;
 pub use typenum;
 
@@ -67,8 +69,16 @@ pub trait Enum: 'static + Copy + Send + Eq + Ord {
     /// with compile-time array lengths.
     type Count: Unsigned + ArrayLength;
 
+    /// Convert the provided `usize` value into the corresponding variant.
+    ///
+    /// It is up to the [`Enum`] implementor to define the ordering, but it should be consistent. Callers can rely on
+    /// this `Enum -> usize -> Enum` transformation to be stable and yield the same [`Enum`] out as the one in.
     fn from_usize(value: usize) -> Self;
 
+    /// Return the corresponding `usize` value for the variant.
+    ///
+    /// It is up to the [`Enum`] implementor to define the ordering, but it should be consistent. Callers can rely on
+    /// this `Enum -> usize -> Enum` transformation to be stable and yield the same [`Enum`] out as the one in.
     fn to_usize(self) -> usize;
 
     /// Returns the name of the enum variant as a `Cow<str>`.
@@ -91,12 +101,24 @@ pub trait Enum: 'static + Copy + Send + Eq + Ord {
     fn name(&self) -> Cow<str>;
 }
 
+/// Alias for [`Enum::Count`]. This is the type-level value representing the count of values in an [`Enum`].
 pub type Count<E> = <E as Enum>::Count;
 
+/// Return the count of variants in this [`Enum`].
 pub const fn count<E: Enum>() -> usize {
     E::Count::USIZE
 }
 
+/// A wrapper type that provides enum-based indexing for any type that implements `Index<usize>`.
+///
+/// This type allows you to use an enum as an index into a collection that normally
+/// accepts only `usize` indices. It wraps the collection and implements `Index<E>`
+/// where `E` is an enum type.
+///
+/// # Type Parameters
+///
+/// * `C` - The collection type that implements `Index<usize>`
+/// * `E` - The enum type to use for indexing
 #[derive(Debug, Copy, Clone)]
 #[repr(transparent)]
 pub struct EnumIndex<C, E>(C, PhantomData<E>);
@@ -136,6 +158,11 @@ impl<E: Enum, C: ops::IndexMut<usize>> ops::IndexMut<E> for EnumIndex<C, E> {
 }
 
 impl<C, E> EnumIndex<C, E> {
+    /// Consumes the `EnumIndex` wrapper and returns the inner collection.
+    ///
+    /// # Returns
+    ///
+    /// The wrapped collection of type `C`
     pub fn into_inner(self) -> C {
         self.0
     }
@@ -148,7 +175,7 @@ pub enum Empty {}
 impl Enum for Empty {
     type Count = U0;
 
-    fn from_usize(value: usize) -> Self {
+    fn from_usize(_: usize) -> Self {
         unreachable!()
     }
 
@@ -226,21 +253,16 @@ impl Enum for Stereo {
 
 /// A wrapper type representing a sequential index with a compile-time known size.
 ///
-/// `Sequential<N>` is a type-safe struct used to track an index at runtime (`usize`)
-/// while enforcing bounds at compile-time using `typenum::Unsigned` for the size `N`.
-/// This is especially useful for working with collections or enums where the size is
-/// known and can be represented as a compile-time constant, preventing invalid indexing.
+/// `Sequential<N>` is a type-safe struct used to track an index at runtime (`usize`) while enforcing bounds at
+/// compile-time using `typenum::Unsigned` for the size `N`. This is especially useful for working with collections or
+/// enums where the size is known and can be represented as a compile-time constant, preventing invalid indexing.
 ///
-/// The type-level integer `N` from the `typenum` crate represents a non-negative integer
-/// at compile time (e.g., the total number of enum variants or elements in an array).
-/// The index is stored as a `usize`, ensuring it's always valid within the bounds set
-/// by `N`.
+/// The type-level integer `N` from the `typenum` crate represents a non-negative integer at compile time (e.g., the
+/// total number of enum variants or elements in an array). The index is stored as a `usize`, ensuring it's always valid
+/// within the bounds set by `N`.
 ///
-/// This type can be used as the [`Module::Inputs`](crate::module::Module::Inputs),
-/// [`Module::Outputs`](crate::module::Module::Outputs), or
-/// [`SetParameter::Param`](crate::param::SetParameter::Param) type without having to create your
-/// own type. However, for readability, it is still recommended, where it makes sense, to create and
-/// use your own enum type.
+/// This type can be used in lieu of custom [`Enum`] types. However, for readability, it is still recommended to create
+/// and use your own enum type.
 ///
 /// # Example
 ///
@@ -379,9 +401,21 @@ where
     }
 }
 
+/// An enum representing a value that can be one of two different types.
+///
+/// This is similar to Rust's standard `Result` type but without the success/error
+/// semantics. It's useful when you need to handle values that could be one of
+/// two different types.
+///
+/// # Type Parameters
+///
+/// * `A` - The type of the left variant
+/// * `B` - The type of the right variant
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub enum Either<A, B> {
+    /// Contains a value of type `A`
     Left(A),
+    /// Contains a value of type `B`
     Right(B),
 }
 

@@ -1,10 +1,7 @@
-use crate::notifier::Notifier;
 use crate::params::{ParamChangeEvent, ParamIdExt};
 use crate::params::{ParamChangeKind, ParamId, ParamStorage};
-#[cfg(feature = "gui")]
-use crate::params::{ParamListener, ParamNotifier};
-use crate::processor::PluginDsp;
 use crate::shared::Shared;
+use crate::{Plugin, PortLayout};
 use bincode::de::Decoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -17,8 +14,7 @@ use clack_plugin::events::event_types::ParamValueEvent;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{count, Enum, Mono, Stereo};
-use clogbox_module::Module;
+use clogbox_enum::{count, Enum};
 use std::ffi::CStr;
 use std::fmt::Write;
 
@@ -30,57 +26,7 @@ use super::gui::GuiHandle;
 
 mod log;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PortLayout<E: 'static> {
-    pub name: &'static str,
-    pub main: bool,
-    pub channel_map: &'static [E],
-}
-
-impl<E: 'static> PortLayout<E> {
-    pub const fn main(self) -> Self {
-        Self { main: true, ..self }
-    }
-
-    pub const fn named(self, name: &'static str) -> Self {
-        Self { name, ..self }
-    }
-}
-
-impl PortLayout<Mono> {
-    pub const MONO: Self = Self {
-        name: "Mono",
-        main: false,
-        channel_map: &[Mono],
-    };
-}
-
-impl PortLayout<Stereo> {
-    pub const STEREO: Self = Self {
-        name: "Stereo",
-        main: false,
-        channel_map: &[Stereo::Left, Stereo::Right],
-    };
-}
-
-pub trait Plugin: 'static + Sized {
-    type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
-    type Params: ParamId;
-    type SharedData: 'static + Clone + Send + Sync;
-
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
-
-    fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
-
-    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
-
-    #[cfg(feature = "gui")]
-    fn view(
-        &mut self,
-    ) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
-}
-
+#[doc(hidden)]
 pub struct MainThread<'host, P: Plugin> {
     pub(crate) host: HostMainThreadHandle<'host>,
     pub(crate) shared: Shared<P>,

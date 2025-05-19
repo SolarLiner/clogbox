@@ -1,42 +1,22 @@
-use crate::main_thread::{MainThread, Plugin};
+use crate::dsp::{PluginCreateContext, PluginDsp};
+use crate::main_thread::MainThread;
 #[cfg(feature = "gui")]
 use crate::params::ParamListener;
-use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt};
+use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamIdExt};
 use crate::shared::Shared;
+use crate::Plugin;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
 use clack_plugin::host::HostAudioProcessorHandle;
-pub use clack_plugin::host::HostSharedHandle;
-pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
-pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
 use clack_plugin::utils::Cookie;
-use clogbox_enum::enum_map::EnumMapRef;
-use clogbox_enum::{count, enum_iter, Empty, Enum};
+use clogbox_enum::{count, enum_iter, Enum};
 use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
 use clogbox_module::eventbuffer::Timestamped;
-use clogbox_module::{Module, Samplerate};
+use clogbox_module::Samplerate;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::sync::atomic::Ordering;
-
-pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
-    pub host: HostSharedHandle<'a>,
-    pub processor_main_thread: &'p mut P::Plugin,
-    pub params: EnumMapRef<'p, P::ParamsIn, f32>,
-    pub audio_config: PluginAudioConfiguration,
-}
-
-/// A DSP module that can also be used as the audio processor for a plugin.
-///
-/// TODO: Note support
-pub trait PluginDsp:
-    Send + Module<Sample = f32, ParamsIn: ParamId, ParamsOut = Empty, NoteIn = Empty, NoteOut = Empty>
-{
-    type Plugin: Plugin<Dsp = Self, Params = Self::ParamsIn>;
-
-    fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self;
-}
 
 pub struct Processor<'a, P: PluginDsp> {
     shared: &'a Shared<P::Plugin>,
@@ -68,7 +48,7 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         let context = PluginCreateContext {
             host: host.shared(),
             params: params.to_ref(),
-            processor_main_thread: &mut main_thread.plugin,
+            plugin_entry_point: &mut main_thread.plugin,
             audio_config,
         };
         let mut dsp = P::create(context, &shared.user_data);

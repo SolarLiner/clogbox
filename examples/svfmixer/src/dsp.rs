@@ -1,5 +1,5 @@
 use crate::params;
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
+use clogbox_clap::dsp::PluginCreateContext;
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{Enum, Stereo};
 use clogbox_filters::svf::{FilterType, Svf, SvfImpl, SvfMixer, SvfSampleOutput};
@@ -10,6 +10,7 @@ use clogbox_module::{module_wrapper, Module, PrepareResult, Samplerate};
 use clogbox_params::smoothers::{LinearSmoother, Smoother};
 
 use crate::params::Param;
+use clogbox_clap::dsp::PluginDsp;
 use clogbox_module::context::StreamContext;
 use nalgebra as na;
 

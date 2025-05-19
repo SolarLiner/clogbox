@@ -1,15 +1,25 @@
+//! # `egui` for the `clogbox` CLAP wrapper
+//!
+//! Integration of the `egui` immediate mode GUI library with the `clogbox` CLAP plugin wrapper.
+//!
+//! This crate provides utilities for creating GUI interfaces for CLAP audio plugins using the
+//! `egui` library. It includes components for parameter visualization and manipulation, as well
+//! as a generic UI that can be used to quickly create interfaces for plugins.
+
+#![warn(missing_docs)]
+
 use baseview::{PhySize, Size, WindowHandle, WindowScalePolicy};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::{GuiContext, GuiEvent, HasRawWindowHandle, PluginView, PluginViewHandle};
 use clogbox_clap::params::ParamId;
-use clogbox_clap::processor::{HostSharedHandle, PluginError};
+use clogbox_clap::{HostSharedHandle, PluginError};
 use egui::Id;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicU32;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
-use clogbox_clap::main_thread::Plugin;
+use clogbox_clap::Plugin;
 pub use egui;
 pub use egui_baseview;
 use serde_json::Value;
@@ -19,19 +29,32 @@ pub mod generic_ui;
 
 pub use generic_ui::generic_ui;
 
-pub fn gui_context_id() -> Id {
+fn gui_context_id() -> Id {
     Id::new("gui_context")
 }
 
-pub fn shared_data_id() -> Id {
+fn shared_data_id() -> Id {
     Id::new("shared_data")
 }
 
+/// Trait for implementing `egui`-based plugin views.
+///
+/// This trait defines the interface for creating custom `egui`-based views for CLAP plugins.
+/// Implementors of this trait can define how the plugin's GUI is built and updated.
 pub trait EguiPluginView: 'static + Send {
+    /// The parameter ID type used by this view.
     type Params: ParamId;
 
+    /// Called once when the view is first created.
+    ///
+    /// This method can be used to set up the initial state of the view.
+    /// The default implementation does nothing.
     #[allow(unused_variables)]
     fn build(&mut self, ctx: &egui::Context, queue: &mut egui_baseview::Queue) {}
+
+    /// Called on each frame to update the view.
+    ///
+    /// This method should implement the actual GUI rendering logic.
     fn update(&mut self, ctx: &egui::Context, queue: &mut egui_baseview::Queue);
 }
 
@@ -68,9 +91,16 @@ fn arc_size(width: u32, height: u32) -> ArcSize {
     ArcSizeInner::new(width, height)
 }
 
+/// Handle for an `egui`-based plugin view.
+///
+/// This struct represents a handle to an `egui`-based plugin view window.
+/// It implements the `PluginViewHandle` trait and provides methods for
+/// interacting with the view, such as loading and saving state, getting
+/// the current size, and sending events.
 pub struct EguiHandle<E: ParamId, SharedData> {
     __paramid: PhantomData<E>,
     __shared_data: PhantomData<SharedData>,
+    /// The underlying window handle.
     pub handle: WindowHandle,
     tx: Sender<GuiEvent>,
     current_size: ArcSize,
@@ -193,6 +223,24 @@ impl<E: ParamId, SharedData: 'static + Send + Sync + Clone> EguiHandle<E, Shared
     }
 }
 
+/// Creates a plugin view from an `egui` view implementation.
+///
+/// This function takes an implementation of the `EguiPluginView` trait and wraps it
+/// in a `PluginView` implementation that can be used with the CLAP plugin framework.
+///
+/// # Type Parameters
+///
+/// * `E` - The parameter ID type used by the view
+/// * `SharedData` - The type of shared data used by the plugin
+///
+/// # Parameters
+///
+/// * `size` - The initial size of the view window
+/// * `view` - The `egui` view implementation
+///
+/// # Returns
+///
+/// A boxed `PluginView` implementation or an error
 pub fn view<E: ParamId, SharedData: 'static + Send + Sync + Clone>(
     size: GuiSize,
     view: impl EguiPluginView<Params = E>,
@@ -218,8 +266,20 @@ pub fn view<E: ParamId, SharedData: 'static + Send + Sync + Clone>(
     Ok(Box::new(Impl(size, Some(view), PhantomData)))
 }
 
+/// Extension trait for accessing plugin-specific data from `egui` contexts.
+///
+/// This trait extends `egui`'s `Context` and `Ui` types with methods for accessing
+/// plugin-specific data, such as the GUI context and shared data.
 pub trait GetContextExtra {
+    /// Retrieves the plugin GUI context from an `egui` context.
+    ///
+    /// This method provides access to the plugin's parameter state and notification system.
     fn plugin_gui_context<E: ParamId>(&self) -> GuiContext<E>;
+
+    /// Retrieves the plugin's shared data from an `egui` context.
+    ///
+    /// This method provides access to the plugin's shared state that is accessible
+    /// from both the GUI and audio processing threads.
     fn plugin_shared_data<P: Plugin>(&self) -> P::SharedData;
 }
 

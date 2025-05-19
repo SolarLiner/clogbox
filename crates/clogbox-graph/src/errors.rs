@@ -1,3 +1,4 @@
+//! Errors returned by graph algorithms.
 use thiserror::Error;
 
 /// Error type used when an algorithm that does not work with cycles encounters one.

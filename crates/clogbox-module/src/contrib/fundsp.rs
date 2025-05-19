@@ -1,10 +1,18 @@
+//! # `fundsp` integration for `clogbox`
+//!
+//! This module provides interoperability between `fundsp` and `clogbox`. This allows one to operate with the other's
+//! framework.
+//!
+//! This means you can create `fundsp` audio graphs and turn them into [`SampleModule`]s. The integration works in
+//! the other direction as well, allowing you to take [`SampleModule`]s and use them as a `fundsp` [`AudioNode`]s.
 use crate::context::StreamContext;
 use crate::sample::{SampleModule, SampleProcessResult};
-use crate::{Module, PrepareResult, Samplerate};
+use crate::{PrepareResult, Samplerate};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapMut, EnumMapRef};
 use clogbox_enum::{Count, Empty, Enum, Sequential};
 use fundsp::prelude::*;
 
+/// Wrap a [`fundsp::AudioNode`] into a [`SampleModule`].
 pub struct FundspModule<N: AudioNode, Params: Enum = Empty> {
     params: EnumMapArray<Params, Shared>,
     node: An<N>,
@@ -41,10 +49,27 @@ impl<N: AudioNode, Params: Enum> SampleModule for FundspModule<N, Params> {
 }
 
 impl<N: AudioNode, Params: Enum> FundspModule<N, Params> {
+    /// Create a new [`FundspModule`] from the provided audio node, and parameters, given as [`Shared`] values.
+    ///
+    /// To have the [`Shared`] values provided to you, use [`Self::create`] instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `node`: `fundsp` node to wrap as a [`SampleModule`].
+    /// * `params`: List of [`Shared`] values to track as parameters in this module. All [`Shared`] values will be
+    /// automatically updated with the values of the incoming parameters. Use those [`Shared`] values in your graph
+    /// to benefit from the automatic updates.
     pub fn new(node: An<N>, params: EnumMapArray<Params, Shared>) -> Self {
         Self { params, node }
     }
 
+    /// Create a `fundsp` graph given an [`EnumMap`] of [`Shared`] values.
+    ///
+    /// # Arguments
+    ///
+    /// * `gen`: Function defining the audio graph. An [`EnumMap`] of [`Shared`] values associated with `Params` enum
+    /// will be provided for you to use in the graph. These [`Shared`] values are automatically synchronized with the
+    /// module parameters. Use those values in your graph to benefit from the automatic updates.
     pub fn create(gen: impl FnOnce(EnumMapMut<Params, Shared>) -> An<N>) -> Self {
         let mut params = EnumMapArray::new(|_| shared(0.0));
         let node = gen(params.to_mut());
@@ -52,8 +77,10 @@ impl<N: AudioNode, Params: Enum> FundspModule<N, Params> {
     }
 }
 
+/// A [`fundsp::AudioNode`] which wraps a [`SampleModule`] instance.
 #[derive(Clone)]
 pub struct ClogboxNode<SM: SampleModule> {
+    /// Inner `clogbox` module.
     pub module: SM,
     params: EnumMapArray<SM::Params, Shared>,
     stream_context: StreamContext,
@@ -61,6 +88,13 @@ pub struct ClogboxNode<SM: SampleModule> {
 }
 
 impl<SM: SampleModule> ClogboxNode<SM> {
+    /// Create a new [`ClogboxNode`] given a [`SampleModule`] instance and default parameters associated with the
+    /// module to wrap.
+    ///
+    /// # Arguments
+    ///
+    /// * `module`: `clogbox` module to be wrapped
+    /// * `default_params`: default values for the parameters of the module
     pub fn new(module: SM, default_params: EnumMapArray<SM::Params, f32>) -> Self {
         let params = EnumMapArray::new(|p| shared(default_params[p]));
         let stream_context = StreamContext {
@@ -74,6 +108,8 @@ impl<SM: SampleModule> ClogboxNode<SM> {
             latency: 0.0,
         }
     }
+
+    /// Returns the corresponding [`Shared`] instance for a specific parameter.
     pub fn shared(&self, param: SM::Params) -> &Shared {
         &self.params[param]
     }

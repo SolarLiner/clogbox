@@ -1,3 +1,6 @@
+//! Base graph implementation.
+//!
+//! Uses [`SlotMap`] as the backing storage for node and edge IDs (represented by [`NodeId`] and [`EdgeId`]).
 use crate::{Edge, EdgeId, Graph, NodeId, OwnedGraph};
 use slotmap::SlotMap;
 

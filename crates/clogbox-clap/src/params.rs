@@ -1,3 +1,4 @@
+//! CLAP-specific traits and implementation for working with parameters
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, Empty, Enum};
 use std::fmt::{Formatter, Write};
@@ -6,24 +7,29 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, ops};
 
 pub use clack_extensions::params::ParamInfoFlags;
-use clack_plugin::events::io::InputEventBuffer;
 use clogbox_math::{db_to_linear, linear_to_db};
 #[cfg(feature = "gui")]
 use ringbuf::traits::{Consumer, Producer, Split};
 
 /// Mapping from and to a normalized range.
 pub trait Mapping: Send + Sync {
+    /// Normalize the value from the mapping entire range down to `0..1`.
     fn normalize(&self, value: f32) -> f32;
+    /// Map the normalized value back from `0..1` to the mapping's entire range.
     fn denormalize(&self, value: f32) -> f32;
+    /// Range of this mapping
     fn range(&self) -> ops::Range<f32>;
 }
 
+/// Extension methods for [`Mapping`] types
 pub trait MappingExt: Sized + Mapping {
+    /// Type-erase this mapping
     #[inline]
     fn as_dyn(&self) -> &dyn Mapping {
         self
     }
 
+    /// Type-erase this mapping, turning it into a shared [`Arc`] containing the mapping
     #[inline]
     fn into_dyn(self) -> DynMapping
     where
@@ -35,6 +41,7 @@ pub trait MappingExt: Sized + Mapping {
 
 impl<M: Mapping> MappingExt for M {}
 
+/// Linear "no-op" mapping over the `0..1` range;
 pub struct Linear;
 
 impl Mapping for Linear {
@@ -53,9 +60,13 @@ impl Mapping for Linear {
     }
 }
 
+/// Ranged mapping, which takes the inner mapping and maps it to this new range.
 pub struct Range<M> {
+    /// Inner mapping
     pub inner: M,
+    /// New minimum value
     pub min: f32,
+    /// New maximum value
     pub max: f32,
 }
 
@@ -75,6 +86,7 @@ impl<M: Mapping> Mapping for Range<M> {
     }
 }
 
+/// Polynomial normalized mapping (in the `0..1` range)
 pub struct Polynomial {
     forward: f32,
     backward: f32,
@@ -103,8 +115,10 @@ impl Polynomial {
     }
 }
 
+/// Type of type-erased, owned mappings (returned by [`MappingExt::into_dyn`])
 pub type DynMapping = Arc<dyn Mapping>;
 
+/// Instantiate a new ranged linear mapping (over `min..max`).
 pub const fn linear(min: f32, max: f32) -> impl Mapping {
     Range {
         inner: Linear,
@@ -113,6 +127,15 @@ pub const fn linear(min: f32, max: f32) -> impl Mapping {
     }
 }
 
+/// Instantiate a new ranged polynomial mapping (over `min..max`). You might want [`polynomial`] which offers a more
+/// useful range of `factor` values.
+///
+/// # Arguments
+///
+/// * `min`: Minimum range value
+/// * `max`: Maximum range value
+/// * `factor`: Polynomial remapping factor. 1 is equivalent to linear, < 1 expands the end of the range, and > 1
+/// expands the end of the range. Negative values are not allowed.
 pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> impl Mapping {
     Range {
         inner: Polynomial::new(factor),
@@ -121,10 +144,20 @@ pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> impl Mapping {
     }
 }
 
+/// Instantiate a new ranged polynomial mapping (over `min..max`). This is different from [`polynomial_raw`] in that
+/// `factor` is first exponentiated to make its range more granular and well-balanced.
+///
+/// # Arguments
+///
+/// * `min`: Minimum range value
+/// * `max`: Maximum range value
+/// * `factor`: Polynomial remapping factor. 0 is equivalent to linear, < 0 expands the end of the range, and > 0
+/// expands the end of the range.
 pub fn polynomial(min: f32, max: f32, factor: f32) -> impl Mapping {
     polynomial_raw(min, max, factor.exp())
 }
 
+/// Logarithmic mapping
 pub struct Logarithmic {
     base: f32,
     start: f32,
@@ -147,18 +180,38 @@ impl Mapping for Logarithmic {
     }
 }
 
-pub fn logarithmic(base: f32, start: f32, end: f32) -> impl Mapping {
+/// Instantiate a ranged logarithmic mapping (over `min..max`). The mapping is skewed by the logarithm towards the
+/// beginning of the range.
+///
+/// This mapping does not work with negative (or zero) values.
+///
+/// # Arguments
+///
+/// * `base`: Logarithm base
+/// * `min`: Minimum value
+/// * `max`: Maximum value
+pub fn logarithmic(base: f32, min: f32, max: f32) -> impl Mapping {
     Logarithmic {
         base,
-        start: start.log(base),
-        end: end.log(base),
+        start: min.log(base),
+        end: max.log(base),
     }
 }
 
+/// Instantiate a logarithmic mapping which represents a frequency range. The mapping is skewed logarithmically
+/// towards the beginning as we have a logarithmic perception of frequencies.
+///
+/// This mapping does not work with negative (or zero) values.
+///
+/// # Arguments
+///
+/// * `min`: Minimum frequency
+/// * `max`: Maximum frequency
 pub fn frequency(min: f32, max: f32) -> impl Mapping {
     logarithmic(2.0, min, max)
 }
 
+/// Decibel (dB) mapping
 pub struct Decibel(Range<Linear>);
 
 impl Mapping for Decibel {
@@ -175,6 +228,17 @@ impl Mapping for Decibel {
     }
 }
 
+/// Mapping of decibel (dB) values, internally represented in linear scale.
+///
+/// Decibels are logarithmic units that better represent the relationship between volumes humans percieve.
+///
+/// Even though decibels are logarithmic, this mapping supports negative values because they are handled and stored
+/// (and exposed through the parameter) in linear units. Minus infinity, however, is still not possible.
+///
+/// # Arguments
+///
+/// * `min`: Minimum dB value
+/// * `max`: Maximum dB value
 pub fn decibel(min: f32, max: f32) -> impl Mapping {
     Decibel(Range {
         inner: Linear,
@@ -183,6 +247,7 @@ pub fn decibel(min: f32, max: f32) -> impl Mapping {
     })
 }
 
+/// Integer mapping which rounds the normalized values into the `min..max` range.
 pub struct Int {
     min: f32,
     max: f32,
@@ -202,6 +267,12 @@ impl Mapping for Int {
     }
 }
 
+/// Instantiate a new integer mapping. This mapping rounds the values to the nearest integer.
+///
+/// # Arguments
+///
+/// * `min`: Minimum int value
+/// * `max`: Maximum int value
 pub fn int(min: i32, max: i32) -> impl Mapping {
     Int {
         min: min as f32,
@@ -209,10 +280,12 @@ pub fn int(min: i32, max: i32) -> impl Mapping {
     }
 }
 
+/// Create a new integer mapping covering the range of `E`.
 pub fn enum_<E: Enum>() -> impl Mapping {
     int(0, count::<E>() as i32 - 1)
 }
 
+/// Data contained in a [`ParamStorage`] instance, per parameter.
 pub struct ParamValue {
     value: AtomicU32,
     changed: AtomicBool,
@@ -233,10 +306,22 @@ impl fmt::Display for ParamValue {
 
 impl ParamValue {
     const ORDERING: Ordering = Ordering::Relaxed;
+    /// Create a new instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `mapping`: Parameter mapping
+    /// * `value`: Current value
     pub fn new(mapping: impl 'static + Mapping, value: f32) -> Self {
         Self::new_dyn(mapping.into_dyn(), value)
     }
 
+    /// Create a new instance with a type-erased mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `mapping`: Parameter mapping
+    /// * `value`: Current value
     pub const fn new_dyn(mapping: DynMapping, value: f32) -> Self {
         Self {
             value: AtomicU32::new(value.to_bits()),
@@ -245,49 +330,83 @@ impl ParamValue {
         }
     }
 
-    pub fn new_normal(value: f32) -> Self {
+    /// Create a new normalized parameter, using a normalized mapping over 0..1.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: Current parameter value
+    pub fn new_normalized(value: f32) -> Self {
         Self::new(Linear, value)
     }
 
+    /// Get the current full-range value.
     pub fn get(&self) -> f32 {
         f32::from_bits(self.value.load(Self::ORDERING))
     }
 
+    /// Get the current normalized value.
     pub fn get_normalized(&self) -> f32 {
         self.mapping.normalize(self.get())
     }
 
+    /// Change the parameter given a full-range value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: Full-range value, new value of the parameter.
     pub fn set(&self, value: f32) {
         self.value.store(value.to_bits(), Self::ORDERING);
         self.changed.store(true, Self::ORDERING);
     }
 
+    /// Change the parameter given a normalized value.
+    ///
+    /// # Arguments
+    ///
+    /// * `value`: Normalized value, new value of the parameter.
     pub fn set_normalized(&self, value: f32) {
         self.set(self.mapping.denormalize(value));
     }
 
+    /// Returns true if the value has changed since the last call to [`Self::has_changed`]. This method **does not**
+    /// reset the changed flag.
     pub fn get_changed(&self) -> bool {
         self.changed.load(Self::ORDERING)
     }
 
+    /// Returns true if the value has changed since we last called this method.
+    ///
+    /// If you want to check this flag without resetting it, use [`Self::get_changed`].
     pub fn has_changed(&self) -> bool {
         self.changed.swap(false, Self::ORDERING)
     }
 }
 
+/// Trait of [`Enum`]s which are used as parameter IDs in plugins.
+///
+/// All values are full-range.
 pub trait ParamId: Sync + Enum {
+    /// Parse the given text and output the corresponding value.
     fn text_to_value(&self, text: &str) -> Option<f32>;
+    /// Return the default value of this parameter.
     fn default_value(&self) -> f32;
+    /// Return the mapping of this parameter.
     fn mapping(&self) -> DynMapping;
+    /// Write the text representation of the provided value of this parameter
     fn value_to_text(&self, f: &mut dyn fmt::Write, denormalized: f32) -> fmt::Result;
 
+    /// Return true if this parameter can be automated, false otherwise.
     fn is_automatable(&self) -> bool {
         true
     }
+
+    /// Return the number of steps this parameter has in the case of a discrete parameter; otherwise, return `None`.
     fn discrete(&self) -> Option<usize> {
         None
     }
 
+    /// Formats a string of the text representation of the provided value of this parameter. This is equivalent to
+    /// [`Self::value_to_text`] and should not need to be re-implemented.
     fn value_to_string(&self, denormalized: f32) -> Result<String, fmt::Error> {
         let mut buf = String::new();
         self.value_to_text(&mut buf, denormalized)?;
@@ -295,7 +414,9 @@ pub trait ParamId: Sync + Enum {
     }
 }
 
+/// Extension trait of [`ParamId`] types.
 pub trait ParamIdExt: ParamId {
+    /// Return the computed CLAP parameter info flags based on the [`ParamId`] implementation.
     fn flags(&self) -> ParamInfoFlags {
         let mut flags = ParamInfoFlags::empty();
         flags.set(ParamInfoFlags::IS_AUTOMATABLE, self.is_automatable());
@@ -303,6 +424,10 @@ pub trait ParamIdExt: ParamId {
         flags
     }
 
+    /// Convert a normalized parameter value to the corresponding CLAP value.
+    ///
+    /// CLAP values are the same as normalized values, except in the case of discrete parameters, where they are
+    /// directly mapping to the discrete step.
     fn normalized_to_clap_value(&self, normalized: f32) -> f64 {
         if let Some(num_values) = self.discrete() {
             normalized as f64 * num_values as f64
@@ -311,10 +436,18 @@ pub trait ParamIdExt: ParamId {
         }
     }
 
+    /// Convert a full-range parameter value to the corresponding CLAP value.
+    ///
+    /// CLAP values are the same as normalized values, except in the case of discrete parameters, where they are
+    /// directly mapping to the discrete step.
     fn denormalized_to_clap_value(&self, denormalized: f32) -> f64 {
         self.normalized_to_clap_value(self.mapping().normalize(denormalized))
     }
 
+    /// Convert a CLAP value to the corresponding normalized value.
+    ///
+    /// CLAP values are the same as normalized values, except in the case of discrete parameters, where they are
+    /// directly mapping to the discrete step.
     fn clap_value_to_normalized(&self, clap_value: f64) -> f32 {
         if let Some(num_values) = self.discrete() {
             clap_value as f32 / num_values as f32
@@ -323,6 +456,10 @@ pub trait ParamIdExt: ParamId {
         }
     }
 
+    /// Convert a CLAP value to the corresponding full-range value.
+    ///
+    /// CLAP values are the same as normalized values, except in the case of discrete parameters, where they are
+    /// directly mapping to the discrete step.
     fn clap_value_to_denormalized(&self, clap_value: f64) -> f32 {
         self.mapping().denormalize(self.clap_value_to_normalized(clap_value))
     }
@@ -330,19 +467,27 @@ pub trait ParamIdExt: ParamId {
 
 impl<P: ParamId> ParamIdExt for P {}
 
+/// Parameter events sent through from the GUI
 #[derive(Debug, Copy, Clone)]
 pub enum ParamChangeKind {
+    /// A gesture has begun on the GUI
     GestureBegin,
+    /// A gesture has ended on the GUI
     GestureEnd,
+    /// The value of the parameter has changed
     ValueChange(f32),
 }
 
+/// Type of parameter events sent through from the GUI
 #[derive(Debug, Copy, Clone)]
 pub struct ParamChangeEvent<E> {
+    /// Parameter ID
     pub id: E,
+    /// Parameter change kind
     pub kind: ParamChangeKind,
 }
 
+/// Notify the DSP of parameter changes. The other side of a [`ParamListener`].
 #[cfg(feature = "gui")]
 #[derive(Clone)]
 pub struct ParamNotifier<E> {
@@ -351,6 +496,12 @@ pub struct ParamNotifier<E> {
 
 #[cfg(feature = "gui")]
 impl<E> ParamNotifier<E> {
+    /// Notify of a parameter change.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: Parameter ID
+    /// * `kind`: Parameter change event
     pub fn notify(&self, id: E, kind: ParamChangeKind) {
         if self.get_producer().try_push(ParamChangeEvent { id, kind }).is_err() {
             log::debug!("ParamNotifier: ring buffer full");
@@ -374,6 +525,7 @@ impl<E> ParamNotifier<E> {
     }
 }
 
+/// Parameter listener, the other side of a [`ParameterNotifier`].
 #[cfg(feature = "gui")]
 pub struct ParamListener<E: Enum> {
     consumer: ringbuf::HeapCons<ParamChangeEvent<E>>,
@@ -390,6 +542,11 @@ impl<'a, E: Enum> Iterator for &'a mut ParamListener<E> {
 
 #[cfg(feature = "gui")]
 impl<E: Enum> ParamListener<E> {
+    /// Return the last parameter value received by this listener if it has received one.
+    ///
+    /// # Arguments
+    ///
+    /// * `id`: Parameter ID
     pub fn value_of(&self, id: E) -> Option<f32> {
         Some(self.received_values[id]).filter(|v| !v.is_nan())
     }
@@ -397,17 +554,19 @@ impl<E: Enum> ParamListener<E> {
     fn construct(consumer: ringbuf::HeapCons<ParamChangeEvent<E>>) -> Self {
         Self {
             consumer,
-            received_values: EnumMapArray::new(|p| f32::NAN),
+            received_values: EnumMapArray::new(|_| f32::NAN),
         }
     }
 }
 
+/// Create a parameter notifier/listener pair.
 #[cfg(feature = "gui")]
 pub fn create_notifier_listener<E: Enum>(capacity: usize) -> (ParamNotifier<E>, ParamListener<E>) {
     let (producer, consumer) = ringbuf::HeapRb::new(capacity).split();
     (ParamNotifier::construct(producer), ParamListener::construct(consumer))
 }
 
+/// Type of storage of parameters with their values and whether they have changed or not.
 #[derive(Debug, Clone)]
 pub struct ParamStorage<E: Enum>(Arc<EnumMapArray<E, ParamValue>>);
 

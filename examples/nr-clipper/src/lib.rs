@@ -1,7 +1,6 @@
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::main_thread::{Plugin, PortLayout};
-use clogbox_clap::processor::{HostSharedHandle, PluginError};
-use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap::{export_plugin, features, Plugin, PluginMeta, PortLayout};
+use clogbox_clap::{HostSharedHandle, PluginError};
 use clogbox_module::Module;
 use clogbox_utils::AtomicF32;
 use std::ffi::CStr;

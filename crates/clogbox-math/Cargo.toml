@@ -26,4 +26,6 @@ approx.workspace = true
 proptest.workspace = true
 
 [features]
+default = ["std"]
+std = []
 linalg = ["dep:nalgebra"]

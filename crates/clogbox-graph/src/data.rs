@@ -1,3 +1,4 @@
+//! Attach data to a graph by keeping a secondary index of node and edge IDs to values in the graph.
 use crate::{EdgeId, NodeId};
 use slotmap::SecondaryMap;
 use std::ops;
@@ -83,7 +84,6 @@ impl<N, E> GraphData<N, E> {
     ///
     /// * `id`: Edge ID
     /// * `value`: Value to insert.
-    ///
     pub fn add_edge(&mut self, id: EdgeId, value: E) -> Option<E> {
         self.edges.insert(id, value)
     }
@@ -93,14 +93,6 @@ impl<N, E> GraphData<N, E> {
     /// # Arguments
     ///
     /// * `id`: Edge ID
-    ///
-    /// returns: Option<&E>
-    ///
-    /// # Examples
-    ///
-    /// ```
-    ///
-    /// ```
     pub fn get_edge(&self, id: EdgeId) -> Option<&E> {
         self.edges.get(id)
     }

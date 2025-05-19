@@ -1,3 +1,8 @@
+//! # Event buffer implementation for parameter and note events
+//!
+//! This module provides a buffer structure for storing and processing time-stamped events
+//! such as parameter changes and MIDI notes.
+
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 use std::{ops, slice};
 
@@ -15,27 +20,18 @@ pub struct Timestamped<T> {
 impl<T> ops::Deref for Timestamped<T> {
     type Target = T;
 
-    /// Returns a reference to the inner data.
-    ///
-    /// This allows using a [`Timestamped<T>`] value anywhere a `&T` is expected.
     fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
 
 impl<T> ops::DerefMut for Timestamped<T> {
-    /// Returns a mutable reference to the inner data.
-    ///
-    /// This allows using a [`Timestamped<T>`] value anywhere a `&mut T` is expected.
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.data
     }
 }
 
 impl<T> PartialEq for Timestamped<T> {
-    /// Compares [`Timestamped`] values based on their timestamps only.
-    ///
-    /// Note: This ignores the inner data and only compares timestamps.
     fn eq(&self, other: &Self) -> bool {
         self.timestamp.eq(&other.timestamp)
     }
@@ -44,24 +40,18 @@ impl<T> PartialEq for Timestamped<T> {
 impl<T> Eq for Timestamped<T> {}
 
 impl<T> PartialOrd for Timestamped<T> {
-    /// Compares [`Timestamped`] values based on their timestamps.
-    ///
-    /// Always returns `Some` since timestamps are comparable.
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<T> Ord for Timestamped<T> {
-    /// Orders [`Timestamped`] values based on their timestamps.
-    ///
-    /// This enables chronological sorting of events.
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.timestamp.cmp(&other.timestamp)
     }
 }
 
-/// A mutable iterator that resorts the buffer when dropped.
+/// A mutable iterator that sorts the buffer again when dropped.
 ///
 /// This iterator allows modifying [`Timestamped`] entries in an [`EventBuffer`].
 /// When the iterator goes out of scope (is dropped), the underlying buffer is
@@ -173,13 +163,19 @@ impl<T> EventSlice<T> {
         self.events.is_empty()
     }
 
-    /// Returns a reference to the event at the specified index, if it exists.
+    /// Returns a reference to the value at the specified index if it exists. Note that this is **not** returning the
+    /// value by its timestamp, use [`at`](Self:at) for this purpose.
     ///
     /// Returns `None` if the index is out of bounds.
     pub fn get(&self, index: usize) -> Option<&Timestamped<T>> {
         self.events.get(index)
     }
 
+    /// Return a reference to the value at the given timestamp if there is one.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp`: Timestamp to retrieve the value for.
     pub fn at(&self, timestamp: usize) -> Option<&Timestamped<T>> {
         self.events
             .binary_search_by_key(&timestamp, |e| e.timestamp)
@@ -187,6 +183,11 @@ impl<T> EventSlice<T> {
             .map(|idx| &self.events[idx])
     }
 
+    /// Return a mutable reference to the value at the given timestamp if there is one.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp`: Timestamp to retrieve the value for.
     pub fn at_mut(&mut self, timestamp: usize) -> Option<&mut Timestamped<T>> {
         let Some(index) = self.events.binary_search_by_key(&timestamp, |e| e.timestamp).ok() else {
             return None;
@@ -736,6 +737,11 @@ impl<T> EventBuffer<T> {
         Self { events: Vec::new() }
     }
 
+    /// Create a new [`EventBuffer`](Self) with a pre-allocated event capacity.
+    ///
+    /// # Arguments
+    ///
+    /// * `capacity`: Capacity of the resulting event buffer
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             events: Vec::with_capacity(capacity),

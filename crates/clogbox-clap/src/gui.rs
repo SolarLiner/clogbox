@@ -1,8 +1,8 @@
-use crate::main_thread::Plugin;
+//! Integration of plugin GUIs in CLAP.
 use crate::notifier::Notifier;
-use crate::params::{ParamChangeEvent, ParamId, ParamNotifier, ParamStorage};
-use crate::shared;
+use crate::params::{ParamChangeEvent, ParamId, ParamStorage};
 use crate::shared::Shared;
+use crate::Plugin;
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
@@ -12,45 +12,87 @@ use std::marker::PhantomData;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+/// GUI event that can be requested from the outside (i.e., DAWs).
 pub enum GuiEvent {
+    /// Resize the GUI
     Resize(GuiSize),
+    /// Set the title of the window (only applicable to parented windows)
     SetTitle(String),
+    /// Set the scaling factor
     SetScale(f64),
 }
 
+/// GUI context available in GUI integrations.
 #[derive(Clone)]
 pub struct GuiContext<E: ParamId> {
+    /// Parameter storage to read and store values
     pub params: ParamStorage<E>,
+    /// Notify parameter changes
     pub notifier: Notifier<ParamChangeEvent<E>>,
     sample_rate: Arc<AtomicU64>,
 }
 
 impl<E: ParamId> GuiContext<E> {
+    /// Read the current audio processing sample rate.
     pub fn sample_rate(&self) -> f64 {
         let u = self.sample_rate.load(std::sync::atomic::Ordering::Relaxed);
         f64::from_bits(u)
     }
 }
 
+/// Trait of types which handle the plugin GUI. This implemented by windowing and GUI frameworks to provide support.
 pub trait PluginViewHandle {
+    /// Plugin parameters
     type Params: ParamId;
+
+    /// Load GUI state.
+    ///
+    /// # Arguments
+    ///
+    /// * `data`: Serialized GUI state
     #[allow(unused_variables)]
     fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
         Ok(())
     }
+
+    /// Save the GUI state or return `None` if no state is to be serialized.
     fn save(&mut self) -> Result<Option<serde_json::Value>, PluginError> {
         Ok(None)
     }
+
+    /// Get the parent window of this view (if supported)
     fn get_parent(&self) -> Option<Window> {
         None
     }
+
+    /// Get the current size of the view
     fn get_size(&self) -> Option<GuiSize>;
+
+    /// Send an event into the GUI system. GUIs should act on the events sent here.
     fn send_event(&self, event: GuiEvent) -> Result<(), PluginError>;
 }
 
+/// Trait for types which can create plugin views.
+///
+/// This two-phase process of first getting a [`PluginView`](Self), which then instantiates a [`PluginViewHandle`] is
+/// for API design. This type can be exposed to the user, and functions returning instances of this trait can be
+/// provided, which are then going to be called in [`Plugin::view`](crate::Plugin::view). The CLAP GUI glue code can
+/// then take care of instantiating the actual GUI instance (the [`PluginViewHandle`]) and manage its lifecycle
+/// directly.
 pub trait PluginView {
+    /// Parameters of the plugin
     type Params: ParamId;
+    /// Shared data between the GUI and the rest of the plugin (i.e., the audio processing)
     type SharedData;
+
+    /// Create a new [`PluginViewHandle`] from the data provided by the CLAP host.
+    ///
+    /// # Arguments
+    ///
+    /// * `window`: The parent window (can be the DAW window or an embedded virtual window)
+    /// * `host`: CLAP host interface
+    /// * `context`: GUI context (see [`GuiContext`])
+    /// * `shared_data`: Shared data between the plugin and its view
     fn create(
         &mut self,
         window: &dyn HasRawWindowHandle,
@@ -60,7 +102,7 @@ pub trait PluginView {
     ) -> Result<Box<dyn PluginViewHandle<Params = Self::Params>>, PluginError>;
 }
 
-pub struct GuiHandle<P: Plugin> {
+pub(crate) struct GuiHandle<P: Plugin> {
     __plugin: PhantomData<P>,
     view: Option<Box<dyn PluginView<Params = P::Params, SharedData = P::SharedData>>>,
     handle: Option<Box<dyn PluginViewHandle<Params = P::Params>>>,
@@ -81,7 +123,7 @@ impl<P: Plugin> GuiHandle<P> {
         load_data: None,
     };
 
-    pub fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
+    pub(crate) fn load(&mut self, data: serde_json::Value) -> Result<(), PluginError> {
         if let Some(view) = self.handle.as_deref_mut() {
             view.load(data)?;
         } else {
@@ -90,7 +132,7 @@ impl<P: Plugin> GuiHandle<P> {
         Ok(())
     }
 
-    pub fn save(&mut self) -> Result<Option<serde_json::Value>, PluginError> {
+    pub(crate) fn save(&mut self) -> Result<Option<serde_json::Value>, PluginError> {
         let Some(instance) = self.handle.as_deref_mut() else {
             return Ok(None);
         };

@@ -66,6 +66,7 @@ impl<E: Enum, T> EnumMapArray<E, T>
 where
     typenum::Const<0>: IntoArrayLength<ArrayLength = E::Count>,
 {
+    /// Default value of an empty [`EnumMapArray`], when the [`Enum`] `E` is empty (has length zero).
     pub const CONST_DEFAULT: Self = Self {
         data: GenericArray::from_array([]),
         __enum: PhantomData,
@@ -263,10 +264,12 @@ impl<E, D> EnumMap<E, D> {
 }
 
 impl<E, D: Collection> EnumMap<E, D> {
+    /// Returns the length of the map at runtime (helpful for dynamic usages of [`EnumMap`])
     pub fn runtime_len(&self) -> usize {
         self.data.len()
     }
 
+    /// Gets a value of this [`EnumMap`] at runtime, performing bounds checking.
     pub fn dyn_get(&self, index: usize) -> Option<&D::Item> {
         self.data.get(index)
     }
@@ -647,6 +650,7 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
         self.data.iter().enumerate().map(|(i, v)| (E::from_usize(i), v))
     }
 
+    /// Returns an [`EnumMapArray`] containing references to this [`EnumMap`].
     pub fn items_as_ref<T: ?Sized>(&self) -> EnumMapArray<E, &T>
     where
         D::Item: AsRef<T>,
@@ -654,6 +658,7 @@ impl<E: Enum, D: Collection> EnumMap<E, D> {
         EnumMapArray::from_iter(self.data.iter().map(|v| v.as_ref()))
     }
 
+    /// Returns an [`EnumMapArray`] containing the dereference targets of values in this [`EnumMap`].
     pub fn items_as_deref(&self) -> EnumMapArray<E, &<D::Item as Deref>::Target>
     where
         D::Item: Deref,
@@ -707,6 +712,7 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
         self.data.iter_mut().enumerate().map(|(i, v)| (E::from_usize(i), v))
     }
 
+    /// Returns an [`EnumMapArray`] of mutable references of items in this [`EnumMap`].
     pub fn items_as_deref_mut(&mut self) -> EnumMapArray<E, &mut <D::Item as Deref>::Target>
     where
         D::Item: DerefMut,
@@ -714,6 +720,7 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
         EnumMapArray::from_iter(self.data.iter_mut().map(|v| v.deref_mut()))
     }
 
+    /// Returns an [`EnumMapArray`] containing the mutable dereference targets of values in this [`EnumMap`].
     pub fn items_as_mut<T: ?Sized>(&mut self) -> EnumMapArray<E, &mut T>
     where
         D::Item: AsMut<T>,
@@ -725,6 +732,9 @@ impl<E: Enum, D: CollectionMut> EnumMap<E, D> {
 impl<E: Enum, T, Err, C: IntoIterator<Item = <C as Collection>::Item> + Collection<Item = Result<T, Err>>>
     EnumMap<E, C>
 {
+    /// Transpose an [`EnumMap`] of [`Result`] values into a [`Result`] of [`EnumMap`].
+    ///
+    /// Contains all values if all values are [`Ok`] values, otherwise return the first error encountered.
     pub fn transpose<D: Collection<Item = T> + FromIterator<T>>(self) -> Result<EnumMap<E, D>, Err> {
         let mut data = EnumMapArray::new(|_| MaybeUninit::uninit());
         for (k, v) in self.into_iter() {
@@ -786,6 +796,29 @@ impl<E: Enum, T> EnumMapArray<E, T> {
         }
     }
 
+    /// Create a new [`EnumMapArray`] from the provided standard array. The size of the provided array must match the
+    /// size of the number of [`Enum`] variants of `E`.
+    ///
+    /// # Arguments
+    ///
+    /// * `array`: Standard array to use for values for the [`EnumMapArray`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use clogbox_derive::Enum;    ///
+    ///
+    /// use clogbox_enum::enum_map::EnumMapArray;
+    ///
+    /// #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
+    /// enum Color { Red, Green, Blue }
+    ///
+    /// const COLOR_VALUES: EnumMapArray<Color, u32> = EnumMapArray::from_std_array([1, 2, 3]);
+    ///
+    /// assert_eq!(COLOR_VALUES[Color::Red], 1);
+    /// assert_eq!(COLOR_VALUES[Color::Green], 2);
+    /// assert_eq!(COLOR_VALUES[Color::Blue], 3);
+    /// ```
     pub const fn from_std_array<const N: usize>(array: [T; N]) -> Self
     where
         typenum::Const<N>: IntoArrayLength<ArrayLength = E::Count>,
@@ -794,8 +827,10 @@ impl<E: Enum, T> EnumMapArray<E, T> {
     }
 }
 
-impl<'a, E, T> EnumMapRef<'a, E, T> {
+impl<'a, E: Enum, T> EnumMapRef<'a, E, T> {
+    /// Create an [`EnumMapRef`] from the provided slice. The slice must have enough values for all variants of `E`.
     pub const fn from_slice(slice: &'a [T]) -> Self {
+        assert!(slice.len() >= count::<E>());
         Self {
             data: slice,
             __enum: PhantomData,
@@ -804,6 +839,7 @@ impl<'a, E, T> EnumMapRef<'a, E, T> {
 }
 
 impl<'a, E, T> EnumMapMut<'a, E, T> {
+    /// Create an [`EnumMapMut`] from the provided slice. The slice must have enough values for all variants of `E`.
     pub fn from_slice_mut(slice: &'a mut [T]) -> Self {
         Self {
             data: slice,

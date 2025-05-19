@@ -1,27 +1,29 @@
+//! # Reciprocal approximation algorithms
+//!
+//! This module contains fast approximation methods for calculating reciprocals (1/x),
+//! which can be useful in performance-critical DSP code.
+
 use az::Cast;
 use num_traits::float::FloatCore;
-use num_traits::real::Real;
 use num_traits::{Float, FromPrimitive, Num, NumCast, NumOps, One, ToPrimitive, Zero};
 use std::num::FpCategory;
 use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
 /// Holds a value and its reciprocal.
-///
-/// Invariants: value.recip() == recip && recip.recip() == value && value.signum() == recip.signum()
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub struct Recip<T> {
     value: T,
     recip: T,
 }
 
-#[cfg(any(feature = "std", feature = "no_std"))]
+#[cfg(feature = "std")]
 impl<T: Float> From<T> for Recip<T> {
     fn from(value: T) -> Self {
         Self::new(value)
     }
 }
 
-#[cfg(not(any(feature = "std", feature = "no_std")))]
+#[cfg(not(feature = "std"))]
 impl<T: FloatCore> From<T> for Recip<T> {
     fn from(value: T) -> Self {
         Self::core_new(value)
@@ -618,7 +620,7 @@ mod tests {
     use proptest::prelude::*;
 
     fn non_zero() -> impl Strategy<Value = f64> {
-        prop_oneof![(-1e300..-f64::EPSILON), (f64::EPSILON..1e300)]
+        prop_oneof![-1e300..-f64::EPSILON, f64::EPSILON..1e300]
     }
 
     proptest! {

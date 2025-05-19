@@ -11,7 +11,7 @@ use clogbox_module::context::StreamContext;
 use clogbox_module::sample::{SampleModule, SampleProcessResult};
 use clogbox_module::{PrepareResult, Samplerate};
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
-use num_traits::{Float, FloatConst, Num, NumAssign, Zero};
+use num_traits::{Float, FloatConst, Num, NumAssign};
 use numeric_literals::replace_float_literals;
 use std::marker::PhantomData;
 use std::ops;
@@ -243,7 +243,8 @@ impl<T: Float, Mode: SvfImpl<T>> Svf<T, Mode> {
     }
 }
 
-/// Enum representing different types of audio filters.
+/// Enum representing different types of audio filters. Shelving filters will rely on a separate "gain" parameter,
+/// which will be the applied gain of the shelf filter on top of the input signal.
 #[derive(Debug, Copy, Clone, Enum, Eq, PartialEq, Ord, PartialOrd)]
 pub enum FilterType {
     /// No filtering, signal is passed unchanged.
@@ -296,20 +297,17 @@ impl FilterType {
     }
 }
 
+/// Parameters for the [`SvfMixer`]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum SvfMixerParams {
+    /// [`FilterType`] parameter
     #[display = "Filter Type"]
     FilterType,
+    /// Shelving gain parameter
     Amplitude,
 }
 
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SvfMixerInput {
-    AudioInput,
-    SvfOutput(SvfOutput),
-    Params(SvfMixerParams),
-}
-
+/// Mixer for the outputs of [`Svf`], which defines more filter types like shelves, bells and notches.
 #[derive(Debug, Copy, Clone)]
 pub struct SvfMixer<T> {
     filter_type: FilterType,
@@ -318,6 +316,13 @@ pub struct SvfMixer<T> {
 }
 
 impl<T: CastFrom<f64> + Float + NumAssign> SvfMixer<T> {
+    /// Create a new [`SvfMixer`](Self).
+    ///
+    /// # Arguments
+    ///
+    /// * `samplerate`: Audio signal sample rate (Hz)
+    /// * `filter_type`: Selected filter type
+    /// * `amp`: Amount of shelving gain (see [`FilterType`]).
     pub fn new(samplerate: T, filter_type: FilterType, amp: T) -> Self {
         let coeffs = filter_type
             .mix_coefficients(T::cast_from(1.0))
@@ -329,6 +334,11 @@ impl<T: CastFrom<f64> + Float + NumAssign> SvfMixer<T> {
         }
     }
 
+    /// Sets the new filter type. The mixer will fade from the old to the new type.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter_type`: New filter type
     pub fn set_filter_type(&mut self, filter_type: FilterType) {
         if self.filter_type == filter_type {
             return;
@@ -338,6 +348,11 @@ impl<T: CastFrom<f64> + Float + NumAssign> SvfMixer<T> {
         self.update_coefficients(filter_type.mix_coefficients(amp));
     }
 
+    /// Set the shelving gain parameter.
+    ///
+    /// # Arguments
+    ///
+    /// * `amp`: Shelving gain parameter.
     pub fn set_amp(&mut self, amp: T) {
         self.amp.set_target(amp);
     }
@@ -350,6 +365,12 @@ impl<T: CastFrom<f64> + Float + NumAssign> SvfMixer<T> {
 }
 
 impl<T: 'static + Copy + Send + Float + NumAssign + ops::Neg<Output = T> + CastFrom<f64>> SvfMixer<T> {
+    /// Process a [`Svf`]'s output and return a single output for the mixed filter type.
+    ///
+    /// # Arguments
+    ///
+    /// * `input`: Audio input frame
+    /// * `outputs`: Audio output frame
     pub fn mix(&mut self, input: T, outputs: EnumMapArray<SvfOutput, T>) -> T {
         use SvfOutput::*;
         if !self.amp.has_converged() {

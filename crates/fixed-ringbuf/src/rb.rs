@@ -288,7 +288,7 @@ impl<T> RingBuffer<T> {
 impl<T> Drop for RingBuffer<T> {
     fn drop(&mut self) {
         // Destroy any items still in the buffer
-        while let Some(_) = self.pop() {}
+        while self.pop().is_some() {}
     }
 }
 

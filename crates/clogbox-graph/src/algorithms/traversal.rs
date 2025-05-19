@@ -19,8 +19,6 @@ pub enum EdgeLabel {
 /// whether the edge is a "Back" edge (to a previously visited node) or a
 /// "Front" edge (to a not-yet-visited node).
 ///
-/// See also: [`dfs_undirected`].
-///
 /// ### Arguments
 ///
 /// - `graph`: A reference to a graph implementing the [`Graph`] trait.

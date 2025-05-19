@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 pub type Shared<P> = SharedData<<P as Plugin>::Params, <P as Plugin>::SharedData>;
 
+#[doc(hidden)]
 #[derive(Clone)]
 pub struct SharedData<Params: ParamId, UserData> {
     pub params: ParamStorage<Params>,

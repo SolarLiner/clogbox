@@ -1,3 +1,4 @@
+//! Saturator functions which are 1-in 1-out bijective functions where $ f(0) = 0 $ and $ f'(0) = 1 $.
 use az::CastFrom;
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{Empty, Enum};
@@ -8,6 +9,7 @@ use std::marker::PhantomData;
 pub trait Saturator {
     /// The type of sample that the saturator works with.
     type Sample;
+    /// Parameters of the saturator
     type Params: Enum;
 
     /// Saturates a single value.
@@ -21,11 +23,18 @@ pub trait Saturator {
     /// The saturated value.
     fn saturate(&mut self, value: Self::Sample) -> Self::Sample;
 
+    /// Set a parameter of this [`Saturator`](Self) instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `param`: [`Self::Param`] variant identifying the parameter
+    /// * `value`: Value to set it to
     fn set_param(&mut self, param: Self::Params, value: f32);
 
     /// Saturates a buffer of values in place.
     ///
     /// # Parameters
+    ///
     /// - `buffer`: The buffer containing the values to be saturated.
     #[inline]
     #[profiling::function]
@@ -41,6 +50,7 @@ pub trait Saturator {
     /// Saturates a buffer of values, storing the results in an output buffer.
     ///
     /// # Parameters
+    ///
     /// - `input`: The input buffer containing the values to be saturated.
     /// - `output`: The output buffer where the saturated values will be stored.
     #[inline]
@@ -52,12 +62,6 @@ pub trait Saturator {
         output.copy_from_slice(input);
         self.saturate_buffer_in_place(output);
     }
-}
-
-#[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum SaturatorInputs<P> {
-    AudioInput,
-    Params(P),
 }
 
 /// A "no-op" saturator. This saturator does not modify the input signal.
@@ -115,6 +119,7 @@ impl<T: Copy + Send, F: Send + Fn(T) -> T> Saturator for Memoryless<T, F> {
     fn set_param(&mut self, _param: Self::Params, _value: f32) {}
 }
 
+/// Alias for the return type of [`tanh`], [`asinh`], [`hard_clip`] and other functions defined below.
 pub type SimpleSaturator<T> = Memoryless<T, fn(T) -> T>;
 
 /// Creates a new `Memoryless` instance using the hyperbolic tangent function.
@@ -135,15 +140,6 @@ pub const fn asinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
     Memoryless::new(T::asinh)
 }
 
-/// Creates a `Memoryless` instance for the hyperbolic sine function.
-///
-/// # Returns
-///
-/// A `Memoryless` instance that uses the `asinh` function.
-pub const fn sinh<T: Float>() -> Memoryless<T, fn(T) -> T> {
-    Memoryless::new(T::sinh)
-}
-
 /// Creates a `Memoryless` instance that clamps input values between `min` and `max`.
 ///
 /// # Parameters
@@ -158,18 +154,25 @@ pub fn hard_clip<T: Float>(min: T, max: T) -> Memoryless<T, impl Copy + Fn(T) ->
     Memoryless::new(move |x: T| x.clamp(min, max))
 }
 
+/// Parameters of [`Driven`]
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum DrivenParams<SatParams> {
+    /// Drive amount
     Drive,
+    /// Inner saturator parameters
     Inner(SatParams),
 }
 
+/// [`Saturator`] wrapper which "drives" (i.e., increases input gain and decreases output gain by the same amount)
+/// the underlying saturator.
 #[derive(Debug, Clone)]
 pub struct Driven<Sat: Saturator>
 where
     DrivenParams<Sat::Params>: Enum,
 {
+    /// Inner saturator
     pub saturator: Sat,
+    /// Parameters of the saturator
     pub params: EnumMapArray<DrivenParams<Sat::Params>, Sat::Sample>,
 }
 
@@ -190,18 +193,24 @@ where
     }
 }
 
+/// Parameters for [`Biased`].
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum BiasedParams<SatParams> {
+    /// Bias parameter
     Bias,
+    /// Inner saturator parameters
     Inner(SatParams),
 }
 
+/// [`Saturator`] wrapper which "biases" (i.e., offsets the input up, and the output down) the signal.
 #[derive(Debug, Clone)]
 pub struct Biased<Sat: Saturator>
 where
     BiasedParams<Sat::Params>: Enum,
 {
+    /// Inner saturator
     pub saturator: Sat,
+    /// Parameters of the saturator
     pub params: EnumMapArray<BiasedParams<Sat::Params>, Sat::Sample>,
 }
 

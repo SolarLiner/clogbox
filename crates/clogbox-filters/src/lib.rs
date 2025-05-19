@@ -10,7 +10,7 @@ use clogbox_enum::{Empty, Enum, Mono};
 use clogbox_module::context::StreamContext;
 use clogbox_module::sample::{SampleModule, SampleProcessResult};
 use clogbox_module::{PrepareResult, Samplerate};
-use num_traits::{Float, FloatConst, Num};
+use num_traits::{Float, FloatConst};
 use std::num::NonZeroU32;
 
 pub mod biquad;

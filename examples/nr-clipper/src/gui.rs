@@ -3,7 +3,7 @@ use crate::dsp::{Params, NUM_STAGES};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
 use clogbox_clap::params::{ParamChangeEvent, ParamChangeKind, ParamId};
-use clogbox_clap::processor::PluginError;
+use clogbox_clap::PluginError;
 use clogbox_clap_egui::components::driven::Driven;
 use clogbox_clap_egui::egui::{emath, Align, Context, Layout};
 use clogbox_clap_egui::egui_baseview::Queue;

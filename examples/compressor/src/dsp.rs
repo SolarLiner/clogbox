@@ -72,7 +72,7 @@ impl ParamId for Params {
         match self {
             Params::Envelope(env_follower::Params::Attack) => 0.04,
             Params::Envelope(env_follower::Params::Release) => 0.15,
-            Params::Threshold => db_to_linear(-18.0),
+            Params::Threshold => -18.0,
             Params::Ratio => 4f32.recip(),
             Params::Makeup => 1.0,
             Params::StereoLink => 1.0,
@@ -82,7 +82,7 @@ impl ParamId for Params {
 
     fn mapping(&self) -> DynMapping {
         static TIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(1e-6, 1.0, 2.5f32.ln()).into_dyn());
-        static THRESHOLD: LazyLock<DynMapping> = LazyLock::new(|| decibel(-72.0, 0.0).into_dyn());
+        static THRESHOLD: LazyLock<DynMapping> = LazyLock::new(|| linear(-72.0, 0.0).into_dyn());
         static RATIO: LazyLock<DynMapping> = LazyLock::new(|| recip(1.0, 20.0).into_dyn());
         static MAKEUP: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 24.0).into_dyn());
         static SIDECHAIN: LazyLock<DynMapping> = LazyLock::new(|| enum_::<SidechainMode>().into_dyn());
@@ -107,7 +107,7 @@ impl ParamId for Params {
                     write!(f, "{:.2} s", denormalized)
                 }
             }
-            Self::Threshold => write!(f, "{:.2} dB", linear_to_db(denormalized)),
+            Self::Threshold => write!(f, "{:.2} dB", denormalized),
             Self::Ratio => write!(f, "{:1.2}:1", denormalized.recip()),
             Self::Makeup => write!(f, "{:.2} dB", linear_to_db(denormalized)),
             Self::StereoLink => write!(f, "{:2} %", 100. * denormalized),
@@ -144,9 +144,31 @@ impl SmoothedParams {
     }
 }
 
-fn compressor_gain(ratio: f32, threshold: f32, input: f32) -> f32 {
-    let gain_reduction = (threshold - input).min(0.0) * (1.0 - ratio);
-    (1.0 - gain_reduction).recip()
+fn lerp(t: f32, a: f32, b: f32) -> f32 {
+    a + t * (b - a)
+}
+
+fn compressor_gain(ratio_recip: f32, threshold_db: f32, input: f32) -> f32 {
+    let x = linear_to_db(input);
+    let curve_db = lerp(1.0 - ratio_recip, x, (x - threshold_db).min(0.0) + threshold_db);
+    let gain_db = curve_db - x;
+    db_to_linear(gain_db)
+}
+
+fn smin(a: f32, b: f32, k: f32) -> f32 {
+    let k = k * 6.0;
+    let h = (k - (a - b).abs()).max(0.0) / k;
+    a.min(b) - (h * h * h) * k * (1.0 / 6.0)
+}
+
+#[inline]
+fn smax(a: f32, b: f32, k: f32) -> f32 {
+    -smin(-a, -b, k)
+}
+
+fn soft_clipper(x: f32, max_gain: f32) -> f32 {
+    const K: f32 = 0.3;
+    smax(-max_gain, smin(max_gain, x, K), K)
 }
 
 pub struct Dsp {
@@ -223,7 +245,9 @@ impl Dsp {
             let inp = &input[AudioIn::Input(ch)];
             let out = &mut output[ch];
             for i in 0..block_size {
+                const MAX_GAIN: f32 = 0.988553094657; // -0.1 dB
                 out[i] = inp[i] * amp[i] * makeup[i];
+                out[i] = soft_clipper(out[i], MAX_GAIN);
             }
         }
     }

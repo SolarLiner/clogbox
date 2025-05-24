@@ -73,7 +73,7 @@ fn continuous_knob<E: ParamId>(ui: &mut Ui, param: E, knob_width: f32) {
     ui.add(Knob::new(ui.ctx(), param).with_knob_size(knob_width));
     let value = ui.plugin_gui_context::<E>().params[param].get();
     ui.label(format!(
-        "{}: {}",
+        "{}:\n{}",
         param.name(),
         param.value_to_string(value).unwrap_or_else(|_| String::from("<error>"))
     ));
@@ -83,15 +83,16 @@ fn discrete_knob<E: ParamId>(ui: &mut Ui, param: E, num_values: usize) {
     let valuef = ui.plugin_gui_context::<E>().params[param].get();
     let mut value = valuef.round() as usize;
     let size = ui.available_size_before_wrap();
-    let response =
-        ComboBox::new(param.name(), "")
-            .width(size.x)
-            .truncate()
-            .show_index(ui, &mut value, num_values, |i| {
-                param
-                    .value_to_string(i as _)
-                    .unwrap_or_else(|_| String::from("<error>"))
-            });
+    let label = ui.label(param.name()).id;
+    let response = ComboBox::new(param.name(), "")
+        .width(size.x)
+        .truncate()
+        .show_index(ui, &mut value, num_values, |i| {
+            param
+                .value_to_string(i as _)
+                .unwrap_or_else(|_| String::from("<error>"))
+        })
+        .labelled_by(label);
 
     let gui_context = ui.plugin_gui_context::<E>();
     if response.drag_started() {

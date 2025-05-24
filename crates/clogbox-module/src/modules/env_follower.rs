@@ -38,12 +38,13 @@ impl<T: 'static + Send + Copy + Zero, Audio: Enum> EnvFollower<T, Audio> {
     }
 }
 
-fn tau<T: Copy + Num + CastFrom<f64>>(samplerate: Recip<T>, rt60: T) -> T {
+fn tau<T: Float + CastFrom<f64>>(samplerate: Recip<T>, rt60: T) -> T {
     let t60 = T::cast_from(1e4.ln());
-    samplerate.recip() * (t60 / rt60)
+    let out = samplerate.recip() * (t60 / rt60);
+    out.min(T::one()).max(T::zero())
 }
 
-impl<T: 'static + Send + CastFrom<f64> + Copy + Num, Audio: Enum> EnvFollower<T, Audio> {
+impl<T: 'static + Send + CastFrom<f64> + Float, Audio: Enum> EnvFollower<T, Audio> {
     #[replace_float_literals(T::cast_from(literal))]
     pub fn set_attack(&mut self, attack: T) {
         self.attack = attack;

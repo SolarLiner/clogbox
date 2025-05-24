@@ -17,7 +17,11 @@ use clogbox_params::smoothers::{ExpSmoother, InterpSmoother, LinearSmoother, Smo
 use std::fmt::Write;
 use std::ops;
 use std::ops::Range;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
+
+const MAX_GAIN: f32 = 0.988553094657; // -0.1 dB
+const CLIP_KNEE: f32 = 0.05;
 
 #[derive(Debug, Copy, Clone)]
 struct Recip(params::Range<Linear>);
@@ -194,8 +198,7 @@ fn smax(a: f32, b: f32, k: f32) -> f32 {
 }
 
 fn soft_clipper(x: f32, max_gain: f32) -> f32 {
-    const K: f32 = 0.05;
-    smax(-max_gain, smin(max_gain, x, K), K)
+    smax(-max_gain, smin(max_gain, x, CLIP_KNEE), CLIP_KNEE)
 }
 
 pub struct Dsp {
@@ -271,16 +274,18 @@ impl Dsp {
         let output = &mut *context.audio_out;
         let block_size = context.stream_context.block_size;
         let makeup = &self.param_signals[SmoothedParams::MakeupGain];
+        let mut clipped = false;
         for ch in enum_iter::<Stereo>() {
             let amp = &self.extract_context.audio_in[ch];
             let inp = &input[AudioIn::Input(ch)];
             let out = &mut output[ch];
             for i in 0..block_size {
-                const MAX_GAIN: f32 = 0.988553094657; // -0.1 dB
                 out[i] = inp[i] * amp[i] * makeup[i];
+                clipped |= out[i].abs() >= MAX_GAIN;
                 out[i] = soft_clipper(out[i], MAX_GAIN);
             }
         }
+        self.shared_data.clip_led.store(clipped, Ordering::Relaxed);
     }
 
     fn process_extract_audio(&mut self, context: &ProcessContext<Dsp>) {

@@ -11,6 +11,7 @@ use clogbox_enum::Stereo;
 use clogbox_module::Module;
 use clogbox_utils::AtomicF32;
 use std::ffi::CStr;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 mod dsp;
@@ -18,6 +19,7 @@ mod gui;
 
 pub struct SharedPluginData {
     pub samplerate: AtomicF32,
+    pub clip_led: Arc<AtomicBool>,
     pub cb: ArcSwap<Option<fixed_ringbuf::Consumer<EnumMapArray<Stereo, f32>>>>,
 }
 
@@ -58,6 +60,7 @@ impl Plugin for Compressor {
     fn shared_data(_: HostSharedHandle) -> Result<Self::SharedData, PluginError> {
         Ok(Arc::new(SharedPluginData {
             samplerate: AtomicF32::new(f32::NAN),
+            clip_led: Arc::new(AtomicBool::new(false)),
             cb: ArcSwap::from_pointee(None),
         }))
     }

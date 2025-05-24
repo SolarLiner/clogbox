@@ -64,7 +64,9 @@ pub enum Params {
     Makeup,
     StereoLink,
     Knee,
+    #[r#enum(display = "Sidechain Mode")]
     SidechainMode,
+    DryWet,
 }
 
 impl ParamId for Params {
@@ -77,7 +79,7 @@ impl ParamId for Params {
             Self::Knee | Self::Threshold | Self::Makeup => numeric_prefix.parse::<f32>().ok().map(db_to_linear),
             Self::Envelope(_) => numeric_prefix.parse::<f32>().ok(),
             Self::Ratio => numeric_prefix.parse::<f32>().ok().map(|x| x.recip()),
-            Self::StereoLink => text.parse::<f32>().map(|x| x / 100.0).ok(),
+            Self::StereoLink | Self::DryWet => text.parse::<f32>().map(|x| x / 100.0).ok(),
             Self::SidechainMode => {
                 let lowercase = text.to_lowercase();
                 if lowercase.starts_with("int") {
@@ -99,8 +101,9 @@ impl ParamId for Params {
             Params::Ratio => 4f32.recip(),
             Params::Makeup => 1.0,
             Params::StereoLink => 1.0,
-            Params::Knee => 0.0,
+            Params::Knee => 1.0,
             Params::SidechainMode => 0.0,
+            Params::DryWet => 1.0,
         }
     }
 
@@ -110,14 +113,14 @@ impl ParamId for Params {
         static RATIO: LazyLock<DynMapping> = LazyLock::new(|| recip(1.0, f32::INFINITY).into_dyn());
         static MAKEUP_KNEE: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 24.0).into_dyn());
         static SIDECHAIN: LazyLock<DynMapping> = LazyLock::new(|| enum_::<SidechainMode>().into_dyn());
-        static STEREO_LINK: LazyLock<DynMapping> = LazyLock::new(|| linear(0.0, 1.0).into_dyn());
+        static PERCENTAGE: LazyLock<DynMapping> = LazyLock::new(|| linear(0.0, 1.0).into_dyn());
 
         match self {
             Self::Envelope(env_follower::Params::Attack | env_follower::Params::Release) => TIME.clone(),
             Self::Threshold => THRESHOLD.clone(),
             Self::Ratio => RATIO.clone(),
             Self::Makeup | Self::Knee => MAKEUP_KNEE.clone(),
-            Self::StereoLink => STEREO_LINK.clone(),
+            Self::StereoLink | Self::DryWet => PERCENTAGE.clone(),
             Self::SidechainMode => SIDECHAIN.clone(),
         }
     }
@@ -136,7 +139,7 @@ impl ParamId for Params {
             Self::Threshold => write!(f, "{:.2} dB", denormalized),
             Self::Ratio => write!(f, "{:1.2}:1", denormalized.recip()),
             Self::Makeup | Self::Knee => write!(f, "{:.2} dB", linear_to_db(denormalized)),
-            Self::StereoLink => write!(f, "{:2} %", 100. * denormalized),
+            Self::StereoLink | Self::DryWet => write!(f, "{:3.1} %", 100. * denormalized),
             Self::SidechainMode => write!(f, "{}", SidechainMode::from_usize(denormalized.round() as _).name()),
         }
     }
@@ -157,6 +160,7 @@ enum SmoothedParams {
     Knee,
     SidechainSwitch,
     MakeupGain,
+    DryWet,
 }
 
 impl SmoothedParams {
@@ -168,6 +172,7 @@ impl SmoothedParams {
             SmoothedParams::Knee => Params::Knee,
             SmoothedParams::SidechainSwitch => Params::SidechainMode,
             SmoothedParams::MakeupGain => Params::Makeup,
+            SmoothedParams::DryWet => Params::DryWet,
         }
     }
 }
@@ -292,6 +297,17 @@ impl Dsp {
         self.extract_context
             .process_with(context.stream_context, |ctx| self.extract_audio.process(ctx));
     }
+
+    fn process_dry_wet(&mut self, context: &mut ProcessContext<Dsp>) {
+        for ch in enum_iter::<Stereo>() {
+            for i in 0..context.stream_context.block_size {
+                let dry_wet = self.param_signals[SmoothedParams::DryWet][i];
+                let inp = context.audio_in[AudioIn::Input(ch)][i];
+                let out = &mut context.audio_out[ch][i];
+                *out = lerp(dry_wet, inp, *out);
+            }
+        }
+    }
 }
 
 impl Module for Dsp {
@@ -327,6 +343,7 @@ impl Module for Dsp {
         self.compute_compressor_gain(&context);
         self.apply_gain_reduction(&mut context);
         self.process_extract_audio(&context);
+        self.process_dry_wet(&mut context);
         ProcessResult { tail: None }
     }
 }

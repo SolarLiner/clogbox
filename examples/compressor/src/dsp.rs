@@ -24,11 +24,11 @@ struct Recip(params::Range<Linear>);
 
 impl Mapping for Recip {
     fn normalize(&self, value: f32) -> f32 {
-        self.0.normalize(value.recip())
+        self.0.normalize(value)
     }
 
     fn denormalize(&self, value: f32) -> f32 {
-        self.0.denormalize(value).recip()
+        self.0.denormalize(value)
     }
 
     fn range(&self) -> Range<f32> {
@@ -37,7 +37,7 @@ impl Mapping for Recip {
 }
 
 fn recip(min: f32, max: f32) -> Recip {
-    Recip(linear(min, max))
+    Recip(linear(min.recip(), max.recip()))
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
@@ -59,13 +59,32 @@ pub enum Params {
     Ratio,
     Makeup,
     StereoLink,
+    Knee,
     SidechainMode,
 }
 
 impl ParamId for Params {
     fn text_to_value(&self, text: &str) -> Option<f32> {
-        let parsed = text.parse::<f32>().ok()?;
-        Some(parsed)
+        let numeric_prefix = text
+            .split_once(|c: char| !c.is_ascii_digit() && c != '.')
+            .map(|(a, _)| a)
+            .unwrap_or(text);
+        match self {
+            Self::Knee | Self::Threshold | Self::Makeup => numeric_prefix.parse::<f32>().ok().map(db_to_linear),
+            Self::Envelope(_) => numeric_prefix.parse::<f32>().ok(),
+            Self::Ratio => numeric_prefix.parse::<f32>().ok().map(|x| x.recip()),
+            Self::StereoLink => text.parse::<f32>().map(|x| x / 100.0).ok(),
+            Self::SidechainMode => {
+                let lowercase = text.to_lowercase();
+                if lowercase.starts_with("int") {
+                    Some(0.0)
+                } else if lowercase.starts_with("ext") {
+                    Some(1.0)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     fn default_value(&self) -> f32 {
@@ -76,6 +95,7 @@ impl ParamId for Params {
             Params::Ratio => 4f32.recip(),
             Params::Makeup => 1.0,
             Params::StereoLink => 1.0,
+            Params::Knee => 0.0,
             Params::SidechainMode => 0.0,
         }
     }
@@ -83,8 +103,8 @@ impl ParamId for Params {
     fn mapping(&self) -> DynMapping {
         static TIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(1e-6, 1.0, 2.5f32.ln()).into_dyn());
         static THRESHOLD: LazyLock<DynMapping> = LazyLock::new(|| linear(-72.0, 0.0).into_dyn());
-        static RATIO: LazyLock<DynMapping> = LazyLock::new(|| recip(1.0, 20.0).into_dyn());
-        static MAKEUP: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 24.0).into_dyn());
+        static RATIO: LazyLock<DynMapping> = LazyLock::new(|| recip(1.0, f32::INFINITY).into_dyn());
+        static MAKEUP_KNEE: LazyLock<DynMapping> = LazyLock::new(|| decibel(0.0, 24.0).into_dyn());
         static SIDECHAIN: LazyLock<DynMapping> = LazyLock::new(|| enum_::<SidechainMode>().into_dyn());
         static STEREO_LINK: LazyLock<DynMapping> = LazyLock::new(|| linear(0.0, 1.0).into_dyn());
 
@@ -92,7 +112,7 @@ impl ParamId for Params {
             Self::Envelope(env_follower::Params::Attack | env_follower::Params::Release) => TIME.clone(),
             Self::Threshold => THRESHOLD.clone(),
             Self::Ratio => RATIO.clone(),
-            Self::Makeup => MAKEUP.clone(),
+            Self::Makeup | Self::Knee => MAKEUP_KNEE.clone(),
             Self::StereoLink => STEREO_LINK.clone(),
             Self::SidechainMode => SIDECHAIN.clone(),
         }
@@ -101,7 +121,9 @@ impl ParamId for Params {
     fn value_to_text(&self, f: &mut dyn Write, denormalized: f32) -> std::fmt::Result {
         match self {
             Self::Envelope(_) => {
-                if denormalized < 0.9 {
+                if denormalized < 0.001 {
+                    write!(f, "{:.2} us", 1e6 * denormalized)
+                } else if denormalized < 0.9 {
                     write!(f, "{:.2} ms", 1e3 * denormalized)
                 } else {
                     write!(f, "{:.2} s", denormalized)
@@ -109,7 +131,7 @@ impl ParamId for Params {
             }
             Self::Threshold => write!(f, "{:.2} dB", denormalized),
             Self::Ratio => write!(f, "{:1.2}:1", denormalized.recip()),
-            Self::Makeup => write!(f, "{:.2} dB", linear_to_db(denormalized)),
+            Self::Makeup | Self::Knee => write!(f, "{:.2} dB", linear_to_db(denormalized)),
             Self::StereoLink => write!(f, "{:2} %", 100. * denormalized),
             Self::SidechainMode => write!(f, "{}", SidechainMode::from_usize(denormalized.round() as _).name()),
         }
@@ -128,6 +150,7 @@ enum SmoothedParams {
     Theshold,
     Ratio,
     Link,
+    Knee,
     SidechainSwitch,
     MakeupGain,
 }
@@ -138,6 +161,7 @@ impl SmoothedParams {
             SmoothedParams::Theshold => Params::Threshold,
             SmoothedParams::Ratio => Params::Ratio,
             SmoothedParams::Link => Params::StereoLink,
+            SmoothedParams::Knee => Params::Knee,
             SmoothedParams::SidechainSwitch => Params::SidechainMode,
             SmoothedParams::MakeupGain => Params::Makeup,
         }
@@ -148,14 +172,17 @@ fn lerp(t: f32, a: f32, b: f32) -> f32 {
     a + t * (b - a)
 }
 
-fn compressor_gain(ratio_recip: f32, threshold_db: f32, input: f32) -> f32 {
+fn compressor_gain(ratio_recip: f32, threshold_db: f32, input: f32, knee: f32) -> f32 {
     let x = linear_to_db(input);
-    let curve_db = lerp(1.0 - ratio_recip, x, (x - threshold_db).min(0.0) + threshold_db);
+    let curve_db = lerp(1.0 - ratio_recip, x, smin(x - threshold_db, 0.0, knee) + threshold_db);
     let gain_db = curve_db - x;
     db_to_linear(gain_db)
 }
 
 fn smin(a: f32, b: f32, k: f32) -> f32 {
+    if k <= f32::EPSILON {
+        return a.min(b);
+    }
     let k = k * 6.0;
     let h = (k - (a - b).abs()).max(0.0) / k;
     a.min(b) - (h * h * h) * k * (1.0 / 6.0)
@@ -167,7 +194,7 @@ fn smax(a: f32, b: f32, k: f32) -> f32 {
 }
 
 fn soft_clipper(x: f32, max_gain: f32) -> f32 {
-    const K: f32 = 0.3;
+    const K: f32 = 0.05;
     smax(-max_gain, smin(max_gain, x, K), K)
 }
 
@@ -191,6 +218,9 @@ impl Dsp {
                 }
                 self.param_signals[param][i] = self.smoothers[param].next_value();
             }
+        }
+        for i in 0..block_size {
+            self.param_signals[SmoothedParams::Knee][i] -= 1.0;
         }
     }
 
@@ -219,6 +249,7 @@ impl Dsp {
         let link = &self.param_signals[SmoothedParams::Link];
         let threshold = &self.param_signals[SmoothedParams::Theshold];
         let ratio = &self.param_signals[SmoothedParams::Ratio];
+        let knee = &self.param_signals[SmoothedParams::Knee];
         let block_size = context.stream_context.block_size;
         for ch in enum_iter::<Stereo>() {
             let env_l = &self.env_context.audio_out[Stereo::Left];
@@ -230,7 +261,7 @@ impl Dsp {
                     Stereo::Right => 1.0 - 0.5 * link[i],
                 };
                 let env = env_l[i] + (env_r[i] - env_l[i]) * mix;
-                out[i] = compressor_gain(ratio[i], threshold[i], env);
+                out[i] = compressor_gain(ratio[i], threshold[i], env, knee[i]);
             }
         }
     }
@@ -299,7 +330,6 @@ impl PluginDsp for Dsp {
     type Plugin = super::Compressor;
 
     fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self {
-        let extract_audio = ExtractAudio::CONST_NEW;
         let sample_rate = context.audio_config.sample_rate as _;
         Self {
             env_context: OwnedProcessContext::new(0, 0),
@@ -311,11 +341,15 @@ impl PluginDsp for Dsp {
                 EnumMapArray::new(|e| context.params[Params::Envelope(e)]),
             ),
             extract_context: OwnedProcessContext::new(0, 0),
-            extract_audio,
+            extract_audio: ExtractAudio::CONST_NEW,
             smoothers: EnumMapArray::new(|p: SmoothedParams| {
                 ExpSmoother::new(
                     sample_rate,
-                    10e-3,
+                    if matches!(p, SmoothedParams::SidechainSwitch) {
+                        100e-3
+                    } else {
+                        10e-3
+                    },
                     context.params[p.to_dsp_param()],
                     context.params[p.to_dsp_param()],
                 )

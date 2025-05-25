@@ -28,6 +28,7 @@
       <sourceFolder url="file://$MODULE_DIR$/python/clogbox/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/submodules/egui-baseview/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/compressor/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

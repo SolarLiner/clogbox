@@ -187,10 +187,10 @@ impl<P: PluginDsp> Processor<'_, P> {
                 continue;
             };
             self.shared.params.set(param, value);
-            self.shared.notifier.notify(ParamChangeEvent {
-                id: param,
-                kind: ParamChangeKind::ValueChange(value),
-            });
+            // self.shared.notifier.notify(ParamChangeEvent {
+            //     id: param,
+            //     kind: ParamChangeKind::ValueChange(value),
+            // });
         }
         Ok(())
     }

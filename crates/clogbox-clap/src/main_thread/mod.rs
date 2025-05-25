@@ -115,7 +115,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
         if index < count::<P::Params>() {
             let p = P::Params::from_usize(index);
             let range = if let Some(num_values) = p.discrete() {
-                0.0..num_values as _
+                0.0..(num_values - 1) as _
             } else {
                 0.0..1.0
             };

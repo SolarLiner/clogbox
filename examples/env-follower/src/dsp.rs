@@ -38,7 +38,7 @@ impl ParamId for Params {
     }
 
     fn mapping(&self) -> DynMapping {
-        static TIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.01, 10.0, 2.5f32.ln()).into_dyn());
+        static TIME: LazyLock<DynMapping> = LazyLock::new(|| polynomial(0.0, 10.0, 1.0).into_dyn());
 
         match self {
             Self::Envelope(env_follower::Params::Attack | env_follower::Params::Release) => TIME.clone(),

@@ -35,6 +35,7 @@ pub trait MappingExt: Sized + Mapping {
 
 impl<M: Mapping> MappingExt for M {}
 
+#[derive(Debug, Copy, Clone)]
 pub struct Linear;
 
 impl Mapping for Linear {
@@ -53,6 +54,7 @@ impl Mapping for Linear {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Range<M> {
     pub inner: M,
     pub min: f32,
@@ -75,6 +77,7 @@ impl<M: Mapping> Mapping for Range<M> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Polynomial {
     forward: f32,
     backward: f32,
@@ -105,7 +108,7 @@ impl Polynomial {
 
 pub type DynMapping = Arc<dyn Mapping>;
 
-pub const fn linear(min: f32, max: f32) -> impl Mapping {
+pub const fn linear(min: f32, max: f32) -> Range<Linear> {
     Range {
         inner: Linear,
         min,
@@ -113,7 +116,7 @@ pub const fn linear(min: f32, max: f32) -> impl Mapping {
     }
 }
 
-pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> impl Mapping {
+pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> Range<Polynomial> {
     Range {
         inner: Polynomial::new(factor),
         min,
@@ -121,10 +124,11 @@ pub fn polynomial_raw(min: f32, max: f32, factor: f32) -> impl Mapping {
     }
 }
 
-pub fn polynomial(min: f32, max: f32, factor: f32) -> impl Mapping {
+pub fn polynomial(min: f32, max: f32, factor: f32) -> Range<Polynomial> {
     polynomial_raw(min, max, factor.exp())
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Logarithmic {
     base: f32,
     start: f32,
@@ -147,7 +151,7 @@ impl Mapping for Logarithmic {
     }
 }
 
-pub fn logarithmic(base: f32, start: f32, end: f32) -> impl Mapping {
+pub fn logarithmic(base: f32, start: f32, end: f32) -> Logarithmic {
     Logarithmic {
         base,
         start: start.log(base),
@@ -155,10 +159,11 @@ pub fn logarithmic(base: f32, start: f32, end: f32) -> impl Mapping {
     }
 }
 
-pub fn frequency(min: f32, max: f32) -> impl Mapping {
+pub fn frequency(min: f32, max: f32) -> Logarithmic {
     logarithmic(2.0, min, max)
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Decibel(Range<Linear>);
 
 impl Mapping for Decibel {
@@ -175,7 +180,7 @@ impl Mapping for Decibel {
     }
 }
 
-pub fn decibel(min: f32, max: f32) -> impl Mapping {
+pub fn decibel(min: f32, max: f32) -> Decibel {
     Decibel(Range {
         inner: Linear,
         min,
@@ -183,6 +188,7 @@ pub fn decibel(min: f32, max: f32) -> impl Mapping {
     })
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Int {
     min: f32,
     max: f32,
@@ -202,14 +208,14 @@ impl Mapping for Int {
     }
 }
 
-pub fn int(min: i32, max: i32) -> impl Mapping {
+pub fn int(min: i32, max: i32) -> Int {
     Int {
         min: min as f32,
         max: max as f32,
     }
 }
 
-pub fn enum_<E: Enum>() -> impl Mapping {
+pub fn enum_<E: Enum>() -> Int {
     int(0, count::<E>() as i32 - 1)
 }
 

@@ -1,0 +1,26 @@
+[package]
+name = "compressor"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-clap-egui = { workspace = true }
+clogbox-enum.workspace = true
+clogbox-math.workspace = true
+clogbox-module.workspace = true
+clogbox-utils.workspace = true
+clogbox-params.workspace = true
+fixed-ringbuf.workspace = true
+
+arc-swap = "1.7.1"
+egui_plot = "0.32.1"

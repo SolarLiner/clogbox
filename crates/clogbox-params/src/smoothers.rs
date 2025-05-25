@@ -82,6 +82,11 @@ impl<T: Copy + One + NumOps> ExpSmoother<T> {
             last: initial,
         }
     }
+
+    pub fn set_samplerate(&mut self, samplerate: T) {
+        self.samplerate = samplerate;
+        self.tau = T::one() - self.time / samplerate;
+    }
 }
 
 impl<T: az::CastFrom<f64> + Float + NumAssign> Smoother<T> for ExpSmoother<T> {

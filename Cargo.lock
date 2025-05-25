@@ -576,6 +576,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "compressor"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "clogbox-clap",
+ "clogbox-clap-egui",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "clogbox-params",
+ "clogbox-utils",
+ "egui_plot",
+ "fixed-ringbuf",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

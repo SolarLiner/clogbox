@@ -20,7 +20,7 @@ mod atomic_linked_list;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod main_thread;
-mod notifier;
+pub mod notifier;
 pub mod params;
 pub mod processor;
 pub mod shared;

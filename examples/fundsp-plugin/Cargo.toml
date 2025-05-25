@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 clogbox-clap = { workspace = true, features = ["gui"] }
-clogbox-clap-egui.workspace = true
+clogbox-clap-vizia.workspace = true
 clogbox-enum.workspace = true
 clogbox-module = { workspace = true, features = ["fundsp"] }
 

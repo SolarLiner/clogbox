@@ -3,7 +3,7 @@ use clogbox_clap::gui::PluginView;
 use clogbox_clap::main_thread::{Plugin, PortLayout};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
-use clogbox_clap_egui::generic_ui;
+use clogbox_clap_vizia::generic_ui;
 use clogbox_enum::{seq, Sequential};
 use clogbox_module::Module;
 use fundsp::prelude::U2;
@@ -48,9 +48,9 @@ impl Plugin for FundspPlugin {
     fn view(
         &mut self,
     ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
-        generic_ui(GuiSize {
+        generic_ui::<Self>(GuiSize {
             width: 400,
-            height: 250,
+            height: 150,
         })
     }
 }

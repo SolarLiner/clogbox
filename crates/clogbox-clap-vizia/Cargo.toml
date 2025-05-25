@@ -1,0 +1,21 @@
+[package]
+name = "clogbox-clap-vizia"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-enum.workspace = true
+clogbox-clap = { workspace = true, features = ["gui"] }
+clogbox-utils.workspace = true
+log.workspace = true
+serde_json.workspace = true
+
+baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
+vizia = { git = "https://github.com/vizia/vizia.git", branch = "main", version = "0.3.0" }
+vizia_baseview = { git = "https://github.com/vizia/vizia.git", branch = "main", version = "0.3.0" }

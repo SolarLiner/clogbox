@@ -15,7 +15,7 @@ clogbox-math.workspace = true
 clogbox-module.workspace = true
 
 clack-plugin.workspace = true
-clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state", "note-ports"] }
 env_logger = { workspace = true, optional = true }
 log.workspace = true
 ringbuf = { workspace = true, optional = true }

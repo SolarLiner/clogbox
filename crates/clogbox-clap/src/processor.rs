@@ -1,24 +1,29 @@
-use crate::main_thread::{MainThread, Plugin};
+use crate::main_thread::{Layout, MainThread, Plugin};
 #[cfg(feature = "gui")]
 use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamListener};
 use crate::params::{ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
-use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
+use clack_plugin::events::event_types::{NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
+use clack_plugin::events::Match;
 use clack_plugin::host::HostAudioProcessorHandle;
 pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
-use clack_plugin::utils::Cookie;
 use clogbox_enum::enum_map::EnumMapRef;
-use clogbox_enum::{count, enum_iter, Empty, Enum};
+use clogbox_enum::typenum::U16;
+use clogbox_enum::{count, enum_iter, Empty, Enum, Sequential};
+use clogbox_math::frequency::midi_note_to_frequency;
 use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
 use clogbox_module::eventbuffer::Timestamped;
+use clogbox_module::note::{NoteEvent, NoteId};
 use clogbox_module::{Module, Samplerate};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::sync::atomic::Ordering;
+
+pub type NoteChannel = Sequential<U16>;
 
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
     pub host: HostSharedHandle<'a>,
@@ -30,9 +35,7 @@ pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
 /// A DSP module that can also be used as the audio processor for a plugin.
 ///
 /// TODO: Note support
-pub trait PluginDsp:
-    Send + Module<Sample = f32, ParamsIn: ParamId, ParamsOut = Empty, NoteIn = Empty, NoteOut = Empty>
-{
+pub trait PluginDsp: Send + Module<Sample = f32, ParamsIn: ParamId, ParamsOut = Empty> {
     type Plugin: Plugin<Dsp = Self, Params = Self::ParamsIn>;
 
     fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self;
@@ -44,6 +47,8 @@ pub struct Processor<'a, P: PluginDsp> {
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
     params: EventStorage<P::ParamsIn, f32>,
+    note_in: EventStorage<P::NoteIn, NoteEvent>,
+    note_out: EventStorage<P::NoteOut, NoteEvent>,
     #[cfg(feature = "gui")]
     params_rx: ParamListener<P::ParamsIn>,
     sample_rate: Samplerate,
@@ -76,6 +81,8 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         let audio_in = AudioStorage::default(block_size);
         let audio_out = AudioStorage::default(block_size);
         let params = EventStorage::with_capacity(512);
+        let note_in = EventStorage::with_capacity(512);
+        let note_out = EventStorage::with_capacity(512);
         dsp.prepare(sample_rate, audio_config.max_frames_count as _);
 
         shared
@@ -93,6 +100,8 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             dsp,
             audio_in,
             audio_out,
+            note_in,
+            note_out,
             params,
             #[cfg(feature = "gui")]
             params_rx: rx,
@@ -108,7 +117,7 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         mut events: Events,
     ) -> Result<ProcessStatus, PluginError> {
         self.copy_inputs(&audio)?;
-        self.copy_events(&mut events)?;
+        self.copy_events_in(&mut events)?;
         let process_status = self.process_audio(&StreamContext {
             block_size: audio.frames_count() as _,
             sample_rate: self.sample_rate,
@@ -124,12 +133,12 @@ impl<P: PluginDsp> Processor<'_, P> {
         for (i, port) in audio.input_ports().enumerate() {
             if let Some(channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter().enumerate() {
-                    let index = P::Plugin::INPUT_LAYOUT[i].channel_map[j];
+                    let index = P::Plugin::AUDIO_IN_LAYOUT[i].channel_map[j];
                     self.audio_in[index][..channel.len()].copy_from_slice(channel);
                 }
             } else if let Some(channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter().enumerate() {
-                    let index = P::Plugin::INPUT_LAYOUT[i].channel_map[j];
+                    let index = P::Plugin::AUDIO_IN_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
                         self.audio_in[index][i] = channel[i] as f32;
                     }
@@ -141,25 +150,20 @@ impl<P: PluginDsp> Processor<'_, P> {
         Ok(())
     }
 
-    fn copy_events(&mut self, events: &mut Events) -> Result<(), PluginError> {
+    fn copy_events_in(&mut self, events: &mut Events) -> Result<(), PluginError> {
         for buf in self.params.values_mut() {
             buf.clear();
         }
         for event in events.input.iter() {
-            let Some(ev) = event.as_event::<ParamValueEvent>() else {
-                continue;
-            };
-            let Some(param) = ev.param_id().and_then(|id| {
-                let index = id.get() as usize;
-                if index < count::<P::ParamsIn>() {
-                    Some(P::ParamsIn::from_usize(index))
-                } else {
-                    None
-                }
-            }) else {
-                continue;
-            };
-            (*self.params)[param].push(ev.time() as _, param.clap_value_to_denormalized(ev.value()));
+            if let Some(ev) = event.as_event::<ParamValueEvent>() {
+                self.insert_param_value(ev.param_id(), ev.time() as _, ev.value());
+            } else if let Some(ev) = event.as_event::<NoteOnEvent>() {
+                self.insert_note_on(ev);
+            } else if let Some(ev) = event.as_event::<NoteOffEvent>() {
+                self.insert_note_off(ev);
+            } else if let Some(ev) = event.as_event::<NoteChokeEvent>() {
+                todo!()
+            }
         }
 
         // Retrieve (and publish to host) params received by the GUI
@@ -199,11 +203,93 @@ impl<P: PluginDsp> Processor<'_, P> {
         Ok(())
     }
 
+    fn insert_param_value(&mut self, clap_id: Option<ClapId>, time: usize, value: f64) -> bool {
+        let Some(param) = clap_id.and_then(|id| {
+            let index = id.get() as usize;
+            if index < count::<P::ParamsIn>() {
+                Some(P::ParamsIn::from_usize(index))
+            } else {
+                None
+            }
+        }) else {
+            return true;
+        };
+        (*self.params)[param].push(time, param.clap_value_to_denormalized(value));
+        false
+    }
+
+    fn insert_note_on(&mut self, ev: &NoteOnEvent) {
+        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
+            (*self.note_in)[note_in].push(
+                ev.time() as _,
+                NoteEvent::NoteOn {
+                    id: note_id,
+                    velocity: ev.velocity() as _,
+                    frequency: midi_note_to_frequency(note_id.number) as _,
+                },
+            );
+        }
+    }
+
+    fn insert_note_off(&mut self, ev: &NoteOffEvent) {
+        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
+            (*self.note_in)[note_in].push(
+                ev.time() as _,
+                NoteEvent::NoteOff {
+                    id: note_id,
+                    velocity: ev.velocity() as _,
+                    frequency: midi_note_to_frequency(note_id.number) as _,
+                },
+            );
+        }
+    }
+
+    fn insert_note_choke(&mut self, ev: &NoteChokeEvent) {
+        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
+            (*self.note_in)[note_in].push(ev.time() as _, NoteEvent::Choke { id: note_id });
+        }
+    }
+
+    fn target_note(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = NoteId> {
+        (0..16)
+            .filter(move |c| channel.matches(*c as u16))
+            .flat_map(move |channel| {
+                (0..128)
+                    .filter(move |n| note.matches(*n as u16))
+                    .map(move |note| NoteId {
+                        channel: channel as _,
+                        number: note as _,
+                    })
+            })
+    }
+
+    fn target_note_in(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = (NoteId, P::NoteIn)> {
+        Self::target_note(channel, note).filter_map(move |id| {
+            Some((
+                id,
+                P::Plugin::NOTE_IN_LAYOUT
+                    .get(id.number as usize)
+                    .and_then(|layout| layout.channel_map.get(id.channel as usize).copied())?,
+            ))
+        })
+    }
+
+    fn target_note_out(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = (NoteId, P::NoteOut)> {
+        Self::target_note(channel, note).filter_map(move |id| {
+            Some((
+                id,
+                P::Plugin::NOTE_OUT_LAYOUT
+                    .get(id.number as usize)
+                    .and_then(|layout| layout.channel_map.get(id.channel as usize).copied())?,
+            ))
+        })
+    }
+
     fn copy_outputs(&mut self, audio: &mut Audio) -> Result<(), PluginError> {
         for (i, mut port) in audio.output_ports().enumerate() {
             if let Some(mut channels) = port.channels()?.into_f32() {
                 for (j, channel) in channels.iter_mut().enumerate() {
-                    let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
+                    let index = P::Plugin::AUDIO_OUT_LAYOUT[i].channel_map[j];
                     let slice = &mut self.audio_out[index][..channel.len()];
                     for x in &mut *slice {
                         if !x.is_finite() {
@@ -214,7 +300,7 @@ impl<P: PluginDsp> Processor<'_, P> {
                 }
             } else if let Some(mut channels) = port.channels()?.into_f64() {
                 for (j, channel) in channels.iter_mut().enumerate() {
-                    let index = P::Plugin::OUTPUT_LAYOUT[i].channel_map[j];
+                    let index = P::Plugin::AUDIO_OUT_LAYOUT[i].channel_map[j];
                     for i in 0..channel.len() {
                         let y = self.audio_out[index][i] as f64;
                         channel[i] = if y.is_finite() { y } else { 0.0 };
@@ -231,8 +317,8 @@ impl<P: PluginDsp> Processor<'_, P> {
             audio_out: &mut self.audio_out,
             params_in: &self.params,
             params_out: &mut EventStorage::empty(),
-            note_in: &EventStorage::empty(),
-            note_out: &mut EventStorage::empty(),
+            note_in: &self.note_in,
+            note_out: &mut self.note_out,
             stream_context,
             __phantom: PhantomData,
         };

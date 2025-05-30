@@ -3,7 +3,7 @@ extern crate core;
 use crate::dsp::AudioOut;
 use arc_swap::ArcSwap;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::main_thread::{Plugin, PortLayout};
+use clogbox_clap::main_thread::{Layout, Plugin};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
 use clogbox_enum::enum_map::EnumMapArray;
@@ -37,15 +37,14 @@ impl Plugin for EnvFollowerPlugin {
     type Params = dsp::Params;
     type SharedData = SharedData;
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
-        &[PortLayout::STEREO.named("Input").main()];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[
-        PortLayout {
+    const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[Layout::STEREO.named("Input").main()];
+    const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] = &[
+        Layout {
             main: true,
             name: "Output",
             channel_map: &[AudioOut::Output(Stereo::Left), AudioOut::Output(Stereo::Right)],
         },
-        PortLayout {
+        Layout {
             main: false,
             name: "Envelope",
             channel_map: &[AudioOut::Envelope(Stereo::Left), AudioOut::Envelope(Stereo::Right)],

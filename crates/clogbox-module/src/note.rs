@@ -99,6 +99,11 @@ pub enum NoteEvent {
         /// The release velocity, in the range 0.0 to 1.0 (often ignored)
         velocity: f32,
     },
+    /// Immediately stop playing the given note
+    Choke {
+        /// The note identification (number and channel)
+        id: NoteId,
+    },
 }
 
 impl NoteEvent {

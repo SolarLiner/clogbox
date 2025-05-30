@@ -11,16 +11,19 @@ use bincode::error::{DecodeError, EncodeError};
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
 };
+use clack_extensions::note_ports::{NoteDialect, NoteDialects, NotePortInfo, NotePortInfoWriter, PluginNotePortsImpl};
 use clack_extensions::params::{ParamDisplayWriter, ParamInfo, ParamInfoWriter, PluginMainThreadParams};
 use clack_extensions::state::PluginStateImpl;
 use clack_plugin::events::event_types::ParamValueEvent;
+use clack_plugin::events::io::InputEventBuffer;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{count, Enum, Mono, Stereo};
+use clogbox_enum::{count, seq, typenum, Enum, Mono, Sequential, Stereo};
 use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
+use std::mem::MaybeUninit;
 
 #[cfg(not(feature = "gui"))]
 type GuiHandle<E> = std::marker::PhantomData<E>;
@@ -31,13 +34,13 @@ use super::gui::GuiHandle;
 mod log;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PortLayout<E: 'static> {
+pub struct Layout<E: 'static> {
     pub name: &'static str,
     pub main: bool,
     pub channel_map: &'static [E],
 }
 
-impl<E: 'static> PortLayout<E> {
+impl<E: 'static> Layout<E> {
     pub const fn main(self) -> Self {
         Self { main: true, ..self }
     }
@@ -47,7 +50,7 @@ impl<E: 'static> PortLayout<E> {
     }
 }
 
-impl PortLayout<Mono> {
+impl Layout<Mono> {
     pub const MONO: Self = Self {
         name: "Mono",
         main: false,
@@ -55,11 +58,36 @@ impl PortLayout<Mono> {
     };
 }
 
-impl PortLayout<Stereo> {
+impl Layout<Stereo> {
     pub const STEREO: Self = Self {
         name: "Stereo",
         main: false,
         channel_map: &[Stereo::Left, Stereo::Right],
+    };
+}
+
+impl Layout<Sequential<typenum::U16>> {
+    pub const MIDI: Self = Self {
+        name: "MIDI",
+        main: false,
+        channel_map: &[
+            seq(0),
+            seq(1),
+            seq(2),
+            seq(3),
+            seq(4),
+            seq(5),
+            seq(6),
+            seq(7),
+            seq(8),
+            seq(9),
+            seq(10),
+            seq(11),
+            seq(12),
+            seq(13),
+            seq(14),
+            seq(15),
+        ],
     };
 }
 
@@ -68,8 +96,10 @@ pub trait Plugin: 'static + Sized {
     type Params: ParamId;
     type SharedData: 'static + Clone + Send + Sync;
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
+    const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>];
+    const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>];
+    const NOTE_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::NoteIn>] = &[];
+    const NOTE_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::NoteOut>] = &[];
 
     fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
 
@@ -191,14 +221,14 @@ impl<'a, P: Plugin + 'a> PluginMainThread<'a, Shared<P>> for MainThread<'a, P> {
 impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     fn count(&mut self, is_input: bool) -> u32 {
         if is_input {
-            P::INPUT_LAYOUT.len() as _
+            P::AUDIO_IN_LAYOUT.len() as _
         } else {
-            P::OUTPUT_LAYOUT.len() as _
+            P::AUDIO_OUT_LAYOUT.len() as _
         }
     }
 
     fn get(&mut self, index: u32, is_input: bool, writer: &mut AudioPortInfoWriter) {
-        fn write_port_info<E>(writer: &mut AudioPortInfoWriter, index: u32, layout: PortLayout<E>) {
+        fn write_port_info<E>(writer: &mut AudioPortInfoWriter, index: u32, layout: Layout<E>) {
             let is_main = if layout.main {
                 AudioPortFlags::IS_MAIN
             } else {
@@ -219,9 +249,9 @@ impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
         }
 
         if is_input {
-            write_port_info(writer, index, P::INPUT_LAYOUT[index as usize]);
+            write_port_info(writer, index, P::AUDIO_IN_LAYOUT[index as usize]);
         } else {
-            let layout = P::OUTPUT_LAYOUT[index as usize];
+            let layout = P::AUDIO_OUT_LAYOUT[index as usize];
             write_port_info(writer, index, layout);
         }
     }
@@ -307,5 +337,29 @@ impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
             self.gui.load(gui)?;
         }
         Ok(())
+    }
+}
+
+impl<P: Plugin> PluginNotePortsImpl for MainThread<'_, P> {
+    fn count(&mut self, is_input: bool) -> u32 {
+        if is_input {
+            P::NOTE_IN_LAYOUT.len() as _
+        } else {
+            P::NOTE_OUT_LAYOUT.len() as _
+        }
+    }
+
+    fn get(&mut self, index: u32, is_input: bool, writer: &mut NotePortInfoWriter) {
+        let layout = if is_input {
+            P::NOTE_IN_LAYOUT[index as usize]
+        } else {
+            P::NOTE_OUT_LAYOUT[index as usize]
+        };
+        writer.set(&NotePortInfo {
+            id: ClapId::new(index),
+            name: layout.name.as_bytes(),
+            supported_dialects: NoteDialects::CLAP,
+            preferred_dialect: Some(NoteDialect::Clap),
+        });
     }
 }

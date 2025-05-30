@@ -3,6 +3,7 @@ use num_traits::Float;
 use numeric_literals::replace_float_literals;
 
 pub mod dsp;
+pub mod frequency;
 pub mod interpolation;
 pub mod recip;
 pub mod root_eq;

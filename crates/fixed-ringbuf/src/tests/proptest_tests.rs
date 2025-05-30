@@ -1,3 +1,4 @@
+#![cfg(not(miri))]
 use crate::rb::RingBuffer;
 use proptest::prelude::*;
 

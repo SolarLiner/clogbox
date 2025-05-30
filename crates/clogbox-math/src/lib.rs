@@ -15,6 +15,7 @@ use numeric_literals::replace_float_literals;
 ///
 /// This module contains various DSP-related mathematical functions and algorithms.
 pub mod dsp;
+pub mod frequency;
 
 /// Interpolation algorithms for signal processing.
 ///

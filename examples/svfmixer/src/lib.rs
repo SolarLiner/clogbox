@@ -22,8 +22,8 @@ impl Plugin for SvfMixer {
     type Params = params::Param;
     type SharedData = ();
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
-        &[PortLayout::STEREO.main().named("Input")];
+    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[Layout::STEREO.main().named
+    ("Input")];
     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] =
         &[PortLayout::STEREO.main().named("Output")];
 

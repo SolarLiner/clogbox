@@ -283,6 +283,26 @@ impl<T> RingBuffer<T> {
         );
         self.read_index().wrapping_add(index) & self.mask
     }
+
+    #[cfg(test)]
+    fn save_indices(&self) -> (usize, usize) {
+        (
+            self.read_index.load(Ordering::SeqCst),
+            self.write_index.load(Ordering::SeqCst),
+        )
+    }
+
+    #[cfg(test)]
+    fn restore_indices(&self, indices: (usize, usize)) {
+        if let Some(cell) = self.read_index_cached.get() {
+            cell.set(indices.0);
+        }
+        if let Some(cell) = self.write_index_cached.get() {
+            cell.set(indices.1);
+        }
+        self.read_index.store(indices.0, Ordering::SeqCst);
+        self.write_index.store(indices.1, Ordering::SeqCst);
+    }
 }
 
 impl<T> Drop for RingBuffer<T> {
@@ -295,6 +315,7 @@ impl<T> Drop for RingBuffer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::mem::ManuallyDrop;
     use std::sync::{Arc, Mutex};
     use std::thread;
 
@@ -386,14 +407,19 @@ mod tests {
         // This will initialize thread-local caches
         assert!(rb.is_empty());
 
+        let old = rb.save_indices();
+
         // Manually update the atomic indices (simulating another thread's changes)
         rb.read_index.store(1, Ordering::SeqCst);
         rb.write_index.store(3, Ordering::SeqCst);
 
         // Local cached values are still at 0, so len() would return 0
         // But after reload_indices it should reflect the new values
+        assert_eq!(0, rb.len());
         rb.reload_indices();
         assert_eq!(rb.len(), 2);
+
+        rb.restore_indices(old);
     }
 
     #[test]
@@ -546,6 +572,8 @@ mod tests {
         assert_eq!(rb.read_pos(), 0);
         assert_eq!(rb.write_pos(), 0);
 
+        let old = rb.save_indices();
+
         // Update indices
         rb.update_read_index(2);
         rb.update_write_index(3);
@@ -557,6 +585,8 @@ mod tests {
         // Check atomic values directly
         assert_eq!(rb.read_index.load(Ordering::SeqCst), 2);
         assert_eq!(rb.write_index.load(Ordering::SeqCst), 3);
+
+        rb.restore_indices(old);
     }
 
     #[test]

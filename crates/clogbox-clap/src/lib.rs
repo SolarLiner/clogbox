@@ -59,6 +59,7 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
     fn new_shared(host: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
         Ok(SharedData {
             params: Default::default(),
+            #[cfg(feature = "gui")]
             notifier: Notifier::new(),
             user_data: P::shared_data(host)?,
             sample_rate: Arc::new(AtomicU64::new(0)),

@@ -1,7 +1,7 @@
 use crate::main_thread::{MainThread, Plugin};
 #[cfg(feature = "gui")]
-use crate::params::ParamListener;
-use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamId, ParamIdExt};
+use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamListener};
+use crate::params::{ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent, ParamValueEvent};
@@ -44,6 +44,7 @@ pub struct Processor<'a, P: PluginDsp> {
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
     params: EventStorage<P::ParamsIn, f32>,
+    #[cfg(feature = "gui")]
     params_rx: ParamListener<P::ParamsIn>,
     sample_rate: Samplerate,
     tail: Option<NonZeroU32>,
@@ -81,7 +82,9 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             .sample_rate
             .store(sample_rate.value().to_bits(), Ordering::Relaxed);
 
+        #[cfg(feature = "gui")]
         let (tx, rx) = create_notifier_listener(1024);
+        #[cfg(feature = "gui")]
         shared.notifier.add_listener(move |event| {
             tx.notify(event.id, event.kind);
         });
@@ -91,6 +94,7 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             audio_in,
             audio_out,
             params,
+            #[cfg(feature = "gui")]
             params_rx: rx,
             sample_rate,
             tail: None,

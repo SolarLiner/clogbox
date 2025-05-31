@@ -4,7 +4,7 @@ mod gui;
 mod params;
 
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::main_thread::{Plugin, PortLayout};
+use clogbox_clap::main_thread::{Layout, Plugin};
 use clogbox_clap::processor::{HostSharedHandle, PluginError};
 use clogbox_clap::{export_plugin, features, PluginMeta};
 use clogbox_module::Module;
@@ -24,10 +24,9 @@ impl Plugin for SvfMixer {
     type Params = params::Param;
     type SharedData = ();
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] =
-        &[PortLayout::STEREO.main().named("Input")];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] =
-        &[PortLayout::STEREO.main().named("Output")];
+    const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[Layout::STEREO.main().named("Input")];
+    const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] =
+        &[Layout::STEREO.main().named("Output")];
 
     fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
         Ok(Self)

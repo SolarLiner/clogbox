@@ -413,6 +413,7 @@ dependencies = [
  "clogbox-module",
  "env_logger",
  "log",
+ "num-traits",
  "raw-window-handle 0.5.2",
  "ringbuf",
  "serde_json",
@@ -513,6 +514,17 @@ dependencies = [
  "num-traits",
  "numeric_literals",
  "typenum",
+]
+
+[[package]]
+name = "clogbox-oscillators"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "num-traits",
 ]
 
 [[package]]
@@ -1565,6 +1577,19 @@ name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "note-input"
+version = "0.1.0"
+dependencies = [
+ "clogbox-clap",
+ "clogbox-clap-egui",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "clogbox-oscillators",
+ "log",
+]
 
 [[package]]
 name = "nr-clipper"

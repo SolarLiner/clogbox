@@ -1,5 +1,8 @@
+#[cfg(feature = "gui")]
 use crate::notifier::Notifier;
-use crate::params::{ParamChangeEvent, ParamId, ParamStorage};
+#[cfg(feature = "gui")]
+use crate::params::ParamChangeEvent;
+use crate::params::{ParamId, ParamStorage};
 use crate::Plugin;
 use clack_plugin::prelude::*;
 use std::sync::atomic::AtomicU64;
@@ -10,6 +13,7 @@ pub type Shared<P> = SharedData<<P as Plugin>::Params, <P as Plugin>::SharedData
 #[derive(Clone)]
 pub struct SharedData<Params: ParamId, UserData> {
     pub params: ParamStorage<Params>,
+    #[cfg(feature = "gui")]
     pub notifier: Notifier<ParamChangeEvent<Params>>,
     pub user_data: UserData,
     pub sample_rate: Arc<AtomicU64>,

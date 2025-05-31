@@ -99,6 +99,11 @@ pub enum NoteEvent {
         /// The release velocity, in the range 0.0 to 1.0 (often ignored)
         velocity: f32,
     },
+    /// Immediately stop playing the given note
+    Choke {
+        /// The note identification (number and channel)
+        id: NoteId,
+    },
 }
 
 impl NoteEvent {
@@ -147,15 +152,17 @@ impl NoteEvent {
         match self {
             NoteEvent::NoteOn { id, .. } => *id,
             NoteEvent::NoteOff { id, .. } => *id,
+            NoteEvent::Choke { id, .. } => *id,
         }
     }
 
     /// Returns the frequency of this note event in Hz.
-    pub fn frequency(&self) -> f32 {
-        match self {
+    pub fn frequency(&self) -> Option<f32> {
+        Some(match self {
             NoteEvent::NoteOn { frequency, .. } => *frequency,
             NoteEvent::NoteOff { frequency, .. } => *frequency,
-        }
+            NoteEvent::Choke { .. } => return None,
+        })
     }
 
     /// Returns the velocity of this note event (in the range 0.0 to 1.0).
@@ -163,6 +170,7 @@ impl NoteEvent {
         match self {
             NoteEvent::NoteOn { velocity, .. } => *velocity,
             NoteEvent::NoteOff { velocity, .. } => *velocity,
+            NoteEvent::Choke { .. } => 0.0,
         }
     }
 

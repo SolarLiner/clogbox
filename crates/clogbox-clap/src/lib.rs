@@ -1,8 +1,10 @@
 use crate::main_thread::{MainThread, Plugin};
+#[cfg(feature = "gui")]
 use crate::notifier::Notifier;
 use crate::processor::Processor;
 use crate::shared::{Shared, SharedData};
 use clack_extensions::audio_ports::PluginAudioPorts;
+use clack_extensions::note_ports::PluginNotePorts;
 use clack_extensions::params::PluginParams;
 use clack_extensions::state::PluginState;
 pub use clack_plugin::clack_export_entry;
@@ -43,7 +45,8 @@ impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
         builder
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
-            .register::<PluginState>();
+            .register::<PluginState>()
+            .register::<PluginNotePorts>();
         #[cfg(feature = "gui")]
         builder.register::<clack_extensions::gui::PluginGui>();
     }
@@ -59,6 +62,7 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
     fn new_shared(host: HostSharedHandle) -> Result<Self::Shared<'_>, PluginError> {
         Ok(SharedData {
             params: Default::default(),
+            #[cfg(feature = "gui")]
             notifier: Notifier::new(),
             user_data: P::shared_data(host)?,
             sample_rate: Arc::new(AtomicU64::new(0)),

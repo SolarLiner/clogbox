@@ -20,6 +20,7 @@ clogbox-enum = { path = "crates/clogbox-enum" }
 clogbox-filters = { path = "crates/clogbox-filters" }
 clogbox-math = { path = "crates/clogbox-math" }
 clogbox-module = { path = "crates/clogbox-module" }
+clogbox-oscillators = { path = "crates/clogbox-oscillators" }
 clogbox-params = { path = "crates/clogbox-params" }
 clogbox-utils = { path = "crates/clogbox-utils" }
 fixed-ringbuf = { path = "crates/fixed-ringbuf" }

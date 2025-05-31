@@ -183,6 +183,10 @@ impl<T> EventSlice<T> {
             .map(|idx| &self.events[idx])
     }
 
+    pub fn all_at(&self, timestamp: usize) -> impl Iterator<Item = &Timestamped<T>> {
+        self.events.iter().filter(move |e| e.timestamp == timestamp)
+    }
+
     /// Return a mutable reference to the value at the given timestamp if there is one.
     ///
     /// # Arguments

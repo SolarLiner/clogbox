@@ -3,11 +3,11 @@
 //! This module provides context structures that are passed to modules during processing,
 //! containing information about the current processing state.
 
-use crate::eventbuffer::{EventBuffer, EventSlice};
+use crate::eventbuffer::EventBuffer;
 use crate::note::NoteEvent;
-use crate::{Module, NoteSlice, ParamSlice, Samplerate};
+use crate::{Module, NoteBuffer, ParamBuffer, Samplerate};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{Empty, Enum};
+use clogbox_enum::{enum_iter, Empty, Enum};
 use num_traits::Zero;
 use std::marker::PhantomData;
 use std::ops;
@@ -28,17 +28,39 @@ pub struct ProcessContext<'a, M: ?Sized + Module> {
     /// Mutable reference to the output audio buffer for each output channel.
     pub audio_out: &'a mut dyn ops::IndexMut<M::AudioOut, Output = [M::Sample]>,
     /// Reference to the input parameter values.
-    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamSlice>,
+    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamBuffer>,
     /// Mutable reference to the output parameter values.
-    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamSlice>,
+    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamBuffer>,
     /// Reference to the current notes' input.
-    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteSlice>,
+    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteBuffer>,
     /// Mutable reference to the notes' output.
-    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteSlice>,
+    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteBuffer>,
     /// The current stream context, containing info like sample rate and block size.
     pub stream_context: &'a StreamContext,
     /// Phantom data to associate the context with the module type.
     pub __phantom: PhantomData<&'a M>,
+}
+
+impl<'a, M: ?Sized + Module> ProcessContext<'a, M> {
+    pub fn next_event(&self, pos: usize) -> Option<usize> {
+        enum_iter::<M::ParamsIn>()
+            .filter_map(|e| self.params_in[e].after(pos + 1).first().map(|t| t.timestamp))
+            .chain(enum_iter::<M::NoteIn>().filter_map(|e| self.note_in[e].after(pos + 1).first().map(|t| t.timestamp)))
+            .min()
+    }
+
+    pub fn chunk_events(&self) -> impl Iterator<Item = ops::Range<usize>> + use<'_, 'a, M> {
+        let mut pos = 0;
+        std::iter::from_fn(move || {
+            if pos >= self.stream_context.block_size {
+                return None;
+            }
+            let to = self.next_event(pos).unwrap_or(self.stream_context.block_size);
+            let range = pos..to;
+            pos = to;
+            Some(range)
+        })
+    }
 }
 
 /// Contains owned, possibly more convenient, storage for process data for a module.
@@ -57,6 +79,20 @@ pub struct OwnedProcessContext<M: ?Sized + Module> {
     pub note_out: EventStorage<M::NoteOut, NoteEvent>,
     /// Phantom data for type association.
     __phantom: PhantomData<M>,
+}
+
+impl<M: ?Sized + Module> Default for OwnedProcessContext<M> {
+    fn default() -> Self {
+        Self {
+            audio_in: AudioStorage::new(|_| vec![].into_boxed_slice()),
+            audio_out: AudioStorage::new(|_| vec![].into_boxed_slice()),
+            params_in: EventStorage::with_capacity(0),
+            params_out: EventStorage::with_capacity(0),
+            note_in: EventStorage::with_capacity(0),
+            note_out: EventStorage::with_capacity(0),
+            __phantom: PhantomData,
+        }
+    }
 }
 
 impl<M: ?Sized + Module> OwnedProcessContext<M> {
@@ -223,18 +259,18 @@ impl<E: Enum, T> ops::DerefMut for EventStorage<E, T> {
 }
 
 impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
-    type Output = EventSlice<T>;
+    type Output = EventBuffer<T>;
 
     /// Access event data for a given channel.
     fn index(&self, index: E) -> &Self::Output {
-        self.storage[index].as_slice()
+        &self.storage[index]
     }
 }
 
 impl<E: Enum, T> ops::IndexMut<E> for EventStorage<E, T> {
     /// Mutable access to event data for a given channel.
     fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        self.storage[index].as_mut_slice()
+        &mut self.storage[index]
     }
 }
 

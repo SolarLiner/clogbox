@@ -4,7 +4,7 @@
 //! polymorphism in audio processing graphs.
 
 use crate::context::{ProcessContext, StreamContext};
-use crate::{Module, NoteSlice, ParamSlice, PrepareResult, ProcessResult, Samplerate};
+use crate::{Module, NoteBuffer, ParamBuffer, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::{count, Enum};
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -21,13 +21,13 @@ pub struct DynProcessContext<'a, T> {
     /// Output audio buffer references, indexed by channel number
     pub audio_out: &'a mut dyn ops::IndexMut<usize, Output = [T]>,
     /// Input parameter buffer references, indexed by parameter ID
-    pub params_in: &'a dyn ops::Index<usize, Output = ParamSlice>,
+    pub params_in: &'a dyn ops::Index<usize, Output = ParamBuffer>,
     /// Output parameter buffer references, indexed by parameter ID
-    pub params_out: &'a mut dyn ops::IndexMut<usize, Output = ParamSlice>,
+    pub params_out: &'a mut dyn ops::IndexMut<usize, Output = ParamBuffer>,
     /// Input MIDI note buffer references, indexed by note channel
-    pub note_in: &'a dyn ops::Index<usize, Output = NoteSlice>,
+    pub note_in: &'a dyn ops::Index<usize, Output = NoteBuffer>,
     /// Output MIDI note buffer references, indexed by note channel
-    pub note_out: &'a mut dyn ops::IndexMut<usize, Output = NoteSlice>,
+    pub note_out: &'a mut dyn ops::IndexMut<usize, Output = NoteBuffer>,
     /// Current stream processing context containing timing information
     pub stream_context: &'a StreamContext,
 }

@@ -413,6 +413,7 @@ dependencies = [
  "clogbox-module",
  "env_logger",
  "log",
+ "num-traits",
  "raw-window-handle 0.5.2",
  "ringbuf",
  "serde_json",
@@ -513,6 +514,17 @@ dependencies = [
  "num-traits",
  "numeric_literals",
  "typenum",
+]
+
+[[package]]
+name = "clogbox-oscillators"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "num-traits",
 ]
 
 [[package]]

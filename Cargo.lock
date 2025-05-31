@@ -1579,6 +1579,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
 
 [[package]]
+name = "note-input"
+version = "0.1.0"
+dependencies = [
+ "clogbox-clap",
+ "clogbox-clap-egui",
+ "clogbox-enum",
+ "clogbox-math",
+ "clogbox-module",
+ "clogbox-oscillators",
+ "log",
+]
+
+[[package]]
 name = "nr-clipper"
 version = "0.1.0"
 dependencies = [

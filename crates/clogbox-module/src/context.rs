@@ -1,8 +1,8 @@
-use crate::eventbuffer::{EventBuffer, EventSlice};
+use crate::eventbuffer::EventBuffer;
 use crate::note::NoteEvent;
-use crate::{Module, NoteSlice, ParamSlice, Samplerate};
+use crate::{Module, NoteBuffer, ParamBuffer, Samplerate};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{Empty, Enum};
+use clogbox_enum::{enum_iter, Empty, Enum};
 use num_traits::Zero;
 use std::marker::PhantomData;
 use std::ops;
@@ -16,12 +16,34 @@ pub struct StreamContext {
 pub struct ProcessContext<'a, M: ?Sized + Module> {
     pub audio_in: &'a dyn ops::Index<M::AudioIn, Output = [M::Sample]>,
     pub audio_out: &'a mut dyn ops::IndexMut<M::AudioOut, Output = [M::Sample]>,
-    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamSlice>,
-    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamSlice>,
-    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteSlice>,
-    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteSlice>,
+    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamBuffer>,
+    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamBuffer>,
+    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteBuffer>,
+    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteBuffer>,
     pub stream_context: &'a StreamContext,
     pub __phantom: PhantomData<&'a M>,
+}
+
+impl<'a, M: ?Sized + Module> ProcessContext<'a, M> {
+    pub fn next_event(&self, pos: usize) -> Option<usize> {
+        enum_iter::<M::ParamsIn>()
+            .filter_map(|e| self.params_in[e].after(pos + 1).first().map(|t| t.timestamp))
+            .chain(enum_iter::<M::NoteIn>().filter_map(|e| self.note_in[e].after(pos + 1).first().map(|t| t.timestamp)))
+            .min()
+    }
+
+    pub fn chunk_events(&self) -> impl Iterator<Item = ops::Range<usize>> + use<'_, 'a, M> {
+        let mut pos = 0;
+        std::iter::from_fn(move || {
+            if pos >= self.stream_context.block_size {
+                return None;
+            }
+            let to = self.next_event(pos).unwrap_or(self.stream_context.block_size);
+            let range = pos..to;
+            pos = to;
+            Some(range)
+        })
+    }
 }
 
 pub struct OwnedProcessContext<M: ?Sized + Module> {
@@ -34,12 +56,25 @@ pub struct OwnedProcessContext<M: ?Sized + Module> {
     __phantom: PhantomData<M>,
 }
 
+impl<M: ?Sized + Module> Default for OwnedProcessContext<M> {
+    fn default() -> Self {
+        Self {
+            audio_in: AudioStorage::new(|_| vec![].into_boxed_slice()),
+            audio_out: AudioStorage::new(|_| vec![].into_boxed_slice()),
+            params_in: EventStorage::with_capacity(0),
+            params_out: EventStorage::with_capacity(0),
+            note_in: EventStorage::with_capacity(0),
+            note_out: EventStorage::with_capacity(0),
+            __phantom: PhantomData,
+        }
+    }
+}
+
 impl<M: ?Sized + Module> OwnedProcessContext<M> {
     pub fn new(block_size: usize, event_capacity: usize) -> Self
     where
         M::Sample: Zero,
     {
-        let zero = M::Sample::zero;
         Self {
             audio_in: AudioStorage::zeroed(block_size),
             audio_out: AudioStorage::zeroed(block_size),
@@ -50,6 +85,7 @@ impl<M: ?Sized + Module> OwnedProcessContext<M> {
             __phantom: PhantomData,
         }
     }
+
     pub fn process_with<R>(&mut self, stream_context: &StreamContext, func: impl FnOnce(ProcessContext<M>) -> R) -> R {
         func(ProcessContext {
             audio_in: &self.audio_in,
@@ -157,16 +193,16 @@ impl<E: Enum, T> ops::DerefMut for EventStorage<E, T> {
 }
 
 impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
-    type Output = EventSlice<T>;
+    type Output = EventBuffer<T>;
 
     fn index(&self, index: E) -> &Self::Output {
-        self.storage[index].as_slice()
+        &self.storage[index]
     }
 }
 
 impl<E: Enum, T> ops::IndexMut<E> for EventStorage<E, T> {
     fn index_mut(&mut self, index: E) -> &mut Self::Output {
-        self.storage[index].as_mut_slice()
+        &mut self.storage[index]
     }
 }
 

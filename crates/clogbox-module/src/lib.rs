@@ -1,4 +1,4 @@
-use crate::eventbuffer::EventSlice;
+use crate::eventbuffer::{EventBuffer, EventSlice};
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
 use context::ProcessContext;
@@ -14,9 +14,9 @@ pub mod note;
 pub mod sample;
 
 pub type Samplerate = Recip<f64>;
-pub type ParamSlice = EventSlice<f32>;
+pub type ParamBuffer = EventBuffer<f32>;
 
-pub type NoteSlice = EventSlice<note::NoteEvent>;
+pub type NoteBuffer = EventBuffer<note::NoteEvent>;
 
 #[derive(Debug, Copy, Clone)]
 pub struct PrepareResult {

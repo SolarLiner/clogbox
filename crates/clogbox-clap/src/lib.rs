@@ -1,4 +1,6 @@
 use crate::main_thread::{MainThread, Plugin};
+#[cfg(feature = "gui")]
+use crate::notifier::Notifier;
 use crate::processor::Processor;
 use crate::shared::{Shared, SharedData};
 use clack_extensions::audio_ports::PluginAudioPorts;

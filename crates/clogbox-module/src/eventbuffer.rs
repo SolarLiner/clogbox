@@ -187,6 +187,10 @@ impl<T> EventSlice<T> {
             .map(|idx| &self.events[idx])
     }
 
+    pub fn all_at(&self, timestamp: usize) -> impl Iterator<Item = &Timestamped<T>> {
+        self.events.iter().filter(move |e| e.timestamp == timestamp)
+    }
+
     pub fn at_mut(&mut self, timestamp: usize) -> Option<&mut Timestamped<T>> {
         let Some(index) = self.events.binary_search_by_key(&timestamp, |e| e.timestamp).ok() else {
             return None;

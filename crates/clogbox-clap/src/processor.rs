@@ -5,13 +5,17 @@ use crate::params::{ParamId, ParamIdExt};
 use crate::shared::Shared;
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
+#[cfg(feature = "gui")]
+use clack_plugin::events::event_types::{ParamGestureBeginEvent, ParamGestureEndEvent};
 use clack_plugin::events::Match;
 use clack_plugin::host::HostAudioProcessorHandle;
 pub use clack_plugin::host::HostSharedHandle;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
 pub use clack_plugin::process::{PluginAudioConfiguration, ProcessStatus};
-use clogbox_enum::enum_map::EnumMapRef;
+#[cfg(feature = "gui")]
+use clack_plugin::utils::Cookie;
+use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
 use clogbox_enum::typenum::U16;
 use clogbox_enum::{count, enum_iter, Empty, Enum, Sequential};
 use clogbox_math::frequency::midi_note_to_frequency;
@@ -20,7 +24,7 @@ use clogbox_module::eventbuffer::Timestamped;
 use clogbox_module::note::{NoteEvent, NoteId};
 use clogbox_module::{Module, Samplerate};
 use std::marker::PhantomData;
-use std::num::NonZeroU32;
+use std::num::{NonZeroU32, Wrapping};
 use std::sync::atomic::Ordering;
 
 pub type NoteChannel = Sequential<U16>;
@@ -49,6 +53,8 @@ pub struct Processor<'a, P: PluginDsp> {
     params: EventStorage<P::ParamsIn, f32>,
     note_in: EventStorage<P::NoteIn, NoteEvent>,
     note_out: EventStorage<P::NoteOut, NoteEvent>,
+    note_out_map: EnumMapArray<P::NoteOut, Option<(usize, usize)>>,
+    note_out_next_id: Wrapping<u32>,
     #[cfg(feature = "gui")]
     params_rx: ParamListener<P::ParamsIn>,
     sample_rate: Samplerate,
@@ -85,6 +91,19 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         let note_out = EventStorage::with_capacity(512);
         dsp.prepare(sample_rate, audio_config.max_frames_count as _);
 
+        let note_out_map = EnumMapArray::new(|e| {
+            P::Plugin::NOTE_OUT_LAYOUT
+                .iter()
+                .enumerate()
+                .find_map(|(port, layout)| {
+                    layout
+                        .channel_map
+                        .iter()
+                        .position(|v| *v == e)
+                        .map(move |channel| (port, channel))
+                })
+        });
+
         shared
             .sample_rate
             .store(sample_rate.value().to_bits(), Ordering::Relaxed);
@@ -102,6 +121,8 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             audio_out,
             note_in,
             note_out,
+            note_out_map,
+            note_out_next_id: Wrapping(0),
             params,
             #[cfg(feature = "gui")]
             params_rx: rx,
@@ -122,6 +143,7 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             block_size: audio.frames_count() as _,
             sample_rate: self.sample_rate,
         })?;
+        self.copy_events_out(&mut events)?;
         self.copy_outputs(&mut audio)?;
         Ok(process_status)
     }
@@ -154,6 +176,9 @@ impl<P: PluginDsp> Processor<'_, P> {
         for buf in self.params.values_mut() {
             buf.clear();
         }
+        for buf in self.note_in.values_mut() {
+            buf.clear();
+        }
         for event in events.input.iter() {
             if let Some(ev) = event.as_event::<ParamValueEvent>() {
                 self.insert_param_value(ev.param_id(), ev.time() as _, ev.value());
@@ -162,7 +187,7 @@ impl<P: PluginDsp> Processor<'_, P> {
             } else if let Some(ev) = event.as_event::<NoteOffEvent>() {
                 self.insert_note_off(ev);
             } else if let Some(ev) = event.as_event::<NoteChokeEvent>() {
-                todo!()
+                self.insert_note_choke(ev);
             }
         }
 
@@ -203,6 +228,45 @@ impl<P: PluginDsp> Processor<'_, P> {
         Ok(())
     }
 
+    fn copy_events_out(&mut self, events: &mut Events) -> Result<(), PluginError> {
+        for out in enum_iter::<P::NoteOut>() {
+            let Some((port, channel)) = self.note_out_map[out] else {
+                self.note_out[out].clear();
+                continue;
+            };
+            let mut next_id = self.note_out_next_id;
+            for &Timestamped { data, timestamp } in self.note_out[out].as_raw_slice() {
+                let note_id = next_id.0;
+                next_id += 1;
+                match data {
+                    NoteEvent::NoteOn { id, velocity, .. } => {
+                        events.output.try_push(NoteOnEvent::new(
+                            timestamp as _,
+                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                            velocity as _,
+                        ))?;
+                    }
+                    NoteEvent::NoteOff { id, velocity, .. } => {
+                        events.output.try_push(NoteOffEvent::new(
+                            timestamp as _,
+                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                            velocity as _,
+                        ))?;
+                    }
+                    NoteEvent::Choke { id } => {
+                        events.output.try_push(NoteChokeEvent::new(
+                            timestamp as _,
+                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                        ))?;
+                    }
+                }
+            }
+            self.note_out_next_id = next_id;
+            self.note_out[out].clear();
+        }
+        Ok(())
+    }
+
     fn insert_param_value(&mut self, clap_id: Option<ClapId>, time: usize, value: f64) -> bool {
         let Some(param) = clap_id.and_then(|id| {
             let index = id.get() as usize;
@@ -219,7 +283,11 @@ impl<P: PluginDsp> Processor<'_, P> {
     }
 
     fn insert_note_on(&mut self, ev: &NoteOnEvent) {
-        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
+        for (channel, note_in) in Self::target_note_in(ev.port_index(), ev.channel()) {
+            let note_id = NoteId {
+                channel,
+                number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
+            };
             (*self.note_in)[note_in].push(
                 ev.time() as _,
                 NoteEvent::NoteOn {
@@ -232,8 +300,12 @@ impl<P: PluginDsp> Processor<'_, P> {
     }
 
     fn insert_note_off(&mut self, ev: &NoteOffEvent) {
-        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
-            (*self.note_in)[note_in].push(
+        for (channel, note) in Self::target_note_in(ev.port_index(), ev.channel()) {
+            let note_id = NoteId {
+                channel,
+                number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
+            };
+            (*self.note_in)[note].push(
                 ev.time() as _,
                 NoteEvent::NoteOff {
                     id: note_id,
@@ -245,43 +317,20 @@ impl<P: PluginDsp> Processor<'_, P> {
     }
 
     fn insert_note_choke(&mut self, ev: &NoteChokeEvent) {
-        for (note_id, note_in) in Self::target_note_in(ev.channel(), ev.key()) {
-            (*self.note_in)[note_in].push(ev.time() as _, NoteEvent::Choke { id: note_id });
+        for (channel, note) in Self::target_note_in(ev.port_index(), ev.channel()) {
+            let note_id = NoteId {
+                channel,
+                number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
+            };
+            (*self.note_in)[note].push(ev.time() as _, NoteEvent::Choke { id: note_id });
         }
     }
 
-    fn target_note(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = NoteId> {
-        (0..16)
-            .filter(move |c| channel.matches(*c as u16))
-            .flat_map(move |channel| {
-                (0..128)
-                    .filter(move |n| note.matches(*n as u16))
-                    .map(move |note| NoteId {
-                        channel: channel as _,
-                        number: note as _,
-                    })
-            })
-    }
-
-    fn target_note_in(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = (NoteId, P::NoteIn)> {
-        Self::target_note(channel, note).filter_map(move |id| {
-            Some((
-                id,
-                P::Plugin::NOTE_IN_LAYOUT
-                    .get(id.number as usize)
-                    .and_then(|layout| layout.channel_map.get(id.channel as usize).copied())?,
-            ))
-        })
-    }
-
-    fn target_note_out(channel: Match<u16>, note: Match<u16>) -> impl Iterator<Item = (NoteId, P::NoteOut)> {
-        Self::target_note(channel, note).filter_map(move |id| {
-            Some((
-                id,
-                P::Plugin::NOTE_OUT_LAYOUT
-                    .get(id.number as usize)
-                    .and_then(|layout| layout.channel_map.get(id.channel as usize).copied())?,
-            ))
+    fn target_note_in(port: Match<u16>, channel: Match<u16>) -> impl Iterator<Item = (u8, P::NoteIn)> {
+        iter_match_u16(port, P::Plugin::NOTE_IN_LAYOUT.len() as _).flat_map(move |port| {
+            let port = P::Plugin::NOTE_IN_LAYOUT[port as usize];
+            iter_match_u16(channel, port.channel_map.len() as _)
+                .map(move |channel| (channel as _, port.channel_map[channel as usize]))
         })
     }
 
@@ -329,6 +378,39 @@ impl<P: PluginDsp> Processor<'_, P> {
         } else {
             Ok(ProcessStatus::ContinueIfNotQuiet)
         }
+    }
+}
+
+fn iter_match_u16(m: Match<u16>, num_values: u16) -> impl Iterator<Item = u16> {
+    enum MatchIter {
+        Specific { value: u16, done: bool },
+        All { next: u16, max: u16 },
+    }
+    impl Iterator for MatchIter {
+        type Item = u16;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                Self::Specific { value, done } if !*done => {
+                    *done = true;
+                    Some(*value)
+                }
+                Self::All { next, max } if *next <= *max => {
+                    let ret = *next;
+                    *next += 1;
+                    Some(ret)
+                }
+                _ => None,
+            }
+        }
+    }
+
+    match m {
+        Match::All => MatchIter::All {
+            next: 0,
+            max: num_values - 1,
+        },
+        Match::Specific(value) => MatchIter::Specific { value, done: false },
     }
 }
 

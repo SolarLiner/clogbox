@@ -342,22 +342,25 @@ impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
 
 impl<P: Plugin> PluginNotePortsImpl for MainThread<'_, P> {
     fn count(&mut self, is_input: bool) -> u32 {
-        if is_input {
+        let count = if is_input {
             P::NOTE_IN_LAYOUT.len() as _
         } else {
             P::NOTE_OUT_LAYOUT.len() as _
-        }
+        };
+        ::log::debug!("[Note ports] is_input: {is_input}, count: {count}");
+        count
     }
 
     fn get(&mut self, index: u32, is_input: bool, writer: &mut NotePortInfoWriter) {
-        let layout = if is_input {
-            P::NOTE_IN_LAYOUT[index as usize]
+        let layout_name = if is_input {
+            P::NOTE_IN_LAYOUT[index as usize].name
         } else {
-            P::NOTE_OUT_LAYOUT[index as usize]
+            P::NOTE_OUT_LAYOUT[index as usize].name
         };
+        ::log::debug!("[Note ports] is_input: {is_input}, get {index}");
         writer.set(&NotePortInfo {
             id: ClapId::new(index),
-            name: layout.name.as_bytes(),
+            name: layout_name.as_bytes(),
             supported_dialects: NoteDialects::CLAP,
             preferred_dialect: Some(NoteDialect::Clap),
         });

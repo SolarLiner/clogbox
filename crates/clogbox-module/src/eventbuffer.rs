@@ -6,11 +6,13 @@
 use std::ops::{Range, RangeFrom, RangeFull, RangeTo};
 use std::{ops, slice};
 
+use clogbox_enum::enum_map::Collection;
+
 /// A wrapper for data with an associated timestamp.
 ///
 /// Provides a container that pairs data with a numeric timestamp for chronological ordering.
-#[derive(Debug, Clone)]
-pub struct Timestamped<T> {
+#[derive(Debug, Copy, Clone)]
+pub struct Timestamped<T: ?Sized> {
     /// The timestamp of the event.
     pub timestamp: usize,
     /// The event data.
@@ -51,6 +53,56 @@ impl<T> Ord for Timestamped<T> {
     }
 }
 
+impl<T> Timestamped<T> {
+    #[inline]
+    pub fn map<U>(self, func: impl FnOnce(T) -> U) -> Timestamped<U> {
+        let Self { timestamp, data } = self;
+        Timestamped {
+            timestamp,
+            data: func(data),
+        }
+    }
+
+    #[inline]
+    pub fn filter_map<U>(self, func: impl FnOnce(T) -> Option<U>) -> Option<Timestamped<U>> {
+        let Self { timestamp, data } = self;
+        Some(Timestamped {
+            timestamp,
+            data: func(data)?,
+        })
+    }
+
+    #[inline]
+    pub fn as_ref(&self) -> Timestamped<&T> {
+        let Self { timestamp, ref data } = *self;
+        Timestamped { timestamp, data }
+    }
+
+    #[inline]
+    pub fn as_mut(&mut self) -> Timestamped<&mut T> {
+        let Self {
+            timestamp,
+            ref mut data,
+        } = *self;
+        Timestamped { timestamp, data }
+    }
+}
+
+impl<T> Timestamped<Option<T>> {
+    #[inline]
+    pub fn transpose(self) -> Option<Timestamped<T>> {
+        self.filter_map(std::convert::identity)
+    }
+}
+
+impl<T, E> Timestamped<Result<T, E>> {
+    #[inline]
+    pub fn transpose(self) -> Result<Timestamped<T>, E> {
+        let Self { timestamp, data } = self;
+        Ok(Timestamped { timestamp, data: data? })
+    }
+}
+
 /// A mutable iterator that sorts the buffer again when dropped.
 ///
 /// This iterator allows modifying [`Timestamped`] entries in an [`EventBuffer`].
@@ -70,8 +122,7 @@ impl<'a, T> Iterator for IterMut<'a, T> {
     /// references to different elements of the same vector.
     fn next(&mut self) -> Option<Self::Item> {
         // Mangle lifetime of the buffer.
-        // This is safe because we ensure the lifetime is tied to the IterMut lifetime
-        // and each item is yielded only once.
+        // SAFETY: the lifetime is tied to the IterMut lifetime and each item is yielded only once.
         let events = unsafe { std::mem::transmute::<&mut [Timestamped<T>], &mut [Timestamped<T>]>(self.events) };
 
         if self.index < events.len() {
@@ -94,6 +145,55 @@ impl<T> Drop for IterMut<'_, T> {
     }
 }
 
+pub trait TimestampedCollection<T> {
+    /// Returns the first element at the given timestamp, if it exists.
+    fn at(&self, timestamp: usize) -> Option<T>;
+    /// Earliest timestamp contained in this event slice
+    fn min_timestamp(&self) -> Option<usize>;
+    /// Latest timestamp contained in this event slice
+    fn max_timestamp(&self) -> Option<usize>;
+    /// Returns a reference to the first event, if it exists.
+    ///
+    /// The first event is the one with the earliest timestamp, since
+    /// events are maintained in chronological order.
+    fn first(&self) -> Option<Timestamped<T>>;
+    /// Returns a reference to the first event after the specified timestamp, if it exists.
+    ///
+    /// The first event is the one with the earliest timestamp, since
+    /// events are maintained in chronological order.
+    fn first_after(&self, timestamp: usize) -> Option<Timestamped<T>>;
+    /// Returns a reference to the last event, if it exists.
+    ///
+    /// The last event is the one with the latest timestamp, since
+    /// events are maintained in chronological order.
+    fn last(&self) -> Option<Timestamped<T>>;
+    /// Returns a reference to the last event before the timestamp, if it exists.
+    ///
+    /// The last event is the one with the latest timestamp, since
+    /// events are maintained in chronological order.
+    fn last_before(&self, timestamp: usize) -> Option<Timestamped<T>>;
+
+    /// Return the interval containing all timestamps in this slice.
+    fn range(&self) -> Option<Range<usize>> {
+        Some(self.min_timestamp()?..self.max_timestamp()?)
+    }
+}
+
+pub trait TimestampedCollectionMut<T>: TimestampedCollection<T> {
+    /// Returns the first element at the given timestamp, if it exists.
+    fn at_mut(&mut self, timestamp: usize) -> Option<&mut T>;
+    /// Returns a mutable reference to the first event after the specified timestamp, if it exists.
+    ///
+    /// The first event is the one with the earliest timestamp, since
+    /// events are maintained in chronological order.
+    fn first_mut(&mut self) -> Option<Timestamped<&mut T>>;
+    /// Returns a mutable reference to the last event, if it exists.
+    ///
+    /// The last event is the one with the latest timestamp, since
+    /// events are maintained in chronological order.
+    fn last_mut(&mut self) -> Option<Timestamped<&mut T>>;
+}
+
 /// A non-owned view into a sequence of timestamped events.
 ///
 /// This is to [`EventBuffer`] what `[T]` is to `Vec<T>`. It provides a borrowed
@@ -107,6 +207,27 @@ impl<T> Drop for IterMut<'_, T> {
 pub struct EventSlice<T> {
     /// The slice of timestamped events this reference points to.
     events: [Timestamped<T>],
+}
+
+impl<'a, T> IntoIterator for &'a EventSlice<T> {
+    type Item = &'a Timestamped<T>;
+    type IntoIter = slice::Iter<'a, Timestamped<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.events.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut EventSlice<T> {
+    type Item = &'a mut Timestamped<T>;
+    type IntoIter = IterMut<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IterMut {
+            index: 0,
+            events: &mut self.events,
+        }
+    }
 }
 
 impl<T> EventSlice<T> {
@@ -123,6 +244,10 @@ impl<T> EventSlice<T> {
     /// let slice = EventSlice::from_slice(&events);
     /// ```
     pub fn from_slice(events: &[Timestamped<T>]) -> &Self {
+        assert!(
+            events.is_sorted_by_key(|e| e.timestamp),
+            "Events slice needs to be sorted by timestamp"
+        );
         // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
         // due to the #[repr(transparent)] attribute
         unsafe { std::mem::transmute::<&[Timestamped<T>], &Self>(events) }
@@ -152,14 +277,14 @@ impl<T> EventSlice<T> {
     /// Returns the number of events in the slice.
     ///
     /// This is equivalent to the [`len`](slice::len) method on slices.
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.events.len()
     }
 
     /// Returns `true` if the slice contains no events.
     ///
     /// This is equivalent to the [`is_empty`](slice::is_empty) method on slices.
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
 
@@ -167,8 +292,8 @@ impl<T> EventSlice<T> {
     /// value by its timestamp, use [`at`](Self:at) for this purpose.
     ///
     /// Returns `None` if the index is out of bounds.
-    pub fn get(&self, index: usize) -> Option<&Timestamped<T>> {
-        self.events.get(index)
+    pub fn get(&self, index: usize) -> Option<Timestamped<&T>> {
+        self.events.get(index).map(Timestamped::as_ref)
     }
 
     /// Return a reference to the value at the given timestamp if there is one.
@@ -176,15 +301,11 @@ impl<T> EventSlice<T> {
     /// # Arguments
     ///
     /// * `timestamp`: Timestamp to retrieve the value for.
-    pub fn at(&self, timestamp: usize) -> Option<&Timestamped<T>> {
+    pub fn all_at(&self, timestamp: usize) -> impl Iterator<Item = &T> {
         self.events
             .binary_search_by_key(&timestamp, |e| e.timestamp)
             .ok()
             .map(|idx| &self.events[idx])
-    }
-
-    pub fn all_at(&self, timestamp: usize) -> impl Iterator<Item = &Timestamped<T>> {
-        self.events.iter().filter(move |e| e.timestamp == timestamp)
     }
 
     /// Return a mutable reference to the value at the given timestamp if there is one.
@@ -222,9 +343,11 @@ impl<T> EventSlice<T> {
         self.events.iter()
     }
 
-    /// Returns an iterator over the events.
+    /// Returns a mutable iterator over the events.
     ///
     /// Events are yielded in chronological order (by timestamp).
+    /// The event slice will be reordered after this iterator is consumed, such that any modifications to the timestamps
+    /// will not violate the invariant that elements must be ordered by their timestamps.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Timestamped<T>> {
         IterMut {
             events: &mut self.events,
@@ -258,19 +381,8 @@ impl<T> EventSlice<T> {
     where
         R: ops::RangeBounds<usize>,
     {
-        let start_bound = match range.start_bound() {
-            ops::Bound::Included(&t) => t,
-            ops::Bound::Excluded(&t) => t + 1, // Convert exclusive to inclusive
-            ops::Bound::Unbounded => 0,
-        };
-
-        let end_bound = match range.end_bound() {
-            ops::Bound::Included(&t) => t + 1, // Convert inclusive to exclusive
-            ops::Bound::Excluded(&t) => t,
-            ops::Bound::Unbounded => usize::MAX,
-        };
-
-        self.in_range(start_bound, end_bound)
+        let range = self.index_range(range);
+        self.in_range(range.start, range.end)
     }
 
     /// Returns a mutable subslice of this [`EventSlice`] based on the provided timestamp range.
@@ -324,7 +436,7 @@ impl<T> EventSlice<T> {
     /// ```
     pub fn slice_by_index<R>(&self, range: R) -> &Self
     where
-        R: std::slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
+        R: slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
     {
         // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
         // due to the #[repr(transparent)] attribute
@@ -352,7 +464,7 @@ impl<T> EventSlice<T> {
     /// ```
     pub fn slice_by_index_mut<R>(&mut self, range: R) -> &mut Self
     where
-        R: std::slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
+        R: slice::SliceIndex<[Timestamped<T>], Output = [Timestamped<T>]>,
     {
         // Safety: The memory layout of `EventSlice<T>` is identical to `[Timestamped<T>]`
         // due to the #[repr(transparent)] attribute
@@ -556,8 +668,74 @@ impl<T> EventSlice<T> {
     }
 }
 
+impl<T> ops::Deref for EventSlice<T> {
+    type Target = [Timestamped<T>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.events
+    }
+}
+
+impl<T> TimestampedCollection<T> for EventSlice<T> {
+    fn at(&self, timestamp: usize) -> Option<&T> {
+        self.events
+            .binary_search_by_key(&timestamp, |e| e.timestamp)
+            .ok()
+            .map(|idx| &self.events[idx].data)
+    }
+
+    fn min_timestamp(&self) -> Option<usize> {
+        self.first().map(|event| event.timestamp)
+    }
+
+    fn max_timestamp(&self) -> Option<usize> {
+        self.last().map(|event| event.timestamp)
+    }
+
+    fn first(&self) -> Option<Timestamped<&T>> {
+        self.events.first().map(Timestamped::as_ref)
+    }
+
+    fn first_after(&self, timestamp: usize) -> Option<Timestamped<&T>> {
+        match self.events.binary_search_by_key(&timestamp, |e| e.timestamp) {
+            Ok(ix) => Some(self.events[ix].as_ref()),
+            Err(ix) if ix + 1 < self.len() => Some(self.events[ix + 1].as_ref()),
+            _ => None,
+        }
+    }
+
+    fn last(&self) -> Option<Timestamped<&T>> {
+        self.events.last().map(Timestamped::as_ref)
+    }
+
+    fn last_before(&self, timestamp: usize) -> Option<Timestamped<&T>> {
+        match self.events.binary_search_by_key(&timestamp, |e| e.timestamp) {
+            Ok(ix) if ix > 0 => Some(self.events[ix - 1].as_ref()),
+            Err(ix) => Some(self.events[ix].as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl<T> TimestampedCollectionMut<T> for EventSlice<T> {
+    fn at_mut(&mut self, timestamp: usize) -> Option<&mut T> {
+        self.events
+            .binary_search_by_key(&timestamp, |e| e.timestamp)
+            .ok()
+            .map(|ix| &mut self.events[ix].data)
+    }
+
+    fn first_mut(&mut self) -> Option<Timestamped<&mut T>> {
+        self.events.first_mut().map(Timestamped::as_mut)
+    }
+
+    fn last_mut(&mut self) -> Option<Timestamped<&mut T>> {
+        self.events.last_mut().map(Timestamped::as_mut)
+    }
+}
+
 impl<T> ops::Index<usize> for EventSlice<T> {
-    type Output = Timestamped<T>;
+    type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
         match self.at(index) {
@@ -576,26 +754,26 @@ impl<T> ops::IndexMut<usize> for EventSlice<T> {
     }
 }
 
-impl<T> ops::Index<ops::Range<usize>> for EventSlice<T> {
+impl<T> ops::Index<Range<usize>> for EventSlice<T> {
     type Output = [Timestamped<T>];
 
-    fn index(&self, range: ops::Range<usize>) -> &Self::Output {
+    fn index(&self, range: Range<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
         &self.slice(range).events
     }
 }
 
-impl<T> ops::Index<ops::RangeTo<usize>> for EventSlice<T> {
+impl<T> ops::Index<RangeTo<usize>> for EventSlice<T> {
     type Output = [Timestamped<T>];
 
-    fn index(&self, range: ops::RangeTo<usize>) -> &Self::Output {
+    fn index(&self, range: RangeTo<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
         let range = self.index_range(range);
         &self.events[range]
     }
 }
 
-impl<T> ops::IndexMut<ops::RangeTo<usize>> for EventSlice<T> {
+impl<T> ops::IndexMut<RangeTo<usize>> for EventSlice<T> {
     fn index_mut(&mut self, range: RangeTo<usize>) -> &mut Self::Output {
         // By default, use timestamp-based indexing
         let range = self.index_range(range);
@@ -603,17 +781,17 @@ impl<T> ops::IndexMut<ops::RangeTo<usize>> for EventSlice<T> {
     }
 }
 
-impl<T> ops::Index<ops::RangeFrom<usize>> for EventSlice<T> {
+impl<T> ops::Index<RangeFrom<usize>> for EventSlice<T> {
     type Output = [Timestamped<T>];
 
-    fn index(&self, range: ops::RangeFrom<usize>) -> &Self::Output {
+    fn index(&self, range: RangeFrom<usize>) -> &Self::Output {
         // By default, use timestamp-based indexing
         let range = self.index_range(range);
         &self.events[range]
     }
 }
 
-impl<T> ops::IndexMut<ops::RangeFrom<usize>> for EventSlice<T> {
+impl<T> ops::IndexMut<RangeFrom<usize>> for EventSlice<T> {
     fn index_mut(&mut self, range: RangeFrom<usize>) -> &mut Self::Output {
         // By default, use timestamp-based indexing
         let range = self.index_range(range);
@@ -621,15 +799,15 @@ impl<T> ops::IndexMut<ops::RangeFrom<usize>> for EventSlice<T> {
     }
 }
 
-impl<T> ops::Index<ops::RangeFull> for EventSlice<T> {
+impl<T> ops::Index<RangeFull> for EventSlice<T> {
     type Output = [Timestamped<T>];
 
-    fn index(&self, range: ops::RangeFull) -> &Self::Output {
+    fn index(&self, range: RangeFull) -> &Self::Output {
         &self.events[range]
     }
 }
 
-impl<T> ops::IndexMut<ops::RangeFull> for EventSlice<T> {
+impl<T> ops::IndexMut<RangeFull> for EventSlice<T> {
     fn index_mut(&mut self, range: RangeFull) -> &mut Self::Output {
         &mut self.events[range]
     }

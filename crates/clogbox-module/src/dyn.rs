@@ -3,12 +3,79 @@
 //! This module provides dynamic dispatch wrappers for modules, allowing for runtime
 //! polymorphism in audio processing graphs.
 
-use crate::context::{ProcessContext, StreamContext};
-use crate::{Module, NoteBuffer, ParamBuffer, PrepareResult, ProcessResult, Samplerate};
+use crate::context::{ProcessContext, StreamContext, UnifiedEvent};
+use crate::eventbuffer::{EventBuffer, EventSlice, Timestamped, TimestampedCollection};
+use crate::note::NoteEvent;
+use crate::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::{count, Enum};
 use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops;
+
+pub enum DynUnifiedEvent {
+    Parameter(usize, f32),
+    Note(usize, NoteEvent),
+}
+
+impl<Param: Enum, Note: Enum> From<UnifiedEvent<Param, Note>> for DynUnifiedEvent {
+    fn from(value: UnifiedEvent<Param, Note>) -> Self {
+        match value {
+            UnifiedEvent::Parameter(param, value) => Self::Parameter(param.to_usize(), value),
+            UnifiedEvent::Note(note, value) => Self::Note(note.to_usize(), value),
+        }
+    }
+}
+
+impl<Param: Enum, Note: Enum> Into<UnifiedEvent<Param, Note>> for DynUnifiedEvent {
+    fn into(self) -> UnifiedEvent<Param, Note> {
+        match self {
+            Self::Parameter(param, value) => UnifiedEvent::Parameter(Param::from_usize(param), value),
+            Self::Note(note, value) => UnifiedEvent::Note(Note::from_usize(note), value),
+        }
+    }
+}
+
+impl<Param, Note> TimestampedCollection<UnifiedEvent<Param, Note>> for EventSlice<DynUnifiedEvent> {
+    fn at(&self, timestamp: usize) -> Option<&DynUnifiedEvent> {
+        todo!()
+    }
+
+    fn min_timestamp(&self) -> Option<usize> {
+        todo!()
+    }
+
+    fn max_timestamp(&self) -> Option<usize> {
+        todo!()
+    }
+
+    fn first(&self) -> Option<Timestamped<&DynUnifiedEvent>> {
+        todo!()
+    }
+
+    fn first_after(&self, timestamp: usize) -> Option<Timestamped<&DynUnifiedEvent>> {
+        todo!()
+    }
+
+    fn last(&self) -> Option<Timestamped<&DynUnifiedEvent>> {
+        todo!()
+    }
+
+    fn last_before(&self, timestamp: usize) -> Option<Timestamped<&DynUnifiedEvent>> {
+        todo!()
+    }
+}
+
+pub struct MappedEventSlice<Param: Enum, Note: Enum> {
+    __param: PhantomData<fn() -> Param>,
+    __note: PhantomData<fn() -> Note>,
+    data: EventSlice<DynUnifiedEvent>,
+}
+
+pub struct MappedEventBuffer<Param: Enum, Note: Enum> {
+    __param: PhantomData<fn() -> Param>,
+    __note: PhantomData<fn() -> Note>,
+    data: EventBuffer<DynUnifiedEvent>,
+}
 
 /// Context for dynamic audio processing that provides access to audio, parameter, and note data.
 ///
@@ -20,15 +87,10 @@ pub struct DynProcessContext<'a, T> {
     pub audio_in: &'a dyn ops::Index<usize, Output = [T]>,
     /// Output audio buffer references, indexed by channel number
     pub audio_out: &'a mut dyn ops::IndexMut<usize, Output = [T]>,
-    /// Input parameter buffer references, indexed by parameter ID
-    pub params_in: &'a dyn ops::Index<usize, Output = ParamBuffer>,
-    /// Output parameter buffer references, indexed by parameter ID
-    pub params_out: &'a mut dyn ops::IndexMut<usize, Output = ParamBuffer>,
-    /// Input MIDI note buffer references, indexed by note channel
-    pub note_in: &'a dyn ops::Index<usize, Output = NoteBuffer>,
-    /// Output MIDI note buffer references, indexed by note channel
-    pub note_out: &'a mut dyn ops::IndexMut<usize, Output = NoteBuffer>,
-    /// Current stream processing context containing timing information
+    /// Input event buffer references, indexed by parameter or note ID
+    pub events_in: &'a EventSlice<DynUnifiedEvent>,
+    /// Output event buffer references, indexed by parameter or note ID
+    pub events_out: &'a mut EventBuffer<DynUnifiedEvent>,
     pub stream_context: &'a StreamContext,
 }
 
@@ -134,17 +196,11 @@ impl<M: Module> DynModule<M::Sample> for M {
     fn process(&mut self, context: DynProcessContext<M::Sample>) -> ProcessResult {
         let audio_in = EnumIndexMapping::new(context.audio_in);
         let mut audio_out = EnumIndexMutMapping::new(context.audio_out);
-        let params_in = EnumIndexMapping::new(context.params_in);
-        let mut params_out = EnumIndexMutMapping::new(context.params_out);
-        let note_in = EnumIndexMapping::new(context.note_in);
-        let mut note_out = EnumIndexMutMapping::new(context.note_out);
         let context = ProcessContext {
             audio_in: &audio_in,
             audio_out: &mut audio_out,
-            params_in: &params_in,
-            params_out: &mut params_out,
-            note_in: &note_in,
-            note_out: &mut note_out,
+            events_in: context.events_in,
+            events_out: context.events_out,
             stream_context: context.stream_context,
             __phantom: PhantomData,
         };

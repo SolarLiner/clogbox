@@ -3,14 +3,56 @@
 //! This module provides context structures that are passed to modules during processing,
 //! containing information about the current processing state.
 
-use crate::eventbuffer::EventBuffer;
+use crate::eventbuffer::{self, Timestamped, TimestampedCollection, TimestampedCollectionMut};
 use crate::note::NoteEvent;
-use crate::{Module, NoteBuffer, ParamBuffer, Samplerate};
+use crate::{Module, Samplerate};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{enum_iter, Empty, Enum};
+use clogbox_enum::{Empty, Enum};
 use num_traits::Zero;
 use std::marker::PhantomData;
 use std::ops;
+
+/// Unified event handle, enabling the use of a single event buffer for all events
+#[derive(Debug, Copy, Clone)]
+pub enum UnifiedEvent<Param, Note> {
+    /// Parameter event (single value representing the natural value of the parameter)
+    Parameter(Param, f32),
+    /// Note event
+    Note(Note, NoteEvent),
+}
+
+impl<Param: Copy + PartialEq, Note: Copy + PartialEq> UnifiedEvent<Param, Note> {
+    pub fn is_param(&self, param: Param) -> bool {
+        matches!(self, &Self::Parameter(p, _) if p == param)
+    }
+
+    pub fn is_note(&self, note: Note) -> bool {
+        matches!(self, &Self::Note(n, _) if n == note)
+    }
+}
+
+pub type EventBuffer<Param, Note> = eventbuffer::EventBuffer<UnifiedEvent<Param, Note>>;
+
+pub type EventSlice<Param, Note> = eventbuffer::EventSlice<UnifiedEvent<Param, Note>>;
+
+pub const DEFAULT_EVENT_BUFFER_CAPACITY: usize = 2048;
+
+pub fn filter_events<P1: Copy, N1: Copy, P2, N2>(
+    filter_params: impl Fn(P1) -> Option<P2>,
+    filter_notes: impl Fn(N1) -> Option<N2>,
+) -> impl Fn(&mut EventBuffer<P2, N2>, &EventSlice<P1, N1>) {
+    return move |tgt, src| {
+        for event in src {
+            let Some(Timestamped { timestamp, data }) = event.filter_map(|data| match data {
+                UnifiedEvent::Parameter(param, value) => Some(UnifiedEvent::Parameter(filter_params(param)?, value)),
+                UnifiedEvent::Note(note, value) => Some(UnifiedEvent::Note(filter_notes(note)?, value)),
+            }) else {
+                continue;
+            };
+            tgt.push(timestamp, data);
+        }
+    };
+}
 
 /// Provides information about the audio stream, such as sample rate and block size.
 #[derive(Debug, Copy, Clone)]
@@ -27,15 +69,10 @@ pub struct ProcessContext<'a, M: ?Sized + Module> {
     pub audio_in: &'a dyn ops::Index<M::AudioIn, Output = [M::Sample]>,
     /// Mutable reference to the output audio buffer for each output channel.
     pub audio_out: &'a mut dyn ops::IndexMut<M::AudioOut, Output = [M::Sample]>,
-    /// Reference to the input parameter values.
-    pub params_in: &'a dyn ops::Index<M::ParamsIn, Output = ParamBuffer>,
-    /// Mutable reference to the output parameter values.
-    pub params_out: &'a mut dyn ops::IndexMut<M::ParamsOut, Output = ParamBuffer>,
-    /// Reference to the current notes' input.
-    pub note_in: &'a dyn ops::Index<M::NoteIn, Output = NoteBuffer>,
-    /// Mutable reference to the notes' output.
-    pub note_out: &'a mut dyn ops::IndexMut<M::NoteOut, Output = NoteBuffer>,
-    /// The current stream context, containing info like sample rate and block size.
+    /// Reference to the input events
+    pub events_in: &'a dyn TimestampedCollection<UnifiedEvent<M::ParamsIn, M::NoteIn>>,
+    /// Mutable reference to the output events
+    pub events_out: &'a mut dyn TimestampedCollectionMut<UnifiedEvent<M::ParamsOut, M::NoteOut>>,
     pub stream_context: &'a StreamContext,
     /// Phantom data to associate the context with the module type.
     pub __phantom: PhantomData<&'a M>,
@@ -43,10 +80,7 @@ pub struct ProcessContext<'a, M: ?Sized + Module> {
 
 impl<'a, M: ?Sized + Module> ProcessContext<'a, M> {
     pub fn next_event(&self, pos: usize) -> Option<usize> {
-        enum_iter::<M::ParamsIn>()
-            .filter_map(|e| self.params_in[e].after(pos + 1).first().map(|t| t.timestamp))
-            .chain(enum_iter::<M::NoteIn>().filter_map(|e| self.note_in[e].after(pos + 1).first().map(|t| t.timestamp)))
-            .min()
+        self.events_in.after(pos).min_timestamp()
     }
 
     pub fn chunk_events(&self) -> impl Iterator<Item = ops::Range<usize>> + use<'_, 'a, M> {
@@ -69,15 +103,10 @@ pub struct OwnedProcessContext<M: ?Sized + Module> {
     pub audio_in: AudioStorage<M::AudioIn, M::Sample>,
     /// Storage for output audio data.
     pub audio_out: AudioStorage<M::AudioOut, M::Sample>,
-    /// Storage for input parameters.
-    pub params_in: EventStorage<M::ParamsIn, f32>,
-    /// Storage for output parameters.
-    pub params_out: EventStorage<M::ParamsOut, f32>,
-    /// Storage for input notes.
-    pub note_in: EventStorage<M::NoteIn, NoteEvent>,
-    /// Storage for output notes.
-    pub note_out: EventStorage<M::NoteOut, NoteEvent>,
-    /// Phantom data for type association.
+    /// Storage for the input events
+    pub events_in: EventBuffer<M::ParamsIn, M::NoteIn>,
+    /// Storage for the output events
+    pub events_out: EventBuffer<M::ParamsOut, M::NoteOut>,
     __phantom: PhantomData<M>,
 }
 
@@ -86,10 +115,8 @@ impl<M: ?Sized + Module> Default for OwnedProcessContext<M> {
         Self {
             audio_in: AudioStorage::new(|_| vec![].into_boxed_slice()),
             audio_out: AudioStorage::new(|_| vec![].into_boxed_slice()),
-            params_in: EventStorage::with_capacity(0),
-            params_out: EventStorage::with_capacity(0),
-            note_in: EventStorage::with_capacity(0),
-            note_out: EventStorage::with_capacity(0),
+            events_in: EventBuffer::with_capacity(DEFAULT_EVENT_BUFFER_CAPACITY),
+            events_out: EventBuffer::with_capacity(DEFAULT_EVENT_BUFFER_CAPACITY),
             __phantom: PhantomData,
         }
     }
@@ -113,12 +140,18 @@ impl<M: ?Sized + Module> OwnedProcessContext<M> {
         Self {
             audio_in: AudioStorage::zeroed(block_size),
             audio_out: AudioStorage::zeroed(block_size),
-            params_in: EventStorage::with_capacity(event_capacity),
-            params_out: EventStorage::with_capacity(event_capacity),
-            note_in: EventStorage::with_capacity(event_capacity),
-            note_out: EventStorage::with_capacity(event_capacity),
+            events_in: EventBuffer::with_capacity(event_capacity),
+            events_out: EventBuffer::with_capacity(event_capacity),
             __phantom: PhantomData,
         }
+    }
+
+    pub fn resize_audio_buffers(&mut self, new_capacity: usize)
+    where
+        M::Sample: Copy + Zero,
+    {
+        self.audio_in.resize(new_capacity);
+        self.audio_out.resize(new_capacity);
     }
 
     /// Executes a processing closure within this context.
@@ -135,10 +168,8 @@ impl<M: ?Sized + Module> OwnedProcessContext<M> {
         func(ProcessContext {
             audio_in: &self.audio_in,
             audio_out: &mut self.audio_out,
-            params_in: &self.params_in,
-            params_out: &mut self.params_out,
-            note_in: &self.note_in,
-            note_out: &mut self.note_out,
+            events_in: &self.events_in,
+            events_out: &mut self.events_out,
             stream_context,
             __phantom: PhantomData,
         })
@@ -219,6 +250,18 @@ impl<E: Enum, T> AudioStorage<E, T> {
             output.index_mut(e).copy_from_slice(&slice[..slice.len()]);
         }
     }
+
+    pub fn resize(&mut self, new_capacity: usize)
+    where
+        T: Copy + Zero,
+    {
+        for box_ in self.storage.values_mut() {
+            let overlap = box_.len().min(new_capacity);
+            let mut new_box = Box::from_iter(std::iter::repeat_with(T::zero).take(new_capacity));
+            new_box[..overlap].copy_from_slice(&box_[..overlap]);
+            *box_ = new_box;
+        }
+    }
 }
 
 impl<E: Enum, T> ops::Index<E> for AudioStorage<E, T> {
@@ -241,11 +284,11 @@ impl<E: Enum, T> ops::IndexMut<E> for AudioStorage<E, T> {
 #[derive(Debug, Clone)]
 pub struct EventStorage<E: Enum, T> {
     /// The internal storage mapping each enum variant to an event buffer.
-    storage: EnumMapArray<E, EventBuffer<T>>,
+    storage: EnumMapArray<E, eventbuffer::EventBuffer<T>>,
 }
 
 impl<E: Enum, T> ops::Deref for EventStorage<E, T> {
-    type Target = EnumMapArray<E, EventBuffer<T>>;
+    type Target = EnumMapArray<E, eventbuffer::EventBuffer<T>>;
 
     fn deref(&self) -> &Self::Target {
         &self.storage
@@ -259,7 +302,7 @@ impl<E: Enum, T> ops::DerefMut for EventStorage<E, T> {
 }
 
 impl<E: Enum, T> ops::Index<E> for EventStorage<E, T> {
-    type Output = EventBuffer<T>;
+    type Output = eventbuffer::EventBuffer<T>;
 
     /// Access event data for a given channel.
     fn index(&self, index: E) -> &Self::Output {
@@ -284,14 +327,14 @@ impl<E: Enum, T> EventStorage<E, T> {
     /// Creates a new empty event storage.
     pub fn new() -> Self {
         Self {
-            storage: EnumMapArray::new(|_| EventBuffer::new()),
+            storage: EnumMapArray::new(|_| eventbuffer::EventBuffer::new()),
         }
     }
 
     /// Creates event storage with pre-allocated capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            storage: EnumMapArray::new(|_| EventBuffer::with_capacity(capacity)),
+            storage: EnumMapArray::new(|_| eventbuffer::EventBuffer::with_capacity(capacity)),
         }
     }
 }

@@ -4,7 +4,12 @@ from dataclasses import dataclass
 
 import sympy as sp
 
-from clogbox.codegen import generate_differentiable, ClogboxRustCodePrinter, ClogboxCodegen, codegen_module
+from clogbox.codegen import (
+    generate_differentiable,
+    ClogboxRustCodePrinter,
+    ClogboxCodegen,
+    codegen_module,
+)
 from clogbox.filters import Integrator, linear_integrator, Shaper, IntegratorInput
 
 
@@ -21,8 +26,14 @@ class SvfOutput:
     output_equations: sp.Eq
     state_equations: sp.Eq
 
-    def generate_module(self, f: io.TextIOBase, printer: typing.Optional[ClogboxRustCodePrinter] = None,
-                        codegen: typing.Optional[ClogboxCodegen] = None, evalf=23, runtime_invert=True):
+    def generate_module(
+        self,
+        f: io.TextIOBase,
+        printer: typing.Optional[ClogboxRustCodePrinter] = None,
+        codegen: typing.Optional[ClogboxCodegen] = None,
+        evalf=23,
+        runtime_invert=True,
+    ):
         if not printer:
             printer = ClogboxRustCodePrinter()
         if not codegen:
@@ -30,9 +41,19 @@ class SvfOutput:
 
         s = io.StringIO()
         wrt = sp.Matrix([self.lp, self.bp, self.hp])
-        generate_differentiable(s, self.output_equations, wrt, "SvfEquation", printer=printer, codegen=codegen,
-                                runtime_invert=runtime_invert, evalf=evalf)
-        state_routine_args = sorted(self.state_equations.free_symbols, key=lambda s: s.name)
+        generate_differentiable(
+            s,
+            self.output_equations,
+            wrt,
+            "SvfEquation",
+            printer=printer,
+            codegen=codegen,
+            runtime_invert=runtime_invert,
+            evalf=evalf,
+        )
+        state_routine_args = sorted(
+            self.state_equations.free_symbols, key=lambda s: s.name
+        )
         routine = codegen.routine("state", self.state_equations, state_routine_args, [])
         f.write(codegen_module([routine], printer=printer, codegen=codegen))
         f.write("\n\n")
@@ -49,7 +70,7 @@ class SvfInput:
     def generate(self) -> SvfOutput:
         x, lp, bp, hp = sp.symbols("x y_lp y_bp y_hp", real=True)
         r = 2 * (1 - self.q)
-        s = sp.MatrixSymbol('S', 2, 1)
+        s = sp.MatrixSymbol("S", 2, 1)
         sat = sp.Function("sat", real=True)
         asat = sp.Function("sat^{-1}", real=True)
         bpp = asat(bp)
@@ -66,8 +87,18 @@ class SvfInput:
         bp_replacement = {bp: sat(sat_inner)}
 
         w = sp.Wild("w")
-        out_eq = [e.subs(bp_replacement).replace(sat(asat(w)), w).replace(asat(sat(w)), w).replace(sat(w), self.damping_resonance(w))
-                  for e in out_eq]
-        state_eq = [self.integrator(IntegratorInput(bp, self.g, hp)), self.integrator(IntegratorInput(lp, self.g, bp))]
+        out_eq = [
+            e.subs(bp_replacement)
+            .replace(sat(asat(w)), w)
+            .replace(asat(sat(w)), w)
+            .replace(sat(w), self.damping_resonance(w))
+            for e in out_eq
+        ]
+        state_eq = [
+            self.integrator(IntegratorInput(bp, self.g, hp)),
+            self.integrator(IntegratorInput(lp, self.g, bp)),
+        ]
 
-        return SvfOutput(x, lp, bp, hp, make_matrix_equation(out_eq), sp.Eq(s, sp.Matrix(state_eq)))
+        return SvfOutput(
+            x, lp, bp, hp, make_matrix_equation(out_eq), sp.Eq(s, sp.Matrix(state_eq))
+        )

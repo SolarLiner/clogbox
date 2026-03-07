@@ -71,7 +71,8 @@ class BundleClap:
                 "-s",
                 "-",
                 str(self.output),
-            ])
+            ]
+        )
         return status == 0
 
 
@@ -80,7 +81,12 @@ class PackageType(enum.StrEnum):
     APPLICATION = "APPL"
 
 
-def plist(package_id: str, display_name: str, package_type: PackageType, version: str = "1.0.0") -> str:
+def plist(
+    package_id: str,
+    display_name: str,
+    package_type: PackageType,
+    version: str = "1.0.0",
+) -> str:
     return f"""
 <?xml version="1.0" encoding="UTF-8"?>
 

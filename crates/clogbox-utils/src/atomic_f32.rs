@@ -47,7 +47,7 @@ impl AtomicF32 {
     /// let atomic_f32 = AtomicF32::new(1234.0); // Bit pattern for 1.0f32
     ///
     /// let value = atomic_f32.load(Ordering::SeqCst); // Loads the f32 value
-    /// assert_eq!(value, 1.0);
+    /// assert_eq!(value, 1234.0);
     /// ```
     pub fn load(&self, order: Ordering) -> f32 {
         f32::from_bits(self.0.load(order))

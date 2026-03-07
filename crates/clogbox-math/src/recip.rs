@@ -625,6 +625,11 @@ mod tests {
 
     #[cfg(not(miri))]
     proptest! {
+       #![proptest_config(ProptestConfig {
+           #[cfg(miri)]
+           failure_persistence: None,
+           ..ProptestConfig::default()
+       })]
         #[test]
         fn test_recip_invariants(value in non_zero()) {
             // Skip testing for zero to avoid division by zero

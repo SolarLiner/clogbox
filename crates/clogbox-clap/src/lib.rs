@@ -122,9 +122,39 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
 /// use std::ffi::CStr;
 /// use clack_plugin::prelude::*;
 /// use clogbox_clap::{PluginMeta, Plugin, export_plugin, features};
+/// use clogbox_clap::dsp::{PluginCreateContext, PluginDsp};
 /// use clogbox_clap::gui::PluginView;
 /// use clogbox_clap::PortLayout;
-/// use clogbox_module::Module;
+/// use clogbox_enum::Empty;
+/// use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
+/// use clogbox_module::context::ProcessContext;
+///
+/// struct Dsp;
+///
+/// impl Module for Dsp {
+///     type Sample = f32;
+///     type AudioIn = Empty;
+///     type AudioOut = Empty;
+///     type ParamsIn = Empty;
+///     type ParamsOut = Empty;
+///     type NoteIn = Empty;
+///     type NoteOut = Empty;
+///
+///     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
+///         PrepareResult { latency: 0.0 }
+///     }
+///
+///     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
+///         ProcessResult { tail: None }
+///     }
+/// }
+///
+/// impl PluginDsp for Dsp {
+///     type Plugin = MyPlugin;
+///     fn create(_context: PluginCreateContext<Self>, _shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self {
+///         Self
+///     }
+/// }
 ///
 /// struct MyPlugin;
 ///
@@ -136,8 +166,8 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
 /// }
 ///
 /// impl Plugin for MyPlugin {
-///     type Dsp = ();
-///     type Params = ();
+///     type Dsp = Dsp;
+///     type Params = Empty;
 ///     type SharedData = ();
 ///     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[];
 ///     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[];
@@ -174,7 +204,7 @@ macro_rules! export_plugin {
 /// use clogbox_clap::PortLayout;
 /// use clogbox_enum::Enum;
 ///
-/// #[derive(Debug, Copy, Clone, PartialOrd, PartialEq, Enum)]
+/// #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
 /// enum AudioInput { MainLeft, MainRight, SidechainMono }
 ///
 /// const MAIN_PORT: PortLayout<AudioInput> = PortLayout::new(&[AudioInput::MainLeft, AudioInput::MainRight])

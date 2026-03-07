@@ -2,12 +2,58 @@ use crossbeam_utils::CachePadded;
 use std::borrow::Cow;
 use std::cell::{Cell, UnsafeCell};
 use std::mem::MaybeUninit;
+use std::ops::Deref;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{fmt, ops};
 use thread_local::ThreadLocal;
 
-pub(crate) struct RingBuffer<T> {
+pub type Dynamic<T> = Box<[UnsafeCell<MaybeUninit<T>>]>;
+pub type Static<T, const N: usize> = [UnsafeCell<MaybeUninit<T>>; N];
+
+pub type RingBuffer<T> = RingBufferImpl<Dynamic<T>>;
+pub type RingBufferStatic<T, const N: usize> = RingBufferImpl<Static<T, N>>;
+
+pub unsafe trait Storage {
+    type Item;
+    fn slice(&self) -> &[UnsafeCell<MaybeUninit<Self::Item>>];
+    fn len(&self) -> usize {
+        self.slice().len()
+    }
+    fn is_empty(&self) -> bool {
+        self.slice().is_empty()
+    }
+}
+
+unsafe impl<T> Storage for Dynamic<T> {
+    type Item = T;
+    fn slice(&self) -> &[UnsafeCell<MaybeUninit<T>>] {
+        &*self
+    }
+}
+
+unsafe impl<T, const N: usize> Storage for Static<T, N> {
+    type Item = T;
+    fn slice(&self) -> &[UnsafeCell<MaybeUninit<T>>] {
+        self
+    }
+}
+
+unsafe impl<'a, T> Storage for &'a [UnsafeCell<MaybeUninit<T>>] {
+    type Item = T;
+    fn slice(&self) -> &[UnsafeCell<MaybeUninit<Self::Item>>] {
+        *self
+    }
+}
+
+unsafe impl<'a, T> Storage for &'a mut [UnsafeCell<MaybeUninit<T>>] {
+    type Item = T;
+    fn slice(&self) -> &[UnsafeCell<MaybeUninit<Self::Item>>] {
+        *self
+    }
+}
+
+pub struct RingBufferImpl<S: Storage> {
     // Read and write indices are padded to avoid false sharing
     read_index: CachePadded<AtomicUsize>,
     // Thread-local cached read index for producers
@@ -22,18 +68,18 @@ pub(crate) struct RingBuffer<T> {
     mask: usize,
 
     // The actual buffer storage
-    buffer: Box<[UnsafeCell<MaybeUninit<T>>]>,
+    buffer: S,
 }
 
-unsafe impl<T: Send> Send for RingBuffer<T> {}
-unsafe impl<T: Sync> Sync for RingBuffer<T> {}
+unsafe impl<S: Storage> Send for RingBufferImpl<S> {}
+unsafe impl<S: Storage> Sync for RingBufferImpl<S> {}
 
-impl<T> UnwindSafe for RingBuffer<T> {}
-impl<T> RefUnwindSafe for RingBuffer<T> {}
+impl<S: Storage> UnwindSafe for RingBufferImpl<S> {}
+impl<S: Storage> RefUnwindSafe for RingBufferImpl<S> {}
 
-impl<T> fmt::Debug for RingBuffer<T> {
+impl<S: Storage> fmt::Debug for RingBufferImpl<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("RingBuffer")
+        f.debug_struct("RingBufferImpl")
             .field(
                 "read_index",
                 &format!(
@@ -68,30 +114,50 @@ impl<T> fmt::Debug for RingBuffer<T> {
     }
 }
 
-impl<T> ops::Index<usize> for RingBuffer<T> {
-    type Output = T;
+impl<S: Storage> ops::Index<usize> for RingBufferImpl<S> {
+    type Output = S::Item;
 
     fn index(&self, index: usize) -> &Self::Output {
         let pos = self.get_pos_from_index(index);
-        unsafe { (*self.buffer[pos].get()).assume_init_ref() }
+        let buffer = self.buffer.slice();
+        unsafe { (*buffer[pos].get()).assume_init_ref() }
     }
 }
 
-impl<T> ops::IndexMut<usize> for RingBuffer<T> {
+impl<S: Storage> ops::IndexMut<usize> for RingBufferImpl<S> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let pos = self.get_pos_from_index(index);
-        unsafe { self.buffer[pos].get_mut().assume_init_mut() }
+        let buffer = self.buffer.slice();
+        unsafe { (*buffer[pos].get()).assume_init_mut() }
     }
 }
 
-impl<T> RingBuffer<T> {
+impl<T, const N: usize> RingBufferImpl<Static<T, N>> {
+    const _CHECKS: () = {
+        assert!(N.is_power_of_two(), "N must be a power of 2");
+    };
+
+    pub fn new() -> Self {
+        let _ = Self::_CHECKS;
+        Self {
+            read_index: CachePadded::new(AtomicUsize::new(0)),
+            read_index_cached: ThreadLocal::new(),
+            write_index: CachePadded::new(AtomicUsize::new(0)),
+            write_index_cached: ThreadLocal::new(),
+            mask: N - 1,
+            buffer: std::array::from_fn(|_| UnsafeCell::new(MaybeUninit::uninit())),
+        }
+    }
+}
+
+impl<T> RingBufferImpl<Dynamic<T>> {
     /// Creates a new ring buffer with the given capacity.
     /// Capacity will be rounded up to the next power of 2.
     pub fn new(mut capacity: usize) -> Self {
         // Ensure capacity is a power of 2
         capacity = capacity.next_power_of_two();
 
-        RingBuffer {
+        RingBufferImpl {
             read_index: CachePadded::new(AtomicUsize::new(0)),
             read_index_cached: ThreadLocal::new(),
             write_index: CachePadded::new(AtomicUsize::new(0)),
@@ -102,7 +168,9 @@ impl<T> RingBuffer<T> {
                 .collect(),
         }
     }
+}
 
+impl<S: Storage> RingBufferImpl<S> {
     /// Returns the capacity of the ring buffer
     pub fn capacity(&self) -> usize {
         self.buffer.len()
@@ -141,7 +209,7 @@ impl<T> RingBuffer<T> {
     /// Attempts to push an item to the buffer.
     /// Returns Ok(()) if successful, or Err(item) if the buffer is full,
     /// returning the original item.
-    pub fn push(&self, item: T) -> Result<(), T> {
+    pub fn push(&self, item: S::Item) -> Result<(), S::Item> {
         if self.is_full() {
             self.reload_indices();
             if self.is_full() {
@@ -152,7 +220,7 @@ impl<T> RingBuffer<T> {
         let write = self.write_index();
         // Write the item to the buffer
         unsafe {
-            let cell = &self.buffer[write & self.mask];
+            let cell = &self.buffer.slice()[write & self.mask];
             (*cell.get()).write(item);
         }
 
@@ -161,16 +229,16 @@ impl<T> RingBuffer<T> {
         Ok(())
     }
 
-    pub fn push_slice(&self, slice: &[T]) -> usize
+    pub fn push_slice(&self, slice: &[S::Item]) -> usize
     where
-        T: Copy,
+        S::Item: Copy,
     {
         self.reload_indices();
         let mut write = self.write_index();
         let available = self.free_slots().min(slice.len());
         for x in &slice[..available] {
             unsafe {
-                let ptr = &self.buffer[write & self.mask];
+                let ptr = &self.buffer.slice()[write & self.mask];
                 (*ptr.get()).write(*x);
                 write = write.wrapping_add(1);
             }
@@ -181,7 +249,7 @@ impl<T> RingBuffer<T> {
 
     /// Attempts to pop an item from the buffer.
     /// Returns Some(item) if successful, None if the buffer is empty.
-    pub fn pop(&self) -> Option<T> {
+    pub fn pop(&self) -> Option<S::Item> {
         if self.is_empty() {
             self.reload_indices();
             if self.is_empty() {
@@ -193,7 +261,7 @@ impl<T> RingBuffer<T> {
 
         // Read the item from the buffer
         let item = unsafe {
-            let cell = &self.buffer[read & self.mask];
+            let cell = &self.buffer.slice()[read & self.mask];
             (*cell.get()).assume_init_read()
         };
 
@@ -202,13 +270,13 @@ impl<T> RingBuffer<T> {
         Some(item)
     }
 
-    pub fn pop_slice(&self, slice: &mut [T]) -> usize {
+    pub fn pop_slice(&self, slice: &mut [S::Item]) -> usize {
         self.reload_indices();
         let mut read = self.read_index();
         let available = self.len().min(slice.len());
         for x in &mut slice[..available] {
             unsafe {
-                let ptr = &self.buffer[read & self.mask];
+                let ptr = &self.buffer.slice()[read & self.mask];
                 *x = (*ptr.get()).assume_init_read();
                 read = read.wrapping_add(1);
             }
@@ -222,7 +290,7 @@ impl<T> RingBuffer<T> {
         let amount = amount.min(self.len());
         let mut read = self.read_index();
         for _ in 0..amount {
-            let ptr = self.buffer[read & self.mask].get();
+            let ptr = self.buffer.slice()[read & self.mask].get();
             unsafe {
                 (*ptr).assume_init_drop();
             }
@@ -305,7 +373,7 @@ impl<T> RingBuffer<T> {
     }
 }
 
-impl<T> Drop for RingBuffer<T> {
+impl<S: Storage> Drop for RingBufferImpl<S> {
     fn drop(&mut self) {
         // Destroy any items still in the buffer
         while self.pop().is_some() {}
@@ -623,5 +691,11 @@ mod tests {
     fn test_index_access_empty() {
         let rb = RingBuffer::<i32>::new(4);
         let _v = rb[0];
+    }
+
+    #[test]
+    fn test_static_rb_capacity_power_of_two() {
+        let rb = RingBufferStatic::<f32, 4>::new();
+        assert_eq!(4, rb.capacity());
     }
 }

@@ -177,6 +177,7 @@ impl<P: Plugin> PluginMainThreadParams for MainThread<'_, P> {
                 continue;
             };
             self.shared.params.set_clap_value(id, event.value());
+            #[cfg(feature = "gui")]
             self.shared.notifier.notify(ParamChangeEvent {
                 id,
                 kind: ParamChangeKind::ValueChange(id.clap_value_to_denormalized(event.value())),

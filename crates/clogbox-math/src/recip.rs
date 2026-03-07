@@ -621,6 +621,7 @@ mod tests {
         prop_oneof![(-1e300..-f64::EPSILON), (f64::EPSILON..1e300)]
     }
 
+    #[cfg(not(miri))]
     proptest! {
         #[test]
         fn test_recip_invariants(value in non_zero()) {

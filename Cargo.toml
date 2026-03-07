@@ -70,3 +70,5 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+[patch."https://github.com/RustAudio/baseview"]
+baseview = { git = "https://github.com/tomoyanonymous/baseview.git", rev = "d73e0b912c8c0f2989db6338fd5f07ec09ff4dd3" }

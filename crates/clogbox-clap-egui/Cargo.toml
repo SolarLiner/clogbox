@@ -16,6 +16,6 @@ clogbox-utils.workspace = true
 log.workspace = true
 serde_json.workspace = true
 
-baseview = { git = "https://github.com/RustAudio/baseview.git", rev = "9a0b42c09d712777b2edb4c5e0cb6baf21e988f0" }
-egui = { version = "0.31", features = ["persistence", "serde"] }
-egui-baseview = { git = "https://github.com/BillyDM/egui-baseview.git", branch = "main" }
+baseview = { git = "https://github.com/tomoyanonymous/baseview.git", rev = "d73e0b912c8c0f2989db6338fd5f07ec09ff4dd3" }
+egui = { version = "0.33.3", features = ["persistence", "serde"] }
+egui-baseview = { git = "https://github.com/BillyDM/egui-baseview.git", rev = "c5ad2f4bd094b100321a804122cf2218b43370da" }

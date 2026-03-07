@@ -23,4 +23,4 @@ clogbox-params.workspace = true
 fixed-ringbuf.workspace = true
 
 arc-swap = "1.7.1"
-egui_plot = "0.32.1"
+egui_plot = "0.34.0"

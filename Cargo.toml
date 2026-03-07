@@ -51,6 +51,7 @@ serde_json = "1.0.128"
 # Plugins dependencies
 clack-plugin = { git = "https://github.com/prokopyl/clack.git" }
 clack-extensions = { git = "https://github.com/prokopyl/clack.git" }
+egui_plot = "0.34.1"
 
 #[package]
 #name = "clogbox"
@@ -70,3 +71,5 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
+[patch."https://github.com/RustAudio/baseview"]
+baseview = { git = "https://github.com/tomoyanonymous/baseview.git", rev = "d73e0b912c8c0f2989db6338fd5f07ec09ff4dd3" }

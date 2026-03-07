@@ -430,7 +430,7 @@ dependencies = [
  "clogbox-clap",
  "clogbox-enum",
  "clogbox-utils",
- "egui 0.33.3",
+ "egui",
  "egui-baseview",
  "log",
  "serde_json",
@@ -591,7 +591,7 @@ dependencies = [
  "clogbox-module",
  "clogbox-params",
  "clogbox-utils",
- "egui_plot 0.34.1",
+ "egui_plot",
  "fixed-ringbuf",
 ]
 
@@ -808,36 +808,13 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "ecolor"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc4feb366740ded31a004a0e4452fbf84e80ef432ecf8314c485210229672fd1"
-dependencies = [
- "emath 0.31.1",
-]
-
-[[package]]
-name = "ecolor"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71ddb8ac7643d1dba1bb02110e804406dd459a838efcb14011ced10556711a8e"
 dependencies = [
  "bytemuck",
- "emath 0.33.3",
+ "emath",
  "serde",
-]
-
-[[package]]
-name = "egui"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25dd34cec49ab55d85ebf70139cb1ccd29c977ef6b6ba4fe85489d6877ee9ef3"
-dependencies = [
- "ahash",
- "bitflags 2.11.0",
- "emath 0.31.1",
- "epaint 0.31.1",
- "nohash-hasher",
- "profiling",
 ]
 
 [[package]]
@@ -849,8 +826,8 @@ dependencies = [
  "accesskit",
  "ahash",
  "bitflags 2.11.0",
- "emath 0.33.3",
- "epaint 0.33.3",
+ "emath",
+ "epaint",
  "log",
  "nohash-hasher",
  "profiling",
@@ -867,7 +844,7 @@ source = "git+https://github.com/BillyDM/egui-baseview.git?rev=c5ad2f4bd094b1003
 dependencies = [
  "baseview",
  "copypasta",
- "egui 0.33.3",
+ "egui",
  "egui_glow",
  "keyboard-types",
  "open",
@@ -883,7 +860,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6420863ea1d90e750f75075231a260030ad8a9f30a7cef82cdc966492dc4c4eb"
 dependencies = [
  "bytemuck",
- "egui 0.33.3",
+ "egui",
  "glow",
  "log",
  "memoffset 0.9.1",
@@ -895,24 +872,13 @@ dependencies = [
 
 [[package]]
 name = "egui_plot"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14ae092b46ea532f6c69d3e71036fb3b688fd00fd09c2a1e43d17051a8ae43e6"
-dependencies = [
- "ahash",
- "egui 0.31.1",
- "emath 0.31.1",
-]
-
-[[package]]
-name = "egui_plot"
 version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67fc9b427a837264e55381a5cade6e28fe83ac5b165a61b9c888548c732a9c95"
 dependencies = [
  "ahash",
- "egui 0.33.3",
- "emath 0.33.3",
+ "egui",
+ "emath",
 ]
 
 [[package]]
@@ -920,12 +886,6 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
-
-[[package]]
-name = "emath"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e4cadcff7a5353ba72b7fea76bf2122b5ebdbc68e8155aa56dfdea90083fe1b"
 
 [[package]]
 name = "emath"
@@ -974,7 +934,7 @@ dependencies = [
  "clogbox-math",
  "clogbox-module",
  "clogbox-utils",
- "egui_plot 0.32.1",
+ "egui_plot",
  "fixed-ringbuf",
 ]
 
@@ -1003,21 +963,6 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.31.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41fcc0f5a7c613afd2dee5e4b30c3e6acafb8ad6f0edb06068811f708a67c562"
-dependencies = [
- "ab_glyph",
- "ahash",
- "ecolor 0.31.1",
- "emath 0.31.1",
- "nohash-hasher",
- "parking_lot",
- "profiling",
-]
-
-[[package]]
-name = "epaint"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "009d0dd3c2163823a0abdb899451ecbc78798dec545ee91b43aff1fa790bab62"
@@ -1025,8 +970,8 @@ dependencies = [
  "ab_glyph",
  "ahash",
  "bytemuck",
- "ecolor 0.33.3",
- "emath 0.33.3",
+ "ecolor",
+ "emath",
  "epaint_default_fonts",
  "log",
  "nohash-hasher",
@@ -2675,7 +2620,7 @@ dependencies = [
  "clogbox-math",
  "clogbox-module",
  "clogbox-params",
- "egui_plot 0.34.1",
+ "egui_plot",
  "nalgebra",
  "num-traits",
 ]

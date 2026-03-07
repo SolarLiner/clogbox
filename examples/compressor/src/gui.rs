@@ -1,12 +1,12 @@
 use std::time::Duration;
 
-use crate::{dsp, SharedData};
+use crate::{dsp, Compressor, SharedData};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::processor::PluginError;
+use clogbox_clap::PluginError;
 use clogbox_clap_egui::egui::{vec2, Align, Color32, Context, Layout, Pos2, StrokeKind, Vec2};
 use clogbox_clap_egui::egui_baseview::Queue;
-use clogbox_clap_egui::{components, egui, generic_ui, shared_data_id, EguiPluginView};
+use clogbox_clap_egui::{components, egui, generic_ui, EguiPluginView, GetContextExtra};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Enum, Stereo};
 use clogbox_math::linear_to_db;
@@ -26,7 +26,7 @@ impl EguiPluginView for View {
                     ui.allocate_ui(vec2(300.0, 300.0), |ui| {
                         generic_ui::display::<dsp::Params>(ui);
                     });
-                    let shared_data: SharedData = ui.ctx().data(|data| data.get_temp(shared_data_id()).unwrap());
+                    let shared_data = ui.ctx().plugin_shared_data::<Compressor>();
                     let cb = shared_data.cb.load();
                     let Some(rx) = cb.as_ref() else { return };
                     self.data.clear();

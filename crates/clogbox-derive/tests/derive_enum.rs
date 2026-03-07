@@ -49,7 +49,7 @@ fn test_inner_from_usize() {
     assert_eq!(expected, actual);
 }
 #[test]
-#[cfg(not(miri))]
+#[cfg_attr(miri, ignore)]
 fn test_outer_enum_iter() {
     let expected = enum_iter::<Outer>().map(|e| e.name().to_string()).collect::<Vec<_>>();
     insta::assert_csv_snapshot!(expected);
@@ -78,7 +78,7 @@ fn test_complex_enum_from_usize() {
 }
 
 #[test]
-#[cfg(not(miri))]
+#[cfg_attr(miri, ignore)]
 fn test_complex_enum_iter() {
     let expected_names = enum_iter::<GenericEnumFirst<Inner>>()
         .map(|e| e.name().to_string())
@@ -100,7 +100,7 @@ fn test_generic_enum_from_usize() {
 }
 
 #[test]
-#[cfg(not(miri))]
+#[cfg_attr(miri, ignore)]
 fn test_generic_enum_iter() {
     let expected_names = enum_iter::<GenericEnumFirst<Inner>>()
         .map(|e| e.name().to_string())

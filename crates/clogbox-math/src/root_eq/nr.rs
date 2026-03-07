@@ -1,3 +1,5 @@
+//! Newton-Raphson root-finding methods
+
 use crate::root_eq::Differentiable;
 #[cfg(feature = "linalg")]
 use crate::root_eq::MultiDifferentiable;
@@ -12,11 +14,19 @@ use std::ops;
 
 /// Newton-Raphson solver
 pub struct NewtonRaphson<T> {
+    /// Maximum number of iterations to perform. Exceeding this can be checked with [`SolveResult`], where
+    /// $ \text{delta} > 0 $ and [`SolveResult::iterations`] $ == \text{iterations} $.
     pub max_iterations: usize,
+    /// Tolerance for errors in solving the root equation. For scalar equations (implementing [`Differentiable`]),
+    /// this will be the maximum delta of an iteration that will stop computation. For vector equations
+    /// (implementing [`MultiDifferentiable`]), this will be the maximum [RMS] error that will stop computation.
+    ///
+    /// [RMS]: https://en.wikipedia.org/wiki/Root_mean_square
     pub tolerance: T,
 }
 
 impl<T> NewtonRaphson<T> {
+    /// Create a new [`NewtonRhapson`](Self) instance with the provided settings.
     pub const fn new(max_iterations: usize, tolerance: T) -> Self
     where
         T: ops::Add<Output = T>,
@@ -28,23 +38,36 @@ impl<T> NewtonRaphson<T> {
     }
 }
 
+/// Type returned by [`NewtonRhapson`](Self) at the end of computation. Contains the computed value, but also the
+/// delta at
+/// the time and the number of iterations used.
 #[derive(Debug, Clone, Copy)]
 pub struct SolveResult<T> {
+    /// Result value.
     pub value: T,
+    /// Error delta at the value.
     pub delta: T,
+    /// Number of iterations used to compute the value.
     pub iterations: usize,
 }
 
 impl<T> NewtonRaphson<T> {
     /// Solves the equation using the Newton-Raphson method
-    pub fn solve<F: Differentiable<Scalar = T>>(&self, function: &F, initial_guess: T) -> SolveResult<T>
+    ///
+    /// # Arguments
+    ///
+    /// * `root_equation`: Equation to find the root for.
+    /// * `initial_guess`: Initial guess. A good initial guess will vastly improve the performance of the solver, so
+    /// it is wise to spend time to tweak it and try to optimize for it. A good heuristic for this value will be both
+    /// fast to compute and also make the solver faster as a result.
+    pub fn solve<F: Differentiable<Scalar = T>>(&self, root_equation: &F, initial_guess: T) -> SolveResult<T>
     where
         T: Float,
     {
         let mut x = initial_guess;
 
         for i in 0..self.max_iterations {
-            let (fx, dfx) = function.eval_with_derivative(x);
+            let (fx, dfx) = root_equation.eval_with_derivative(x);
             let delta = fx / dfx;
 
             x = x - delta;
@@ -68,9 +91,18 @@ impl<T> NewtonRaphson<T> {
 
 #[cfg(feature = "linalg")]
 impl<T: Copy + na::Scalar + NumAssign + RealField + PartialOrd + Zero> NewtonRaphson<T> {
+    /// Solves the equation using the Newton-Raphson method
+    ///
+    /// # Arguments
+    ///
+    /// * `root_equation`: Equation to find the root for.
+    /// * `value`: Parameter containing the initial guess. A good initial guess will vastly improve the performance of
+    /// the solver, so it is wise to spend time to tweak it and try to optimize for it. A good heuristic for this
+    /// value will be both fast to compute and also make the solver faster as a result. This value is mutated in
+    /// place and will contain the final value after the solver is done.
     pub fn solve_multi<F: MultiDifferentiable<Scalar = T>>(
         &self,
-        function: &F,
+        root_equation: &F,
         mut value: na::VectorViewMut<T, F::Dim>,
     ) -> SolveResult<na::OVector<T, F::Dim>>
     where
@@ -78,7 +110,7 @@ impl<T: Copy + na::Scalar + NumAssign + RealField + PartialOrd + Zero> NewtonRap
             na::allocator::Allocator<F::Dim> + na::allocator::Allocator<F::Dim, F::Dim>,
     {
         for i in 0..self.max_iterations {
-            let (fx, inv_j) = function.eval_with_inv_jacobian(value.as_view());
+            let (fx, inv_j) = root_equation.eval_with_inv_jacobian(value.as_view());
             let delta = inv_j * fx;
 
             if delta.iter().any(|x| !x.is_finite()) {

@@ -1,10 +1,11 @@
 use crate::SharedData;
-use clogbox_clap::main_thread::Plugin;
-use clogbox_clap::params;
-use clogbox_clap::params::{decibel, enum_, linear, polynomial, DynMapping, Linear, Mapping, MappingExt, ParamId};
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
+use clogbox_clap::dsp::{PluginCreateContext, PluginDsp};
+use clogbox_clap::params::{
+    self, decibel, enum_, linear, polynomial, DynMapping, Linear, Mapping, MappingExt, ParamId,
+};
+use clogbox_clap::Plugin;
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{count, enum_iter, Empty, Enum, Mono, Stereo};
+use clogbox_enum::{count, enum_iter, Empty, Enum, Stereo};
 use clogbox_math::{db_to_linear, linear_to_db};
 use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext};
 use clogbox_module::eventbuffer::Timestamped;
@@ -13,9 +14,8 @@ use clogbox_module::modules::env_follower::EnvFollower;
 use clogbox_module::modules::extract::ExtractAudio;
 use clogbox_module::sample::SampleModuleWrapper;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
-use clogbox_params::smoothers::{ExpSmoother, InterpSmoother, LinearSmoother, Smoother};
+use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use std::fmt::Write;
-use std::ops;
 use std::ops::Range;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
@@ -324,7 +324,7 @@ impl Module for Dsp {
         self.extract_context = OwnedProcessContext::new(block_size, 128);
         self.env_follower.prepare(sample_rate, block_size);
         let (tx, rx) = fixed_ringbuf::create(sample_rate.value() as usize);
-        self.extract_audio.set_tx(tx);
+        self.extract_audio.connect(tx);
         self.shared_data.cb.store(Arc::new(Some(rx)));
         self.extract_audio.prepare(sample_rate, block_size);
         self.shared_data
@@ -363,7 +363,7 @@ impl PluginDsp for Dsp {
                 EnumMapArray::new(|e| context.params[Params::Envelope(e)]),
             ),
             extract_context: OwnedProcessContext::new(0, 0),
-            extract_audio: ExtractAudio::CONST_NEW,
+            extract_audio: ExtractAudio::default(),
             smoothers: EnumMapArray::new(|p: SmoothedParams| {
                 ExpSmoother::new(
                     sample_rate,

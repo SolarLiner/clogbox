@@ -14,9 +14,9 @@ use num_traits::Float;
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
-use typenum::{Const, Unsigned};
+use typenum::Const;
 
-/// A trait that defines a method for interpolating values within a [`Collection`](clogbox_enum::enum_map::Collection) type.
+/// A trait that defines a method for interpolating values within a [`Collection`] type.
 ///
 /// # Type Parameters
 ///
@@ -36,13 +36,44 @@ pub trait Interpolation<T> {
     fn interpolate(&self, values: &impl Collection<Item = T>, index: T) -> T;
 }
 
+/// A trait for single-point interpolation with a fixed number of points.
+///
+/// This trait defines methods for interpolating a value at a specific index
+/// using a fixed number of surrounding points. It is used internally by the
+/// `Interpolation` trait to perform the actual interpolation calculation.
+///
+/// # Type Parameters
+///
+/// * `T` - The type of the values to interpolate, typically a floating-point type.
 pub trait InterpolateSingle<T> {
+    /// The number of points used for interpolation.
+    ///
+    /// This associated type determines how many points are used in the interpolation
+    /// calculation. For example, linear interpolation uses 2 points, cubic uses 4.
     type Count: IntoArrayLength;
 
+    /// Adjusts the index before interpolation.
+    ///
+    /// This method allows implementations to offset the index before interpolation,
+    /// which can be useful for certain interpolation algorithms that need to center
+    /// the interpolation window differently.
+    ///
+    /// # Parameters
+    ///
+    /// * `index` - The original index to adjust
     fn offset_index(&self, index: T) -> T {
         index
     }
 
+    /// Performs the actual interpolation calculation.
+    ///
+    /// This method implements the specific interpolation algorithm using the provided
+    /// values and fractional index.
+    ///
+    /// # Parameters
+    ///
+    /// * `values` - An array of values to interpolate between
+    /// * `index` - The fractional index within the array (typically between 0 and 1)
     fn interpolate_single(
         &self,
         values: &NumericArray<T, <Self::Count as IntoArrayLength>::ArrayLength>,
@@ -169,11 +200,11 @@ mod tests {
         let values: Vec<f64> = vec![0.0, 1.0, 4.0, 9.0];
         let cubic = Cubic;
 
-        // When index is slightly before the start
+        // When the index is slightly before the start
         let result = cubic.interpolate(&values, -0.5);
         assert_abs_diff_eq!(result, -0.1875);
 
-        // When index is slightly after the end
+        // When the index is slightly after the end
         let result = cubic.interpolate(&values, 3.5);
         assert_abs_diff_eq!(result, 9.3125);
     }

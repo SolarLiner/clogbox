@@ -1,5 +1,6 @@
+use clogbox_clap::dsp::PluginCreateContext;
+use clogbox_clap::dsp::PluginDsp;
 use clogbox_clap::params::{linear, polynomial, DynMapping, MappingExt, ParamId};
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Enum;
 use clogbox_module::contrib::fundsp::FundspModule;

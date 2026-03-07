@@ -1,6 +1,7 @@
 use crate::{gen, SharedData};
+use clogbox_clap::dsp::PluginCreateContext;
+use clogbox_clap::dsp::PluginDsp;
 use clogbox_clap::params::{decibel, frequency, int, linear, DynMapping, MappingExt, ParamId};
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
 use clogbox_enum::{enum_iter, Enum, Mono, Stereo};
 use clogbox_filters::DcBlocker;

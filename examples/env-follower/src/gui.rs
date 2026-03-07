@@ -3,10 +3,10 @@ use std::time::Duration;
 use crate::{dsp, SharedData};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::processor::PluginError;
+use clogbox_clap::PluginError;
 use clogbox_clap_egui::egui::{Context, Layout, Vec2};
 use clogbox_clap_egui::egui_baseview::Queue;
-use clogbox_clap_egui::{egui, generic_ui, shared_data_id, EguiPluginView};
+use clogbox_clap_egui::{egui, generic_ui, EguiPluginView, GetContextExtra};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Enum, Stereo};
 use clogbox_math::linear_to_db;
@@ -26,7 +26,7 @@ impl EguiPluginView for View {
                     ui.allocate_ui(Vec2::new(400.0, 300.0), |ui| {
                         generic_ui::display::<dsp::Params>(ui);
                     });
-                    let shared_data: SharedData = ui.ctx().data(|data| data.get_temp(shared_data_id()).unwrap());
+                    let shared_data: SharedData = ui.plugin_shared_data::<crate::EnvFollowerPlugin>();
                     let cb = shared_data.cb.load();
                     let Some(rx) = cb.as_ref() else { return };
                     self.data.clear();

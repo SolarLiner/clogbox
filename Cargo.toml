@@ -4,7 +4,7 @@ members = ["crates/*", "examples/*"]
 
 [workspace.package]
 version = "0.1.0"
-rust-version = "1.88"
+rust-version = "1.94.0"
 authors = ["Nathan Graule <me@solarliner.dev>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
@@ -33,7 +33,7 @@ num-complex = "0.4.6"
 num-traits = "0.2.18"
 numeric-array = "0.6.1"
 numeric_literals = "0.2.0"
-nalgebra = "0.33.0"
+nalgebra = "0.34.1"
 profiling = "1.0.15"
 ringbuf = "0.4.8"
 slotmap = "1.0.7"

@@ -315,7 +315,6 @@ impl<T> Drop for RingBuffer<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::ManuallyDrop;
     use std::sync::{Arc, Mutex};
     use std::thread;
 

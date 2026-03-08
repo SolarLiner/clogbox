@@ -1,6 +1,8 @@
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::{export_plugin, features, HostSharedHandle, Plugin, PluginError, PluginMeta, PortLayout};
+use clogbox_clap::{
+    export_plugin, features, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginError, PluginMeta,
+};
 use clogbox_clap_egui::generic_ui;
 use clogbox_enum::{seq, Sequential};
 use clogbox_module::Module;
@@ -11,9 +13,9 @@ mod dsp;
 
 pub struct FundspPlugin;
 
-const fn port_layout() -> PortLayout<Sequential<U2>> {
+const fn port_layout() -> Layout<Sequential<U2>> {
     const CHANNEL_MAP: [Sequential<U2>; 2] = [seq(0), seq(1)];
-    PortLayout {
+    Layout {
         main: true,
         name: "Stereo",
         channel_map: &CHANNEL_MAP,
@@ -32,10 +34,10 @@ impl Plugin for FundspPlugin {
     type Params = dsp::Params;
     type SharedData = ();
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[port_layout()];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[port_layout()];
+    const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[port_layout()];
+    const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] = &[port_layout()];
 
-    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+    fn create(_: HostSharedHandle, _: &mut PluginConfiguration) -> Result<Self, PluginError> {
         Ok(Self)
     }
 

@@ -9,7 +9,7 @@
 
 #![warn(missing_docs)]
 
-use crate::eventbuffer::EventSlice;
+use crate::eventbuffer::EventBuffer;
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
 use context::ProcessContext;
@@ -31,7 +31,7 @@ pub mod contrib;
 ///
 /// This module provides dynamic dispatch wrappers for modules, allowing for runtime
 /// polymorphism in audio processing graphs.
-pub mod r#dyn;
+// pub mod r#dyn;
 
 /// Event buffer implementation for parameter and note events.
 ///
@@ -73,13 +73,13 @@ pub type Samplerate = Recip<f64>;
 ///
 /// This type represents a time-stamped collection of parameter value changes,
 /// allowing modules to process parameter automation.
-pub type ParamSlice = EventSlice<f32>;
+pub type ParamBuffer = EventBuffer<f32>;
 
 /// A slice of MIDI note events.
 ///
 /// This type represents a time-stamped collection of MIDI note events,
 /// allowing modules to process note on/off and other MIDI events.
-pub type NoteSlice = EventSlice<note::NoteEvent>;
+pub type NoteBuffer = EventBuffer<note::NoteEvent>;
 
 /// Result of preparing a module for processing.
 ///

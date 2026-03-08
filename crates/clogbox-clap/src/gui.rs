@@ -2,7 +2,7 @@
 use crate::notifier::Notifier;
 use crate::params::{ParamChangeEvent, ParamId, ParamStorage};
 use crate::shared::Shared;
-use crate::Plugin;
+use crate::{main_thread, Plugin};
 pub use clack_extensions::gui as clap_gui;
 use clack_extensions::gui::{GuiSize, PluginGuiImpl, Window};
 use clack_plugin::plugin::PluginError;
@@ -102,20 +102,20 @@ pub trait PluginView {
     ) -> Result<Box<dyn PluginViewHandle<Params = Self::Params>>, PluginError>;
 }
 
-pub(crate) struct GuiHandle<P: Plugin> {
+pub(crate) struct GuiHandle<P: main_thread::Plugin> {
     __plugin: PhantomData<P>,
     view: Option<Box<dyn PluginView<Params = P::Params, SharedData = P::SharedData>>>,
     handle: Option<Box<dyn PluginViewHandle<Params = P::Params>>>,
     load_data: Option<serde_json::Value>,
 }
 
-impl<P: Plugin> Default for GuiHandle<P> {
+impl<P: main_thread::Plugin> Default for GuiHandle<P> {
     fn default() -> Self {
         Self::CONST_DEFAULT
     }
 }
 
-impl<P: Plugin> GuiHandle<P> {
+impl<P: main_thread::Plugin> GuiHandle<P> {
     pub const CONST_DEFAULT: Self = Self {
         __plugin: PhantomData,
         handle: None,
@@ -174,7 +174,7 @@ macro_rules! delegate_gui_method {
     }};
 }
 
-impl<P: Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
+impl<P: main_thread::Plugin> PluginGuiImpl for super::main_thread::MainThread<'_, P> {
     fn is_api_supported(&mut self, gui_config: clap_gui::GuiConfiguration) -> bool {
         log::debug!("[is_api_supported] {gui_config:?}");
         self.get_preferred_api().map_or(false, |api| api == gui_config)

@@ -3,9 +3,9 @@ extern crate core;
 use crate::dsp::AudioIn;
 use arc_swap::ArcSwap;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap::Plugin;
+use clogbox_clap::{export_plugin, features, Layout, PluginConfiguration, PluginMeta};
 use clogbox_clap::{HostSharedHandle, PluginError};
-use clogbox_clap::{Plugin, PortLayout};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Stereo;
 use clogbox_module::Module;
@@ -39,21 +39,21 @@ impl Plugin for Compressor {
     type Params = dsp::Params;
     type SharedData = SharedData;
 
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[
-        PortLayout {
+    const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[
+        Layout {
             name: "Input",
             main: true,
             channel_map: &[AudioIn::Input(Stereo::Left), AudioIn::Input(Stereo::Right)],
         },
-        PortLayout {
+        Layout {
             name: "Sidechain",
             main: false,
             channel_map: &[AudioIn::Sidechain(Stereo::Left), AudioIn::Sidechain(Stereo::Right)],
         },
     ];
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[PortLayout::STEREO];
+    const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] = &[Layout::STEREO];
 
-    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+    fn create(_: HostSharedHandle, _: &mut PluginConfiguration) -> Result<Self, PluginError> {
         Ok(Self)
     }
 

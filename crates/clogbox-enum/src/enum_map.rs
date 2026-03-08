@@ -25,7 +25,7 @@ pub trait Collection: Deref<Target = [Self::Item]> {
     type Item;
 }
 
-impl<T, C: Deref<Target = [T]>> Collection for C {
+impl<T, C: ?Sized + Deref<Target = [T]>> Collection for C {
     type Item = T;
 }
 
@@ -34,7 +34,7 @@ impl<T, C: Deref<Target = [T]>> Collection for C {
 /// This trait extends `Collection` and `DerefMut`, allowing mutable access to the collection's items.
 pub trait CollectionMut: Collection + DerefMut<Target = [Self::Item]> {}
 
-impl<C: Collection + DerefMut<Target = [C::Item]>> CollectionMut for C {}
+impl<C: ?Sized + Collection + DerefMut<Target = [C::Item]>> CollectionMut for C {}
 
 /// A type alias for an `EnumMap` where the underlying data is a `GenericArray`.
 ///

@@ -1,14 +1,14 @@
 use crate::SharedData;
-use clogbox_clap::dsp::{PluginCreateContext, PluginDsp};
 use clogbox_clap::params::{
     self, decibel, enum_, linear, polynomial, DynMapping, Linear, Mapping, MappingExt, ParamId,
 };
 use clogbox_clap::Plugin;
+use clogbox_clap::{PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, enum_iter, Empty, Enum, Stereo};
 use clogbox_math::{db_to_linear, linear_to_db};
-use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext};
-use clogbox_module::eventbuffer::Timestamped;
+use clogbox_module::context::{AudioStorage, EventSlice, OwnedProcessContext, ProcessContext, UnifiedEvent};
+use clogbox_module::eventbuffer::{Timestamped, TimestampedCollectionMut};
 use clogbox_module::modules::env_follower;
 use clogbox_module::modules::env_follower::EnvFollower;
 use clogbox_module::modules::extract::ExtractAudio;
@@ -163,6 +163,23 @@ enum SmoothedParams {
     DryWet,
 }
 
+impl TryFrom<Params> for SmoothedParams {
+    type Error = ();
+
+    fn try_from(value: Params) -> Result<Self, Self::Error> {
+        match value {
+            Params::Threshold => Ok(SmoothedParams::Theshold),
+            Params::Ratio => Ok(SmoothedParams::Ratio),
+            Params::StereoLink => Ok(SmoothedParams::Link),
+            Params::Knee => Ok(SmoothedParams::Knee),
+            Params::SidechainMode => Ok(SmoothedParams::SidechainSwitch),
+            Params::Makeup => Ok(SmoothedParams::MakeupGain),
+            Params::DryWet => Ok(SmoothedParams::DryWet),
+            Params::Envelope(_) => Err(()),
+        }
+    }
+}
+
 impl SmoothedParams {
     pub(crate) fn to_dsp_param(&self) -> Params {
         match self {
@@ -219,12 +236,20 @@ pub struct Dsp {
 impl Dsp {
     fn compute_smoothed_signals(&mut self, context: &ProcessContext<Self>) {
         let block_size = context.stream_context.block_size;
-        for param in enum_iter::<SmoothedParams>() {
-            for i in 0..block_size {
-                if let Some(&Timestamped { data, .. }) = context.params_in[param.to_dsp_param()].at(i) {
-                    self.smoothers[param].set_target(data);
+        for (range, events) in context.events_in.slice().chunk_events(block_size) {
+            for event in events {
+                let UnifiedEvent::Parameter(param, value) = event.data else {
+                    continue;
+                };
+                let Ok(param) = param.try_into() else {
+                    continue;
+                };
+                self.smoothers[param].set_target(value);
+            }
+            for i in range {
+                for param in enum_iter::<SmoothedParams>() {
+                    self.param_signals[param][i] = self.smoothers[param].next_value();
                 }
-                self.param_signals[param][i] = self.smoothers[param].next_value();
             }
         }
         for i in 0..block_size {
@@ -243,11 +268,14 @@ impl Dsp {
                 env_input[i] = input[i] + (sidechain[i] - input[i]) * mix[i];
             }
         }
-        for (param, slice) in self.env_context.params_in.iter_mut() {
-            slice.clear();
-            for event in context.params_in[Params::Envelope(param)].iter() {
-                slice.push(event.timestamp, event.data);
-            }
+        self.env_context.events_in.clear();
+        for event in context.events_in.slice() {
+            let UnifiedEvent::Parameter(Params::Envelope(p), value) = event.data else {
+                continue;
+            };
+            self.env_context
+                .events_in
+                .push(event.timestamp, UnifiedEvent::Parameter(p, value));
         }
         self.env_context
             .process_with(context.stream_context, |ctx| self.env_follower.process(ctx));

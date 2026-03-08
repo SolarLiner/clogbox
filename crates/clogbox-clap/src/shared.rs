@@ -3,12 +3,12 @@ use crate::notifier::Notifier;
 #[cfg(feature = "gui")]
 use crate::params::ParamChangeEvent;
 use crate::params::{ParamId, ParamStorage};
-use crate::Plugin;
+use crate::{main_thread, Plugin};
 use clack_plugin::prelude::*;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-pub type Shared<P> = SharedData<<P as Plugin>::Params, <P as Plugin>::SharedData>;
+pub type Shared<P> = SharedData<<P as main_thread::Plugin>::Params, <P as main_thread::Plugin>::SharedData>;
 
 #[doc(hidden)]
 #[derive(Clone)]

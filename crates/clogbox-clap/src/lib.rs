@@ -14,11 +14,12 @@
 
 #![warn(missing_docs)]
 use crate::main_thread::MainThread;
+#[cfg(feature = "gui")]
 use crate::notifier::Notifier;
-use crate::params::ParamId;
 use crate::processor::Processor;
 use crate::shared::{Shared, SharedData};
 use clack_extensions::audio_ports::PluginAudioPorts;
+use clack_extensions::note_ports::PluginNotePorts;
 use clack_extensions::params::PluginParams;
 use clack_extensions::state::PluginState;
 pub use clack_plugin::clack_export_entry;
@@ -29,17 +30,18 @@ pub use clack_plugin::plugin::features;
 use clack_plugin::plugin::PluginDescriptor;
 pub use clack_plugin::plugin::PluginError;
 use clack_plugin::prelude::*;
-use clogbox_enum::{Mono, Stereo};
-use clogbox_module::Module;
-use dsp::PluginDsp;
 use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+pub use main_thread::{Layout, Plugin, PluginConfiguration};
+pub use processor::{PluginCreateContext, PluginDsp};
+
+use clack_plugin::plugin::Plugin as ClapPlugin;
+
 mod atomic_linked_list;
 
-pub mod dsp;
 #[cfg(feature = "gui")]
 pub mod gui;
 mod main_thread;
@@ -68,9 +70,9 @@ pub trait PluginMeta {
 /// This struct serves as the entry point for a CLAP plugin implementation,
 /// handling the plugin lifecycle, audio processing, and parameter management.
 /// It uses the provided plugin type `P` to implement the actual functionality.
-pub struct PluginEntry<P: Plugin>(PhantomData<P>);
+pub struct PluginEntry<P: main_thread::Plugin>(PhantomData<P>);
 
-impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
+impl<P: main_thread::Plugin<Dsp: processor::PluginDsp<Plugin = P>>> ClapPlugin for PluginEntry<P> {
     type AudioProcessor<'a> = Processor<'a, P::Dsp>;
     type Shared<'a> = Shared<P>;
     type MainThread<'a> = MainThread<'a, P>;
@@ -79,13 +81,16 @@ impl<P: Plugin> clack_plugin::plugin::Plugin for PluginEntry<P> {
         builder
             .register::<PluginAudioPorts>()
             .register::<PluginParams>()
-            .register::<PluginState>();
+            .register::<PluginState>()
+            .register::<PluginNotePorts>();
         #[cfg(feature = "gui")]
         builder.register::<clack_extensions::gui::PluginGui>();
     }
 }
 
-impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
+impl<P: main_thread::Plugin<Dsp: processor::PluginDsp<Plugin = P>> + PluginMeta> DefaultPluginFactory
+    for PluginEntry<P>
+{
     fn get_descriptor() -> PluginDescriptor {
         PluginDescriptor::new(P::ID, P::NAME)
             .with_version(P::VERSION)
@@ -121,10 +126,8 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
 /// ```
 /// use std::ffi::CStr;
 /// use clack_plugin::prelude::*;
-/// use clogbox_clap::{PluginMeta, Plugin, export_plugin, features};
-/// use clogbox_clap::dsp::{PluginCreateContext, PluginDsp};
-/// use clogbox_clap::gui::PluginView;
-/// use clogbox_clap::PortLayout;
+/// # use clogbox_clap::{features, export_plugin, Plugin, PluginMeta, PluginDsp, PluginConfiguration, PluginCreateContext, Layout};
+/// # use clogbox_clap::gui::PluginView;
 /// use clogbox_enum::Empty;
 /// use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 /// use clogbox_module::context::ProcessContext;
@@ -162,17 +165,17 @@ impl<P: Plugin + PluginMeta> DefaultPluginFactory for PluginEntry<P> {
 ///     const ID: &'static str = "com.myproject.MyPlugin";
 ///     const NAME: &'static str = "My Plugin";
 ///     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-///     const FEATURES: &'static [&'static CStr] = &[features::STEREO];
+///     const FEATURES: &'static [&'static CStr] = &[features::AUDIO_EFFECT, features::STEREO];
 /// }
 ///
 /// impl Plugin for MyPlugin {
 ///     type Dsp = Dsp;
 ///     type Params = Empty;
 ///     type SharedData = ();
-///     const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>] = &[];
-///     const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>] = &[];
+///     const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[];
+///     const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>] = &[];
 ///
-///     fn create(host: HostSharedHandle) -> Result<Self, PluginError> {
+///     fn create(host: HostSharedHandle, configuration: &mut PluginConfiguration) -> Result<Self, PluginError> {
 ///         todo!()
 ///     }
 ///
@@ -192,110 +195,4 @@ macro_rules! export_plugin {
     ($plugin:ty) => {
         $crate::clack_export_entry!($crate::SinglePluginEntry<$crate::PluginEntry<$plugin>>);
     };
-}
-
-/// An audio port in CLAP is a multichannel input or output. CLAP can have multiple input and output ports, but as
-/// `clogbox` only works with a flat multichannel layout, it becomes necessary to specify which ports will route to
-/// which channels.
-///
-/// # Example
-///
-/// ```
-/// use clogbox_clap::PortLayout;
-/// use clogbox_enum::Enum;
-///
-/// #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
-/// enum AudioInput { MainLeft, MainRight, SidechainMono }
-///
-/// const MAIN_PORT: PortLayout<AudioInput> = PortLayout::new(&[AudioInput::MainLeft, AudioInput::MainRight])
-///     .named("Input")
-///     .main();
-/// const SIDECHAIN_PORT: PortLayout<AudioInput> = PortLayout::new(&[AudioInput::SidechainMono])
-///     .named("Sidechain");
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PortLayout<E: 'static> {
-    /// Port name
-    pub name: &'static str,
-    /// Is this the main port?
-    pub main: bool,
-    /// Mapping of channels in this port to channels in the input
-    pub channel_map: &'static [E],
-}
-
-impl<E: 'static> PortLayout<E> {
-    /// Create a new [`PortLayout`](Self) with the provided channel map.
-    pub const fn new(channel_map: &'static [E]) -> Self {
-        Self {
-            name: "Input",
-            main: false,
-            channel_map: &channel_map,
-        }
-    }
-
-    /// Sets this port layout as the main one.
-    pub const fn main(self) -> Self {
-        Self { main: true, ..self }
-    }
-
-    /// Rename this port layout.
-    pub const fn named(self, name: &'static str) -> Self {
-        Self { name, ..self }
-    }
-}
-
-impl PortLayout<Mono> {
-    pub const MONO: Self = Self {
-        name: "Mono",
-        main: false,
-        channel_map: &[Mono],
-    };
-}
-
-impl PortLayout<Stereo> {
-    pub const STEREO: Self = Self {
-        name: "Stereo",
-        main: false,
-        channel_map: &[Stereo::Left, Stereo::Right],
-    };
-}
-
-/// Main plugin trait. This should be implemented by a separate, often empty struct that will serve as the entry
-/// point to the plugin. This type will only be useful at compile time and to hold the required functions to
-/// construct the audio processor and GUI (if supported).
-pub trait Plugin: 'static + Sized {
-    /// DSP trait implementing the audio processor
-    type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
-    /// Parameters of the plugin
-    type Params: ParamId;
-    /// Shared data between the DSP and GUI
-    type SharedData: 'static + Clone + Send + Sync;
-
-    /// Input port map. See [`PortLayout`] for details.
-    const INPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioIn>];
-    /// Output port map. See [`PortLayout`] for details.
-    const OUTPUT_LAYOUT: &'static [PortLayout<<Self::Dsp as Module>::AudioOut>];
-
-    /// Create a new plugin instance.
-    ///
-    /// Don't do work in this method, as this might be instantiated when scanning the plugin.
-    ///
-    /// # Arguments
-    ///
-    /// * `host`: CLAP host interface.
-    fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
-
-    /// Return this plugin's shared data. This will be made available to the DSP and GUI implementations. Use this to
-    /// provide DSP <-> GUI communication, for example.
-    ///
-    /// # Arguments
-    ///
-    /// * `host`: CLAP host interface.
-    fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
-
-    /// Create this plugin's GUI view. Usually, you will use a GUI framework's function to create the
-    /// [`gui::PluginView`] for you.
-    #[cfg(feature = "gui")]
-    fn view(
-        &mut self,
-    ) -> Result<Box<dyn gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
 }

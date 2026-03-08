@@ -15,11 +15,12 @@ clogbox-math.workspace = true
 clogbox-module.workspace = true
 
 clack-plugin.workspace = true
-clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state"] }
+clack-extensions = { workspace = true, features = ["clack-plugin", "audio-ports", "params", "state", "note-ports"] }
 env_logger = { workspace = true, optional = true }
 log.workspace = true
 ringbuf = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+num-traits.workspace = true
 
 bincode = "2.0.0"
 raw-window-handle = { version = "0.5.0", optional = true }

@@ -35,36 +35,6 @@ impl<Param: Enum, Note: Enum> Into<UnifiedEvent<Param, Note>> for DynUnifiedEven
     }
 }
 
-impl<Param, Note> TimestampedCollection<UnifiedEvent<Param, Note>> for EventSlice<DynUnifiedEvent> {
-    fn at(&self, timestamp: usize) -> Option<&DynUnifiedEvent> {
-        todo!()
-    }
-
-    fn min_timestamp(&self) -> Option<usize> {
-        todo!()
-    }
-
-    fn max_timestamp(&self) -> Option<usize> {
-        todo!()
-    }
-
-    fn first(&self) -> Option<Timestamped<&DynUnifiedEvent>> {
-        todo!()
-    }
-
-    fn first_after(&self, timestamp: usize) -> Option<Timestamped<&DynUnifiedEvent>> {
-        todo!()
-    }
-
-    fn last(&self) -> Option<Timestamped<&DynUnifiedEvent>> {
-        todo!()
-    }
-
-    fn last_before(&self, timestamp: usize) -> Option<Timestamped<&DynUnifiedEvent>> {
-        todo!()
-    }
-}
-
 pub struct MappedEventSlice<Param: Enum, Note: Enum> {
     __param: PhantomData<fn() -> Param>,
     __note: PhantomData<fn() -> Note>,

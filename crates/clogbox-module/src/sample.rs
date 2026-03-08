@@ -3,7 +3,7 @@
 //! This module provides traits and types for implementing modules that process
 //! audio one sample at a time, as opposed to block processing.
 
-use crate::context::{ProcessContext, StreamContext};
+use crate::context::{ProcessContext, StreamContext, UnifiedEvent};
 use crate::eventbuffer::Timestamped;
 use crate::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
@@ -131,23 +131,27 @@ impl<SM: SampleModule<Sample: Copy>> Module for SampleModuleWrapper<SM> {
         let mut result = ProcessResult { tail: None };
 
         self.sample_module.on_block_begin(context.stream_context);
-        for i in 0..context.stream_context.block_size {
-            // Update params
-            for p in enum_iter::<Self::ParamsIn>() {
-                let Some(&Timestamped { data: value, .. }) = context.params_in[p].at(i) else {
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                let UnifiedEvent::Parameter(p, value) = event.data else {
                     continue;
                 };
                 self.params[p] = value;
             }
-
-            // Process sample
-            let inputs = EnumMapArray::new(|e| context.audio_in[e][i]);
-            let SampleProcessResult { tail, output } =
-                self.sample_module
-                    .process(context.stream_context, inputs, self.params.to_ref());
-            result.tail = tail;
-            for (e, out) in output {
-                context.audio_out[e][i] = out;
+            for i in range {
+                // Process sample
+                let inputs = EnumMapArray::new(|e| context.audio_in[e][i]);
+                let SampleProcessResult { tail, output } =
+                    self.sample_module
+                        .process(context.stream_context, inputs, self.params.to_ref());
+                result.tail = tail;
+                for (e, out) in output {
+                    context.audio_out[e][i] = out;
+                }
             }
         }
         self.sample_module.on_block_end(context.stream_context);

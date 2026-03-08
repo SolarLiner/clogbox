@@ -1,3 +1,5 @@
+//! Generic egui components for clogbox.
+
 pub mod driven;
 pub mod knob;
 pub mod led;

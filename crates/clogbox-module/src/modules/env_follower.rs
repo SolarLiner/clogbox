@@ -7,7 +7,7 @@ use clogbox_enum::enum_map::{EnumMap, EnumMapArray, EnumMapRef};
 use clogbox_enum::generic_array::GenericArray;
 use clogbox_enum::{Enum, Mono};
 use clogbox_math::recip::Recip;
-use num_traits::{Float, Num, Zero};
+use num_traits::{Float, Zero};
 use numeric_literals::replace_float_literals;
 
 /// Parameters of the envelope follower

@@ -58,10 +58,8 @@ impl $crate::Module for $output {
         let context = $crate::context::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
-            params_in: context.params_in,
-            params_out: context.params_out,
-            note_in: context.note_in,
-            note_out: context.note_out,
+            events_in: context.events_in,
+            events_out: context.events_out,
             stream_context: context.stream_context,
             __phantom: Default::default(),
         };
@@ -90,10 +88,8 @@ impl<$($targ: $tbound),*> $crate::Module for $output<$($targ),*> {
         let context = $crate::context::ProcessContext {
             audio_in: context.audio_in,
             audio_out: context.audio_out,
-            params_in: context.params_in,
-            params_out: context.params_out,
-            note_in: context.note_in,
-            note_out: context.note_out,
+            events_in: context.events_in,
+            events_out: context.events_out,
             stream_context: context.stream_context,
             __phantom: Default::default(),
         };

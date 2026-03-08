@@ -3,9 +3,9 @@ extern crate core;
 use crate::dsp::AudioIn;
 use arc_swap::ArcSwap;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::{export_plugin, features, PluginMeta};
+use clogbox_clap::Plugin;
+use clogbox_clap::{export_plugin, features, Layout, PluginConfiguration, PluginMeta};
 use clogbox_clap::{HostSharedHandle, PluginError};
-use clogbox_clap::{Plugin, PortLayout};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::Stereo;
 use clogbox_module::Module;
@@ -53,7 +53,7 @@ impl Plugin for Compressor {
     ];
     const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] = &[Layout::STEREO];
 
-    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+    fn create(_: HostSharedHandle, _: &mut PluginConfiguration) -> Result<Self, PluginError> {
         Ok(Self)
     }
 

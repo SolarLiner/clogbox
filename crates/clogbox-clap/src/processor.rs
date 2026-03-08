@@ -1,10 +1,10 @@
-use crate::dsp::{PluginCreateContext, PluginDsp};
-use crate::main_thread::MainThread;
+//! Implementation of the audio thread side of a CLAP plugin.
+use crate::main_thread::{MainThread, Plugin};
 #[cfg(feature = "gui")]
 use crate::params::{create_notifier_listener, ParamChangeEvent, ParamChangeKind, ParamListener};
 use crate::params::{ParamId, ParamIdExt};
 use crate::shared::Shared;
-use crate::Plugin;
+use crate::{main_thread, processor};
 use clack_extensions::params::PluginAudioProcessorParams;
 use clack_plugin::events::event_types::{NoteChokeEvent, NoteOffEvent, NoteOnEvent, ParamValueEvent};
 #[cfg(feature = "gui")]
@@ -13,31 +13,42 @@ use clack_plugin::events::Match;
 use clack_plugin::host::HostAudioProcessorHandle;
 use clack_plugin::prelude::*;
 use clack_plugin::utils::Cookie;
-use clogbox_enum::{count, enum_iter, Enum};
-use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, StreamContext};
-use clogbox_module::eventbuffer::Timestamped;
+use clogbox_enum::enum_map::{EnumMapArray, EnumMapRef};
+use clogbox_enum::typenum::U16;
+use clogbox_enum::{count, enum_iter, Empty, Enum, Sequential};
+use clogbox_math::frequency::midi_note_to_frequency;
+use clogbox_module::context::{AudioStorage, EventBuffer, EventStorage, ProcessContext, StreamContext, UnifiedEvent};
+use clogbox_module::eventbuffer::{Timestamped, TimestampedCollectionMut};
 use clogbox_module::note::{NoteEvent, NoteId};
-use clogbox_module::Samplerate;
+use clogbox_module::{Module, Samplerate};
 use std::marker::PhantomData;
 use std::num::{NonZeroU32, Wrapping};
 use std::sync::atomic::Ordering;
 
 pub type NoteChannel = Sequential<U16>;
 
+/// Context available to plugins being instantiated.
 pub struct PluginCreateContext<'a, 'p, P: ?Sized + PluginDsp> {
+    /// Handle to the CLAP host
     pub host: HostSharedHandle<'a>,
+    /// Reference to the main thread data
     pub processor_main_thread: &'p mut P::Plugin,
+    /// Parameters of the plugin, either default values or values deserialized from a stored state
     pub params: EnumMapRef<'p, P::ParamsIn, f32>,
+    /// Plugin audio configuration, which can be changed by the plugin during instantiation.
     pub audio_config: PluginAudioConfiguration,
 }
 
 /// A DSP module that can also be used as the audio processor for a plugin.
-///
-/// TODO: Note support
 pub trait PluginDsp: Send + Module<Sample = f32, ParamsIn: ParamId, ParamsOut = Empty> {
-    type Plugin: Plugin<Dsp = Self, Params = Self::ParamsIn>;
+    /// Associated plugin for this DSP type
+    type Plugin: main_thread::Plugin<Dsp = Self, Params = Self::ParamsIn>;
 
-    fn create(context: PluginCreateContext<Self>, shared_data: &<Self::Plugin as Plugin>::SharedData) -> Self;
+    /// Create an instance of the plugin
+    fn create(
+        context: PluginCreateContext<Self>,
+        shared_data: &<Self::Plugin as main_thread::Plugin>::SharedData,
+    ) -> Self;
 }
 
 pub struct Processor<'a, P: PluginDsp> {
@@ -45,9 +56,8 @@ pub struct Processor<'a, P: PluginDsp> {
     dsp: P,
     audio_in: AudioStorage<P::AudioIn, P::Sample>,
     audio_out: AudioStorage<P::AudioOut, P::Sample>,
-    params: EventStorage<P::ParamsIn, f32>,
-    note_in: EventStorage<P::NoteIn, NoteEvent>,
-    note_out: EventStorage<P::NoteOut, NoteEvent>,
+    events_in: EventBuffer<P::ParamsIn, P::NoteIn>,
+    events_out: EventBuffer<P::ParamsOut, P::NoteOut>,
     note_out_map: EnumMapArray<P::NoteOut, Option<(usize, usize)>>,
     note_out_next_id: Wrapping<u32>,
     #[cfg(feature = "gui")]
@@ -58,6 +68,8 @@ pub struct Processor<'a, P: PluginDsp> {
 
 impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::Plugin>, MainThread<'a, P::Plugin>>
     for Processor<'a, P>
+where
+    <P as PluginDsp>::Plugin: main_thread::Plugin,
 {
     fn activate(
         host: HostAudioProcessorHandle<'a>,
@@ -75,15 +87,14 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
         let context = PluginCreateContext {
             host: host.shared(),
             params: params.to_ref(),
-            plugin_entry_point: &mut main_thread.plugin,
+            processor_main_thread: &mut main_thread.plugin,
             audio_config,
         };
         let mut dsp = P::create(context, &shared.user_data);
         let audio_in = AudioStorage::default(block_size);
         let audio_out = AudioStorage::default(block_size);
-        let params = EventStorage::with_capacity(512);
-        let note_in = EventStorage::with_capacity(512);
-        let note_out = EventStorage::with_capacity(512);
+        let events_in = EventBuffer::new(main_thread.plugin_configuration.event_capacity);
+        let events_out = EventBuffer::new(main_thread.plugin_configuration.event_capacity);
         dsp.prepare(sample_rate, audio_config.max_frames_count as _);
 
         let note_out_map = EnumMapArray::new(|e| {
@@ -114,11 +125,10 @@ impl<'a, P: 'a + PluginDsp<Plugin: Plugin>> PluginAudioProcessor<'a, Shared<P::P
             dsp,
             audio_in,
             audio_out,
-            note_in,
-            note_out,
+            events_in,
+            events_out,
             note_out_map,
             note_out_next_id: Wrapping(0),
-            params,
             #[cfg(feature = "gui")]
             params_rx: rx,
             sample_rate,
@@ -168,12 +178,8 @@ impl<P: PluginDsp> Processor<'_, P> {
     }
 
     fn copy_events_in(&mut self, events: &mut Events) -> Result<(), PluginError> {
-        for buf in self.params.values_mut() {
-            buf.clear();
-        }
-        for buf in self.note_in.values_mut() {
-            buf.clear();
-        }
+        self.events_in.clear();
+        self.events_out.clear();
         for event in events.input.iter() {
             if let Some(ev) = event.as_event::<ParamValueEvent>() {
                 self.insert_param_value(ev.param_id(), ev.time() as _, ev.value());
@@ -194,7 +200,7 @@ impl<P: PluginDsp> Processor<'_, P> {
                 ParamChangeKind::GestureBegin => events.output.try_push(ParamGestureBeginEvent::new(0, clap_id)),
                 ParamChangeKind::GestureEnd => events.output.try_push(ParamGestureEndEvent::new(0, clap_id)),
                 ParamChangeKind::ValueChange(v) => {
-                    (*self.params)[event.id].push(0, v);
+                    self.events_in.push(0, UnifiedEvent::Parameter(event.id, v));
                     events.output.try_push(ParamValueEvent::new(
                         0,
                         clap_id,
@@ -211,7 +217,15 @@ impl<P: PluginDsp> Processor<'_, P> {
 
         // Send last param values to the shared state
         for param in enum_iter::<P::ParamsIn>() {
-            let Some(&Timestamped { data: value, .. }) = self.params[param].last() else {
+            let Some(value) = self
+                .events_in
+                .iter()
+                .filter_map(|e| match e.data {
+                    UnifiedEvent::Parameter(p, v) if p == param => Some(v),
+                    _ => None,
+                })
+                .last()
+            else {
                 continue;
             };
             self.shared.params.set(param, value);
@@ -224,41 +238,44 @@ impl<P: PluginDsp> Processor<'_, P> {
     }
 
     fn copy_events_out(&mut self, events: &mut Events) -> Result<(), PluginError> {
-        for out in enum_iter::<P::NoteOut>() {
-            let Some((port, channel)) = self.note_out_map[out] else {
-                self.note_out[out].clear();
-                continue;
-            };
-            let mut next_id = self.note_out_next_id;
-            for &Timestamped { data, timestamp } in self.note_out[out].as_raw_slice() {
-                let note_id = next_id.0;
-                next_id += 1;
-                match data {
-                    NoteEvent::NoteOn { id, velocity, .. } => {
-                        events.output.try_push(NoteOnEvent::new(
-                            timestamp as _,
-                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
-                            velocity as _,
-                        ))?;
-                    }
-                    NoteEvent::NoteOff { id, velocity, .. } => {
-                        events.output.try_push(NoteOffEvent::new(
-                            timestamp as _,
-                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
-                            velocity as _,
-                        ))?;
-                    }
-                    NoteEvent::Choke { id } => {
-                        events.output.try_push(NoteChokeEvent::new(
-                            timestamp as _,
-                            Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
-                        ))?;
+        for event in &mut *self.events_out {
+            match event.data {
+                UnifiedEvent::Parameter(..) => unreachable!(),
+                UnifiedEvent::Note(out, note) => {
+                    let note_id = {
+                        let x = self.note_out_next_id.0;
+                        self.note_out_next_id += 1;
+                        x
+                    };
+                    let Some((port, channel)) = self.note_out_map[out] else {
+                        continue;
+                    };
+                    match note {
+                        NoteEvent::NoteOn { id, velocity, .. } => {
+                            events.output.try_push(NoteOnEvent::new(
+                                event.timestamp as _,
+                                Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                                velocity as _,
+                            ))?;
+                        }
+                        NoteEvent::NoteOff { id, velocity, .. } => {
+                            events.output.try_push(NoteOffEvent::new(
+                                event.timestamp as _,
+                                Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                                velocity as _,
+                            ))?;
+                        }
+                        NoteEvent::Choke { id } => {
+                            events.output.try_push(NoteChokeEvent::new(
+                                event.timestamp as _,
+                                Pckn::new(port as u16, channel as u16, id.number as u16, note_id),
+                            ))?;
+                        }
                     }
                 }
             }
-            self.note_out_next_id = next_id;
-            self.note_out[out].clear();
         }
+        self.events_out.clear();
         Ok(())
     }
 
@@ -273,7 +290,10 @@ impl<P: PluginDsp> Processor<'_, P> {
         }) else {
             return true;
         };
-        (*self.params)[param].push(time, param.clap_value_to_denormalized(value));
+        self.events_in.push(
+            time,
+            UnifiedEvent::Parameter(param, param.clap_value_to_denormalized(value)),
+        );
         false
     }
 
@@ -283,13 +303,16 @@ impl<P: PluginDsp> Processor<'_, P> {
                 channel,
                 number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
             };
-            (*self.note_in)[note_in].push(
+            self.events_in.push(
                 ev.time() as _,
-                NoteEvent::NoteOn {
-                    id: note_id,
-                    velocity: ev.velocity() as _,
-                    frequency: midi_note_to_frequency(note_id.number) as _,
-                },
+                UnifiedEvent::Note(
+                    note_in,
+                    NoteEvent::NoteOn {
+                        id: note_id,
+                        velocity: ev.velocity() as _,
+                        frequency: midi_note_to_frequency(note_id.number) as _,
+                    },
+                ),
             );
         }
     }
@@ -300,13 +323,16 @@ impl<P: PluginDsp> Processor<'_, P> {
                 channel,
                 number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
             };
-            (*self.note_in)[note].push(
+            self.events_in.push(
                 ev.time() as _,
-                NoteEvent::NoteOff {
-                    id: note_id,
-                    velocity: ev.velocity() as _,
-                    frequency: midi_note_to_frequency(note_id.number) as _,
-                },
+                UnifiedEvent::Note(
+                    note,
+                    NoteEvent::NoteOff {
+                        id: note_id,
+                        velocity: ev.velocity() as _,
+                        frequency: midi_note_to_frequency(note_id.number) as _,
+                    },
+                ),
             );
         }
     }
@@ -317,7 +343,10 @@ impl<P: PluginDsp> Processor<'_, P> {
                 channel,
                 number: ev.key().into_specific().expect("Note key cannot be 'All'") as _,
             };
-            (*self.note_in)[note].push(ev.time() as _, NoteEvent::Choke { id: note_id });
+            self.events_in.push(
+                ev.time() as _,
+                UnifiedEvent::Note(note, NoteEvent::Choke { id: note_id }),
+            );
         }
     }
 
@@ -359,10 +388,8 @@ impl<P: PluginDsp> Processor<'_, P> {
         let ctx = ProcessContext {
             audio_in: &self.audio_in,
             audio_out: &mut self.audio_out,
-            params_in: &self.params,
-            params_out: &mut EventStorage::empty(),
-            note_in: &self.note_in,
-            note_out: &mut self.note_out,
+            events_in: &self.events_in,
+            events_out: &mut self.events_out,
             stream_context,
             __phantom: PhantomData,
         };

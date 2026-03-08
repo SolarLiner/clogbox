@@ -1,5 +1,5 @@
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::{export_plugin, features, Plugin, PluginMeta, PortLayout};
+use clogbox_clap::{export_plugin, features, Layout, Plugin, PluginConfiguration, PluginMeta};
 use clogbox_clap::{HostSharedHandle, PluginError};
 use clogbox_module::Module;
 use clogbox_utils::AtomicF32;
@@ -39,7 +39,7 @@ impl Plugin for NrClipper {
     const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>] =
         &[Layout::STEREO.main().named("Output")];
 
-    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+    fn create(_: HostSharedHandle, _: &mut PluginConfiguration) -> Result<Self, PluginError> {
         Ok(Self)
     }
 

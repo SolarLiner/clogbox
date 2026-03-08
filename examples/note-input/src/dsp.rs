@@ -1,10 +1,8 @@
-use clogbox_clap::main_thread::Plugin;
-use clogbox_clap::processor::{PluginCreateContext, PluginDsp};
+use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::typenum::{U1, U63};
 use clogbox_enum::{seq, Empty, Mono, Sequential};
 use clogbox_math::interpolation::Sinc;
-use clogbox_module::context::ProcessContext;
-use clogbox_module::eventbuffer::Timestamped;
+use clogbox_module::context::{ProcessContext, UnifiedEvent};
 use clogbox_module::note::{NoteEvent, NoteId};
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_oscillators::Wavetable;
@@ -53,34 +51,40 @@ impl Module for Dsp {
     }
 
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        let mut pos = 0;
-        while pos < context.stream_context.block_size {
-            let next = context.next_event(pos).unwrap_or(context.stream_context.block_size);
-            let range = pos..next;
-            pos = next;
-            for Timestamped { data: event, .. } in context.note_in[seq(0)].all_at(range.start) {
-                context.note_out[seq(0)].push(range.start, event.clone());
-                match event {
-                    &NoteEvent::NoteOn {
-                        id,
-                        frequency,
-                        velocity,
-                    } => {
-                        self.cur_note.replace(Note {
-                            id,
-                            frequency,
-                            velo_sqrt: velocity.sqrt(),
-                        });
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                match event.data {
+                    UnifiedEvent::Parameter(..) => unreachable!(),
+                    UnifiedEvent::Note(_, event) => {
+                        context
+                            .events_out
+                            .push(range.start, UnifiedEvent::Note(seq(0), event.clone()));
+                        match event {
+                            NoteEvent::NoteOn {
+                                id,
+                                frequency,
+                                velocity,
+                            } => {
+                                self.cur_note.replace(Note {
+                                    id,
+                                    frequency,
+                                    velo_sqrt: velocity.sqrt(),
+                                });
+                            }
+                            NoteEvent::NoteOff { id, .. } | NoteEvent::Choke { id }
+                                if Some(id) == self.cur_note.as_ref().map(|n| n.id) =>
+                            {
+                                self.cur_note.take();
+                            }
+                            _ => {}
+                        }
                     }
-                    NoteEvent::NoteOff { id, .. } | NoteEvent::Choke { id }
-                        if Some(id) == self.cur_note.as_ref().map(|n| &n.id) =>
-                    {
-                        self.cur_note.take();
-                    }
-                    _ => {}
                 }
             }
-
             self.process_slice(&mut context.audio_out[Mono][range]);
         }
         ProcessResult { tail: None }

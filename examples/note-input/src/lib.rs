@@ -1,8 +1,6 @@
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::main_thread::{Layout, Plugin};
-use clogbox_clap::processor::{HostSharedHandle, PluginError};
-use clogbox_clap::{features, PluginMeta};
+use clogbox_clap::{features, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginError, PluginMeta};
 use clogbox_enum::{seq, Empty};
 use clogbox_module::Module;
 use std::ffi::CStr;
@@ -28,7 +26,7 @@ impl Plugin for NoteInput {
         channel_map: &[seq(0)],
     }];
 
-    fn create(_: HostSharedHandle) -> Result<Self, PluginError> {
+    fn create(_: HostSharedHandle, _: &mut PluginConfiguration) -> Result<Self, PluginError> {
         Ok(Self)
     }
 
@@ -50,7 +48,12 @@ impl PluginMeta for NoteInput {
     const ID: &'static str = "dev.solarliner.clogbox.NoteInput";
     const NAME: &'static str = "Note Input";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const FEATURES: &'static [&'static CStr] = &[features::MONO, features::SYNTHESIZER];
+    const FEATURES: &'static [&'static CStr] = &[
+        features::INSTRUMENT,
+        features::NOTE_EFFECT,
+        features::SYNTHESIZER,
+        features::MONO,
+    ];
 }
 
 clogbox_clap::export_plugin!(NoteInput);

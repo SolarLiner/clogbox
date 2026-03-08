@@ -3,6 +3,7 @@ use std::ffi::CString;
 use std::sync::mpsc;
 
 use clack_extensions::log as log_ext;
+use clack_extensions::log::LogSeverity;
 use clack_extensions::timer as timer_ext;
 use clack_plugin::host::{HostMainThreadHandle, HostSharedHandle};
 use log::LevelFilter;
@@ -53,7 +54,6 @@ pub(super) struct LogExtension {
 
 impl LogExtension {
     pub(super) fn on_timer(&mut self, host: HostSharedHandle, timer_id: clack_extensions::timer::TimerId) {
-        eprintln!("log::on_timer: timer_id={}", timer_id);
         if self.timer_id != timer_id {
             return;
         }
@@ -64,7 +64,7 @@ impl LogExtension {
             let msg = match CString::new(message.into_bytes()) {
                 Ok(string) => string,
                 Err(err) => {
-                    log::debug!("logging: {err}");
+                    log::error!("logging: {err}");
                     continue;
                 }
             };
@@ -97,7 +97,6 @@ pub(super) fn init(host: &mut HostMainThreadHandle) -> Option<LogExtension> {
         return None;
     };
     if let Err(err) = log::set_boxed_logger(Box::new(ClapLogger { tx })) {
-        init_env_logger();
         log::error!("logging setup error: {}", err);
         return None;
     }
@@ -113,9 +112,12 @@ fn init_env_logger() {
         caller.file(),
         caller.line()
     );
-    env_logger::builder()
+    let result = env_logger::builder()
         .default_format()
         .filter_level(LevelFilter::Debug)
         .parse_default_env()
-        .init();
+        .try_init();
+    if let Err(err) = result {
+        log::error!("env_logger init error: {}", err);
+    }
 }

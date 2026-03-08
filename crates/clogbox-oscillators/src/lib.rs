@@ -1,9 +1,9 @@
 use az::CastFrom;
 use clogbox_enum::{Empty, Enum, Mono};
 use clogbox_math::interpolation::{BoundaryCondition, Interpolation, Linear};
-use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext};
+use clogbox_module::context::{AudioStorage, EventStorage, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::Timestamped;
-use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
+use clogbox_module::{context, Module, PrepareResult, ProcessResult, Samplerate};
 use num_traits::Zero;
 use num_traits::{Float, Num};
 use std::marker::PhantomData;
@@ -97,18 +97,33 @@ impl<T: CastFrom<f64> + Float> Module for Phasor<T> {
     }
 
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        for i in 0..context.stream_context.block_size {
-            if let Some(&Timestamped { data: value, .. }) = context.params_in[PhasorParams::Reset].at(i) {
-                self.current = T::cast_from(value as _).fract();
-            }
-            if let Some(&Timestamped { data: value, .. }) = context.params_in[PhasorParams::Frequency].at(i) {
-                self.set_frequency(T::cast_from(value as _));
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                let UnifiedEvent::Parameter(p, value) = event.data else {
+                    continue;
+                };
+                match p {
+                    PhasorParams::Frequency => {
+                        self.set_frequency(T::cast_from(value as _));
+                    }
+                    PhasorParams::Reset => {
+                        self.current = T::cast_from(value as _).fract();
+                    }
+                }
             }
 
-            let (next, ticks) = self.process_sample();
-            context.audio_out[Mono][i] = next;
-            for _ in 0..ticks {
-                context.params_out[PhasorEvents::Clock].push(i, 0.0);
+            for i in range {
+                let (next, ticks) = self.process_sample();
+                context.audio_out[Mono][i] = next;
+                for _ in 0..ticks {
+                    context
+                        .events_out
+                        .push(i, UnifiedEvent::Parameter(PhasorEvents::Clock, 0.0));
+                }
             }
         }
         ProcessResult { tail: None }
@@ -118,7 +133,7 @@ impl<T: CastFrom<f64> + Float> Module for Phasor<T> {
 pub struct Wavetable<T: CastFrom<f64> + Float, Interpolator = Linear> {
     phasor: Phasor<T>,
     phase_buffer: AudioStorage<Mono, T>,
-    unused_phasor_resets: EventStorage<PhasorEvents, f32>,
+    unused_phasor_resets: context::EventBuffer<PhasorEvents, Empty>,
     wavetable: Box<[T]>,
     interpolator: Interpolator,
 }
@@ -168,7 +183,7 @@ impl<T: Zero + CastFrom<f64> + Float, Interpolator> Wavetable<T, Interpolator> {
             wavetable: Box::from_iter(wavetable),
             interpolator,
             phase_buffer: AudioStorage::zeroed(0),
-            unused_phasor_resets: EventStorage::with_capacity(16),
+            unused_phasor_resets: context::EventBuffer::new(16),
         }
     }
 
@@ -188,7 +203,7 @@ impl<T: CastFrom<f64> + Float, Interpolator: Interpolation<T>> Module for Waveta
 
     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
         self.phasor.prepare(sample_rate, block_size);
-        self.unused_phasor_resets = EventStorage::with_capacity(16);
+        self.unused_phasor_resets.clear();
         PrepareResult { latency: 0.0 }
     }
 
@@ -196,10 +211,8 @@ impl<T: CastFrom<f64> + Float, Interpolator: Interpolation<T>> Module for Waveta
         let phasor_context = ProcessContext {
             audio_in: context.audio_in,
             audio_out: &mut self.phase_buffer,
-            params_in: context.params_in,
-            params_out: &mut self.unused_phasor_resets,
-            note_in: context.note_in,
-            note_out: context.note_out,
+            events_in: context.events_in,
+            events_out: &mut self.unused_phasor_resets,
             stream_context: context.stream_context,
             __phantom: PhantomData,
         };

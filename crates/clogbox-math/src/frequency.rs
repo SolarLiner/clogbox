@@ -70,23 +70,24 @@ pub fn midi_note_to_frequency(midi_note: u8) -> f64 {
 /// # Examples
 ///
 /// ```
+/// use approx::assert_abs_diff_eq;
 /// use clogbox_math::frequency::frequency_to_midi_note;
 ///
 /// let frequency = 440.0; // A4
 /// let midi_note = frequency_to_midi_note(frequency);
-/// assert_eq!(midi_note, 69.0);
+/// assert_abs_diff_eq!(midi_note, 69.0, epsilon = 1e-4);
 ///
 /// let frequency = 880.0; // A5
 /// let midi_note = frequency_to_midi_note(frequency);
-/// assert_eq!(midi_note, 81.0);
+/// assert_abs_diff_eq!(midi_note, 81.0, epsilon = 1e-4);
 ///
 /// let frequency = 261.63; // C4 (Middle C)
 /// let midi_note = frequency_to_midi_note(frequency);
-/// assert_eq!(midi_note, 60.0);
+/// assert_abs_diff_eq!(midi_note, 60.0, epsilon = 3e-4);
 /// ```
 #[numeric_literals::replace_float_literals(T::cast_from(literal))]
 pub fn frequency_to_midi_note<T: CastFrom<f64> + Float>(frequency: T) -> T {
-    69.0 + 12.0 * (frequency / 440.0).log2()
+    69.0 + ratio_to_semitones(frequency / 440.0)
 }
 
 /// Converts an octave interval into a frequency ratio.
@@ -198,14 +199,15 @@ pub fn ratio_to_octave<T: Float>(ratio: T) -> T {
 /// # Example
 ///
 /// ```
-/// use clogbox_math::frequency::ratio_to_semitones;
+/// use approx::assert_abs_diff_eq;
+/// # use clogbox_math::frequency::ratio_to_semitones;
 ///
 /// // Assuming `f64` is used as the concrete type for `T`.
 /// let ratio = 2.0; // An octave corresponds to a ratio of 2:1.
 /// let semitones = ratio_to_semitones::<f64>(ratio);
-/// assert_eq!(semitones, 12.0); // One octave equals 12 semitones.
+/// assert_abs_diff_eq!(semitones, 12.0); // One octave equals 12 semitones.
 /// ```
 #[numeric_literals::replace_float_literals(T::cast_from(literal))]
 pub fn ratio_to_semitones<T: CastFrom<f64> + Float>(ratio: T) -> T {
-    ratio * 12.0
+    ratio_to_octave(ratio) * 12.0
 }

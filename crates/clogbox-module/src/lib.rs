@@ -9,7 +9,7 @@
 
 #![warn(missing_docs)]
 
-use crate::eventbuffer::{EventBuffer, EventSlice};
+use crate::eventbuffer::EventBuffer;
 use clogbox_enum::Enum;
 use clogbox_math::recip::Recip;
 use context::ProcessContext;
@@ -31,7 +31,7 @@ pub mod contrib;
 ///
 /// This module provides dynamic dispatch wrappers for modules, allowing for runtime
 /// polymorphism in audio processing graphs.
-pub mod r#dyn;
+// pub mod r#dyn;
 
 /// Event buffer implementation for parameter and note events.
 ///

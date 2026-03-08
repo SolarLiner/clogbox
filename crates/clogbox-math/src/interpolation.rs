@@ -15,14 +15,14 @@ use num_traits::{Float, FloatConst, ToPrimitive};
 use numeric_array::generic_array::IntoArrayLength;
 use numeric_array::NumericArray;
 use numeric_literals::replace_float_literals;
-use typenum::Const;
-use std::marker::PhantomData;
 use std::ops;
-use std::process::Output;
-use typenum::{Const, True, Unsigned, U1, U2};
+use typenum::{Const, True, Unsigned, U2};
 
+/// Boundary condition for interpolation.
 pub enum BoundaryCondition {
+    /// Clamps the index to the range of the collection.
     Clamp,
+    /// Wraps the index around the collection.
     Wrap,
 }
 
@@ -95,17 +95,14 @@ impl<T: Float, I: InterpolateSingle<T>> Interpolation<T> for I {
     fn interpolate(&self, boundary_condition: BoundaryCondition, values: &impl Collection<Item = T>, index: T) -> T {
         debug_assert!(values.len() > 0, "Slice to interpolate is empty");
         let f = index.fract();
-        let index = index.floor().to_usize().unwrap();
+        let index = index.floor().to_isize().unwrap();
         let indices: NumericArray<_, <I::Count as IntoArrayLength>::ArrayLength> = match boundary_condition {
             BoundaryCondition::Clamp => NumericArray::generate(|i| {
-                self.offset_index((index + i) as isize)
-                    .to_usize()
-                    .unwrap()
-                    .clamp(0, values.len() - 1)
+                self.offset_index(index + i as isize)
+                    .clamp(0, (values.len() - 1) as isize) as usize
             }),
             BoundaryCondition::Wrap => NumericArray::generate(|i| {
-                self.offset_index((index + i) as isize)
-                    .rem_euclid(values.len() as isize) as usize
+                self.offset_index(index + i as isize).rem_euclid(values.len() as isize) as usize
             }),
         };
         let array = NumericArray::generate(|i| values.get(indices[i]).copied().unwrap_or(T::zero()));
@@ -190,7 +187,8 @@ impl<T: Float + CastFrom<f64> + Cast<usize>> InterpolateSingle<T> for Cubic {
 ///
 /// # Example
 /// ```
-/// use clogbox_math::interpolation::{BoundaryCondition, Interpolation, Sinc};
+/// use approx::assert_abs_diff_eq;
+/// # use clogbox_math::interpolation::{BoundaryCondition, Interpolation, Sinc};
 /// use typenum::U5;
 ///
 /// let sinc_value = Sinc(U5::default());
@@ -199,7 +197,7 @@ impl<T: Float + CastFrom<f64> + Cast<usize>> InterpolateSingle<T> for Cubic {
 /// let index = 1.5;
 ///
 /// // Cubic interpolation
-/// assert_eq!(2.25, sinc_value.interpolate(BoundaryCondition::Clamp, &values, index));
+/// assert_abs_diff_eq!(2.2193, sinc_value.interpolate(BoundaryCondition::Clamp, &values, index), epsilon = 1e-4);
 /// ```
 #[derive(Debug, Copy, Clone, Default)]
 pub struct Sinc<N: Unsigned>(pub N);

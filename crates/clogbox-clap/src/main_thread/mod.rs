@@ -1,7 +1,7 @@
 use crate::params::{ParamChangeEvent, ParamIdExt};
 use crate::params::{ParamChangeKind, ParamId, ParamStorage};
+use crate::processor;
 use crate::shared::Shared;
-use crate::{Plugin, PortLayout};
 use bincode::de::Decoder;
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -12,14 +12,13 @@ use clack_extensions::note_ports::{NoteDialect, NoteDialects, NotePortInfo, Note
 use clack_extensions::params::{ParamDisplayWriter, ParamInfo, ParamInfoWriter, PluginMainThreadParams};
 use clack_extensions::state::PluginStateImpl;
 use clack_plugin::events::event_types::ParamValueEvent;
-use clack_plugin::events::io::InputEventBuffer;
 use clack_plugin::prelude::*;
 use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{count, Enum};
+use clogbox_enum::{count, seq, typenum, Enum, Mono, Sequential, Stereo};
+use clogbox_module::Module;
 use std::ffi::CStr;
 use std::fmt::Write;
-use std::mem::MaybeUninit;
 
 #[cfg(not(feature = "gui"))]
 type GuiHandle<E> = std::marker::PhantomData<E>;
@@ -29,24 +28,57 @@ use super::gui::GuiHandle;
 
 mod log;
 
+/// An audio port in CLAP is a multichannel input or output. CLAP can have multiple input and output ports, but as
+/// `clogbox` only works with a flat multichannel layout, it becomes necessary to specify which ports will route to
+/// which channels.
+///
+/// # Example
+///
+/// ```
+/// use clogbox_clap::Layout;
+/// use clogbox_enum::Enum;
+///
+/// #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Enum)]
+/// enum AudioInput { MainLeft, MainRight, SidechainMono }
+///
+/// const MAIN_PORT: Layout<AudioInput> = Layout::new(&[AudioInput::MainLeft, AudioInput::MainRight])
+///     .named("Input")
+///     .main();
+/// const SIDECHAIN_PORT: Layout<AudioInput> = Layout::new(&[AudioInput::SidechainMono])
+///     .named("Sidechain");
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Layout<E: 'static> {
+    /// Port name
     pub name: &'static str,
+    /// Is this the main port?
     pub main: bool,
+    /// Mapping of channels in this port to channels in the input
     pub channel_map: &'static [E],
 }
 
 impl<E: 'static> Layout<E> {
+    /// Create a new [`PortLayout`](Self) with the provided channel map.
+    pub const fn new(channel_map: &'static [E]) -> Self {
+        Self {
+            name: "Input",
+            main: false,
+            channel_map: &channel_map,
+        }
+    }
+
+    /// Sets this port layout as the main one.
     pub const fn main(self) -> Self {
         Self { main: true, ..self }
     }
 
+    /// Rename this port layout.
     pub const fn named(self, name: &'static str) -> Self {
         Self { name, ..self }
     }
 }
 
 impl Layout<Mono> {
+    /// Mono layout
     pub const MONO: Self = Self {
         name: "Mono",
         main: false,
@@ -55,6 +87,7 @@ impl Layout<Mono> {
 }
 
 impl Layout<Stereo> {
+    /// Stereo layout
     pub const STEREO: Self = Self {
         name: "Stereo",
         main: false,
@@ -63,6 +96,7 @@ impl Layout<Stereo> {
 }
 
 impl Layout<Sequential<typenum::U16>> {
+    /// 16-channel MIDI layout
     pub const MIDI: Self = Self {
         name: "MIDI",
         main: false,
@@ -87,38 +121,79 @@ impl Layout<Sequential<typenum::U16>> {
     };
 }
 
+/// Main plugin trait. This should be implemented by a separate, often empty struct that will serve as the entry
+/// point to the plugin. This type will only be useful at compile time and to hold the required functions to
+/// construct the audio processor and GUI (if supported).
 pub trait Plugin: 'static + Sized {
-    type Dsp: PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
+    /// DSP trait implementing the audio processor
+    type Dsp: processor::PluginDsp<Plugin = Self, ParamsIn = Self::Params>;
+    /// Parameters of the plugin
     type Params: ParamId;
+    /// Shared data between the DSP and GUI
     type SharedData: 'static + Clone + Send + Sync;
 
+    /// Layout for audio input ports. See [`Layout`] for more information.
     const AUDIO_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioIn>];
+    /// Layout for audio output ports. See [`Layout`] for more information.
     const AUDIO_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::AudioOut>];
+    /// Layout for note input ports. See [`Layout`] for more information.
     const NOTE_IN_LAYOUT: &'static [Layout<<Self::Dsp as Module>::NoteIn>] = &[];
+    /// Layout for note output ports. See [`Layout`] for more information.
     const NOTE_OUT_LAYOUT: &'static [Layout<<Self::Dsp as Module>::NoteOut>] = &[];
 
-    fn create(host: HostSharedHandle) -> Result<Self, PluginError>;
+    /// Create a new plugin instance.
+    ///
+    /// Don't do work in this method, as this might be instantiated when scanning the plugin.
+    ///
+    /// # Arguments
+    ///
+    /// * `host`: CLAP host interface.
+    fn create(host: HostSharedHandle, configuration: &mut PluginConfiguration) -> Result<Self, PluginError>;
 
+    /// Return this plugin's shared data. This will be made available to the DSP and GUI implementations. Use this to
+    /// provide DSP <-> GUI communication, for example.
+    ///
+    /// # Arguments
+    ///
+    /// * `host`: CLAP host interface.
     fn shared_data(host: HostSharedHandle) -> Result<Self::SharedData, PluginError>;
 
+    /// Create this plugin's GUI view. Usually, you will use a GUI framework's function to create the
+    /// [`gui::PluginView`] for you.
     #[cfg(feature = "gui")]
     fn view(
         &mut self,
     ) -> Result<Box<dyn crate::gui::PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError>;
 }
 
+/// Configuration options that plugins can change
+#[derive(Debug, Copy, Clone)]
+pub struct PluginConfiguration {
+    /// Maximum number of events that can be queued for processing.
+    pub event_capacity: usize,
+}
+
+impl Default for PluginConfiguration {
+    fn default() -> Self {
+        Self { event_capacity: 512 }
+    }
+}
+
 #[doc(hidden)]
 pub struct MainThread<'host, P: Plugin> {
     pub(crate) host: HostMainThreadHandle<'host>,
     pub(crate) shared: Shared<P>,
+    #[cfg(feature = "gui")]
     pub(crate) gui: GuiHandle<P>,
     pub(crate) plugin: P,
+    pub(crate) plugin_configuration: PluginConfiguration,
     log_extension: Option<log::LogExtension>,
 }
 
 impl<'host, P: Plugin> MainThread<'host, P> {
     pub(crate) fn new(mut host: HostMainThreadHandle<'host>, shared: &Shared<P>) -> Result<Self, PluginError> {
-        let plugin = P::create(host.shared())?;
+        let mut plugin_configuration = PluginConfiguration::default();
+        let plugin = P::create(host.shared(), &mut plugin_configuration)?;
         #[cfg(feature = "log")]
         let log_extension = log::init(&mut host);
         Ok(Self {
@@ -126,6 +201,7 @@ impl<'host, P: Plugin> MainThread<'host, P> {
             shared: shared.clone(),
             gui: GuiHandle::default(),
             plugin,
+            plugin_configuration,
             #[cfg(feature = "log")]
             log_extension,
         })
@@ -289,6 +365,7 @@ struct Decode<E: Enum> {
     gui: Option<serde_json::Value>,
 }
 
+// TODO: Migrate to postcard *BEFORE 1.0 RELEASE*
 impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
     fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let mut params = EnumMapArray::new(|_| 0.0);

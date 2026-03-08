@@ -1,11 +1,12 @@
 use crate::SharedData;
-use clogbox_clap::dsp::PluginCreateContext;
-use clogbox_clap::dsp::PluginDsp;
 use clogbox_clap::params::{polynomial, DynMapping, MappingExt, ParamId};
 use clogbox_clap::Plugin;
+use clogbox_clap::PluginCreateContext;
+use clogbox_clap::PluginDsp;
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
-use clogbox_module::context::{OwnedProcessContext, ProcessContext};
+use clogbox_module::context::{OwnedProcessContext, ProcessContext, UnifiedEvent};
+use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::modules::env_follower;
 use clogbox_module::modules::env_follower::EnvFollower;
 use clogbox_module::modules::extract::ExtractAudio;
@@ -92,11 +93,13 @@ impl Module for Dsp {
 
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
         self.env_context.audio_in.copy_from_input(context.audio_in);
-        for (param, slice) in self.env_context.params_in.iter_mut() {
-            slice.clear();
-            for event in context.params_in[Params::Envelope(param)].iter() {
-                slice.push(event.timestamp, event.data);
-            }
+        for event in context.events_in.slice() {
+            let UnifiedEvent::Parameter(Params::Envelope(param), value) = event.data else {
+                continue;
+            };
+            self.env_context
+                .events_in
+                .push(event.timestamp, UnifiedEvent::Parameter(param, value));
         }
         self.env_context
             .process_with(context.stream_context, |ctx| self.env_follower.process(ctx));

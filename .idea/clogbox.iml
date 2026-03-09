@@ -33,6 +33,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/clogbox-voice/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/mood/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/note-input/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/examples/mood/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

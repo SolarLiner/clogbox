@@ -24,6 +24,7 @@ clogbox-oscillators = { path = "crates/clogbox-oscillators" }
 clogbox-params = { path = "crates/clogbox-params" }
 clogbox-utils = { path = "crates/clogbox-utils" }
 fixed-ringbuf = { path = "crates/fixed-ringbuf" }
+mood = { path = "crates/mood" }
 
 # Dependencies
 az = "1.2.1"

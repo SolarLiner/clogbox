@@ -1,6 +1,8 @@
-use clogbox_enum::{enum_iter, Empty, Enum};
-use clogbox_module::context::ProcessContext;
+use crate::rng::Lcg;
+use clogbox_enum::{Empty, Enum};
+use clogbox_module::context::{ProcessContext, UnifiedEvent};
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
+use clogbox_oscillators::Phasor;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Enum)]
 pub enum Params {
@@ -15,10 +17,10 @@ pub enum ParamsOut {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Clock {
-    phase: f32,
-    frequency: f32,
+    phasor: Phasor<f32>,
+    base_frequency: f32,
+    jitter_rng: Lcg,
     jitter: f32,
-    step: f32,
 }
 
 impl Module for Clock {
@@ -31,33 +33,70 @@ impl Module for Clock {
     type NoteOut = Empty;
 
     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
-        self.step = self.frequency * sample_rate.recip() as f32;
+        self.phasor.prepare(sample_rate, block_size);
         PrepareResult { latency: 0.0 }
     }
 
     fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        let mut start = 0;
-        let step_recip = self.step.recip();
-        while start < context.stream_context.block_size {
-            let end = enum_iter::<Params>()
-                .filter_map(|p| context.params_in[p].after(start).first().map(|t| t.timestamp))
-                .reduce(usize::min)
-                .unwrap_or(context.stream_context.block_size);
-
-            // phase + step * (end - start) == 1
-            // step * (end - start) == 1 - phase
-            // step * end == 1 - phase + step * start
-            // end == (1 - phase + step * start) / step
-            // end == (1 - phase) / step + start
-            let cross = (1.0 - self.phase) * step_recip + start as f32;
-            let cross = cross.round() as usize;
-
-            if cross < end {
-                // TODO: push tick event
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                match event.data {
+                    UnifiedEvent::Parameter(Params::Frequency, value) => {
+                        self.base_frequency = value;
+                        self.set_next_frequency();
+                    }
+                    UnifiedEvent::Parameter(Params::Jitter, value) => {
+                        self.jitter = value;
+                    }
+                    _ => {}
+                }
             }
-
-            start = end;
+            let mut i = range.start;
+            while i < range.end {
+                let next = i + self.phasor.next_tick_in();
+                if next < range.end {
+                    self.phasor.advance(next - i);
+                    context
+                        .events_out
+                        .push(next, UnifiedEvent::Parameter(ParamsOut::Tick, 0.0));
+                    self.set_next_frequency();
+                    i = next;
+                } else {
+                    self.phasor.advance(range.end - i);
+                    break;
+                }
+            }
         }
         ProcessResult { tail: None }
+    }
+}
+
+impl Clock {
+    pub fn new(sample_rate: f32, base_frequency: f32, jitter: f32) -> Self {
+        Self {
+            phasor: Phasor::new(sample_rate, base_frequency),
+            base_frequency,
+            jitter_rng: Lcg::new(0x12345678),
+            jitter,
+        }
+    }
+
+    pub fn set_seed(&mut self, seed: u32) {
+        self.jitter_rng = Lcg::new(seed);
+    }
+
+    fn set_next_frequency(&mut self) {
+        let jitter = self.get_jitter();
+        self.phasor.set_frequency((self.base_frequency + jitter).max(1.0));
+    }
+
+    fn get_jitter(&mut self) -> f32 {
+        let rand = self.jitter_rng.next_f32();
+        let jitter = 2.0 * rand - 1.0;
+        jitter * self.jitter
     }
 }

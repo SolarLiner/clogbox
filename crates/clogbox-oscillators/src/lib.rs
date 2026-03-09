@@ -9,6 +9,7 @@ use num_traits::{Float, Num};
 use std::marker::PhantomData;
 use std::ops;
 
+#[derive(Debug, Copy, Clone)]
 pub struct Phasor<T> {
     sample_rate: T,
     frequency: T,
@@ -53,6 +54,14 @@ impl<T: CastFrom<f64> + Float> Phasor<T> {
         let end = self.current + self.step * T::cast_from(num_samples as f64);
         self.current = end.fract();
         end.floor().to_usize().unwrap()
+    }
+
+    pub fn next_tick_in(&self) -> usize {
+        // 1 = current + step * rollover
+        // 1 - current = step * rollover
+        // (1 - current) / step = rollover
+        let cross = (T::one() - self.current) / self.step;
+        cross.ceil().to_usize().unwrap()
     }
 
     pub fn process_sample(&mut self) -> (T, usize) {

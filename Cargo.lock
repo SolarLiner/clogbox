@@ -1727,8 +1727,27 @@ dependencies = [
  "az",
  "clogbox-enum",
  "clogbox-module",
+ "clogbox-oscillators",
  "clogbox-params",
  "generic-array 1.3.5",
+]
+
+[[package]]
+name = "mood-plugin"
+version = "0.1.0"
+dependencies = [
+ "az",
+ "clogbox-clap",
+ "clogbox-clap-egui",
+ "clogbox-enum",
+ "clogbox-filters",
+ "clogbox-math",
+ "clogbox-module",
+ "clogbox-params",
+ "clogbox-utils",
+ "log",
+ "mood",
+ "num-traits",
 ]
 
 [[package]]

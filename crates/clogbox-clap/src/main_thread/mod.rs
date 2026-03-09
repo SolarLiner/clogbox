@@ -2,9 +2,6 @@ use crate::params::{ParamChangeEvent, ParamIdExt};
 use crate::params::{ParamChangeKind, ParamId, ParamStorage};
 use crate::processor;
 use crate::shared::Shared;
-use bincode::de::Decoder;
-use bincode::enc::Encoder;
-use bincode::error::{DecodeError, EncodeError};
 use clack_extensions::audio_ports::{
     AudioPortFlags, AudioPortInfo, AudioPortInfoWriter, AudioPortType, PluginAudioPortsImpl,
 };
@@ -17,6 +14,7 @@ use clack_plugin::stream::{InputStream, OutputStream};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{count, seq, typenum, Enum, Mono, Sequential, Stereo};
 use clogbox_module::Module;
+use serde::Deserializer;
 use std::ffi::CStr;
 use std::fmt::Write;
 
@@ -199,6 +197,7 @@ impl<'host, P: Plugin> MainThread<'host, P> {
         Ok(Self {
             host,
             shared: shared.clone(),
+            #[cfg(feature = "gui")]
             gui: GuiHandle::default(),
             plugin,
             plugin_configuration,
@@ -330,26 +329,6 @@ impl<P: Plugin> PluginAudioPortsImpl for MainThread<'_, P> {
     }
 }
 
-struct Encode<'a, E: Enum> {
-    params: &'a ParamStorage<E>,
-    #[cfg(feature = "gui")]
-    gui: Option<serde_json::Value>,
-}
-
-impl<E: Enum> bincode::Encode for Encode<'_, E> {
-    fn encode<Enc: Encoder>(&self, encoder: &mut Enc) -> Result<(), EncodeError> {
-        for (e, v) in self.params.read_all_values() {
-            bincode::Encode::encode(&e.to_usize(), encoder)?;
-            bincode::Encode::encode(&v, encoder)?;
-        }
-        #[cfg(feature = "gui")]
-        {
-            bincode::serde::Compat(&self.gui).encode(encoder)?;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(feature = "log")]
 impl<P: Plugin> clack_extensions::timer::PluginTimerImpl for MainThread<'_, P> {
     fn on_timer(&mut self, timer_id: clack_extensions::timer::TimerId) {
@@ -359,52 +338,44 @@ impl<P: Plugin> clack_extensions::timer::PluginTimerImpl for MainThread<'_, P> {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(bound(serialize = ""))]
+struct Encode<'a, E: Enum> {
+    params: &'a ParamStorage<E>,
+    #[cfg(feature = "gui")]
+    gui: Option<serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(bound(deserialize = ""))]
 struct Decode<E: Enum> {
     params: EnumMapArray<E, f32>,
     #[cfg(feature = "gui")]
     gui: Option<serde_json::Value>,
 }
 
-// TODO: Migrate to postcard *BEFORE 1.0 RELEASE*
-impl<E: Enum, Context> bincode::Decode<Context> for Decode<E> {
-    fn decode<D: Decoder<Context = Context>>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let mut params = EnumMapArray::new(|_| 0.0);
-        for _ in 0..count::<E>() {
-            let e = E::from_usize(usize::decode(decoder)?);
-            params[e] = f32::decode(decoder)?;
-        }
-        #[cfg(feature = "gui")]
-        {
-            let gui = bincode::serde::Compat::<Option<serde_json::Value>>::decode(decoder)?.0;
-            Ok(Self { params, gui })
-        }
-        #[cfg(not(feature = "gui"))]
-        {
-            Ok(Self { params })
-        }
-    }
-}
-
 impl<P: Plugin> PluginStateImpl for MainThread<'_, P> {
     fn save(&mut self, output: &mut OutputStream) -> Result<(), PluginError> {
-        bincode::encode_into_std_write(
-            Encode {
+        postcard::to_io(
+            &Encode {
                 params: &self.shared.params,
                 #[cfg(feature = "gui")]
                 gui: self.gui.save()?,
             },
             output,
-            bincode::config::standard(),
         )?;
         Ok(())
     }
 
     fn load(&mut self, input: &mut InputStream) -> Result<(), PluginError> {
-        let Decode {
-            params,
-            #[cfg(feature = "gui")]
-            gui,
-        } = bincode::decode_from_std_read(input, bincode::config::standard())?;
+        let (
+            Decode {
+                params,
+                #[cfg(feature = "gui")]
+                gui,
+            },
+            _,
+        ) = postcard::from_io((input, &mut vec![0; 1024]))?;
         self.shared.params.store_all_values(params);
         #[cfg(feature = "gui")]
         if let Some(gui) = gui {

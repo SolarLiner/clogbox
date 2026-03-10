@@ -56,14 +56,6 @@ impl<T: CastFrom<f64> + Float> Phasor<T> {
         end.floor().to_usize().unwrap()
     }
 
-    pub fn next_tick_in(&self) -> usize {
-        // 1 = current + step * rollover
-        // 1 - current = step * rollover
-        // (1 - current) / step = rollover
-        let cross = (T::one() - self.current) / self.step;
-        cross.ceil().to_usize().unwrap()
-    }
-
     pub fn process_sample(&mut self) -> (T, usize) {
         let current = self.current;
         (current, self.advance(1))

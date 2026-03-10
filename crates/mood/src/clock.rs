@@ -55,19 +55,13 @@ impl Module for Clock {
                     _ => {}
                 }
             }
-            let mut i = range.start;
-            while i < range.end {
-                let next = i + self.phasor.next_tick_in();
-                if next < range.end {
-                    self.phasor.advance(next - i);
+            for i in range {
+                let rollovers = self.phasor.advance(1);
+                if rollovers > 0 {
+                    self.set_next_frequency();
                     context
                         .events_out
-                        .push(next, UnifiedEvent::Parameter(ParamsOut::Tick, 0.0));
-                    self.set_next_frequency();
-                    i = next;
-                } else {
-                    self.phasor.advance(range.end - i);
-                    break;
+                        .push(i, UnifiedEvent::Parameter(ParamsOut::Tick, 0.0));
                 }
             }
         }
@@ -97,6 +91,6 @@ impl Clock {
     fn get_jitter(&mut self) -> f32 {
         let rand = self.jitter_rng.next_f32();
         let jitter = 2.0 * rand - 1.0;
-        jitter * self.jitter
+        jitter * self.jitter * self.base_frequency
     }
 }

@@ -5,7 +5,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt, ops};
+use std::{fmt, mem, ops};
 use thread_local::ThreadLocal;
 
 pub type Dynamic<T> = Box<[UnsafeCell<MaybeUninit<T>>]>;
@@ -371,6 +371,20 @@ impl<S: Storage> RingBufferImpl<S> {
         self.read_index.store(indices.0, Ordering::SeqCst);
         self.write_index.store(indices.1, Ordering::SeqCst);
     }
+
+    pub fn clear(&self) {
+        self.reload_indices();
+        if mem::needs_drop::<S::Item>() {
+            for i in 0..self.len() {
+                unsafe {
+                    let ptr = &self.buffer.slice()[self.read_index().wrapping_add(i) & self.mask];
+                    (*ptr.get()).assume_init_drop();
+                }
+            }
+        }
+        self.update_read_index(0);
+        self.update_write_index(0);
+    }
 }
 
 impl<S: Storage> Drop for RingBufferImpl<S> {
@@ -385,6 +399,17 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use std::thread;
+
+    #[derive(Debug)]
+    struct DropCounter {
+        counter: Arc<AtomicUsize>,
+    }
+
+    impl Drop for DropCounter {
+        fn drop(&mut self) {
+            self.counter.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     #[test]
     fn test_new_capacity() {
@@ -542,17 +567,6 @@ mod tests {
 
     #[test]
     fn test_drop_cleanup() {
-        #[derive(Debug)]
-        struct DropCounter {
-            counter: Arc<AtomicUsize>,
-        }
-
-        impl Drop for DropCounter {
-            fn drop(&mut self) {
-                self.counter.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
         let counter = Arc::new(AtomicUsize::new(0));
 
         {
@@ -571,6 +585,27 @@ mod tests {
         }
 
         // After the RingBuffer is dropped, all 3 items should be dropped
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_clear_cleanup() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let rb = RingBuffer::<DropCounter>::new(4);
+        {
+            // Add 3 items
+            for _ in 0..3 {
+                rb.push(DropCounter {
+                    counter: Arc::clone(&counter),
+                })
+                .expect("Ring buffer should not be full");
+            }
+
+            // At this point, nothing should have been dropped
+            assert_eq!(counter.load(Ordering::SeqCst), 0);
+        }
+        rb.clear();
+
         assert_eq!(counter.load(Ordering::SeqCst), 3);
     }
 

@@ -53,7 +53,7 @@ impl<T: CastFrom<f64> + Float> Phasor<T> {
     {
         let end = self.current + self.step * T::cast_from(num_samples as f64);
         self.current = end.fract();
-        end.floor().to_usize().unwrap()
+        end.floor().to_usize().unwrap_or(0)
     }
 
     pub fn process_sample(&mut self) -> (T, usize) {

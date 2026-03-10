@@ -8,11 +8,11 @@ use std::ffi::CStr;
 
 mod dsp;
 
-pub struct MoodSnh;
+pub struct MoodBBD;
 
-impl PluginMeta for MoodSnh {
-    const ID: &'static str = "dev.solarliner.clogbox.mood";
-    const NAME: &'static str = "M0od";
+impl PluginMeta for MoodBBD {
+    const ID: &'static str = "dev.solarliner.clogbox.mood-bbd";
+    const NAME: &'static str = "M0od BBD";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
     const FEATURES: &'static [&'static CStr] = &[
         features::STEREO,
@@ -22,7 +22,7 @@ impl PluginMeta for MoodSnh {
     ];
 }
 
-impl Plugin for MoodSnh {
+impl Plugin for MoodBBD {
     type Dsp = dsp::Dsp;
     type Params = dsp::Params;
     type SharedData = ();

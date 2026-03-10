@@ -1,6 +1,6 @@
-use crate::snh::MoodSnh;
+use crate::snh::MoodBBD;
 use clogbox_clap::export_plugin;
 
 mod snh;
 
-export_plugin!(MoodSnh);
+export_plugin!(MoodBBD);

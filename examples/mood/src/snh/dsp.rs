@@ -7,9 +7,9 @@ use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext,
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
-use mood::clock::Clock;
+use mood::bucket_brigade::BucketBrigade;
 use std::fmt::Write;
-// use clogbox_clap_egui::egui::lerp;
+use std::num::NonZeroU32;
 
 struct HighShelf {
     filter: Multimode<f32>,
@@ -81,13 +81,12 @@ impl ParamId for Params {
 }
 
 pub struct Dsp {
-    clock_context: OwnedProcessContext<Clock>,
+    bbd_context: OwnedProcessContext<BucketBrigade<f32, Stereo>>,
+    bbd: BucketBrigade<f32, Stereo>,
     pre_emphasis: EnumMapArray<Stereo, HighShelf>,
-    clock: Clock,
     post_emphasis: EnumMapArray<Stereo, HighShelf>,
     scratch_buffer1: AudioStorage<Stereo, f32>,
     scratch_buffer2: AudioStorage<Stereo, f32>,
-    current_sample: [f32; 2],
 }
 
 impl Module for Dsp {
@@ -100,7 +99,8 @@ impl Module for Dsp {
     type NoteOut = Empty;
 
     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
-        self.clock.prepare(sample_rate, block_size);
+        self.bbd_context.resize_audio_buffers(block_size);
+        self.bbd.prepare(sample_rate, block_size);
         for ch in enum_iter::<Stereo>() {
             self.pre_emphasis[ch].prepare(sample_rate);
             self.post_emphasis[ch].prepare(sample_rate);
@@ -111,19 +111,13 @@ impl Module for Dsp {
     }
 
     fn process(&mut self, mut context: ProcessContext<Self>) -> ProcessResult {
-        self.clock_context.events_in.clear();
-        self.clock_context.events_out.clear();
-
         self.process_events(&context);
-
-        self.clock_context
-            .process_with(context.stream_context, |ctx| self.clock.process(ctx));
-
         self.process_preemphasis(&mut context);
         self.process_snh(&mut context);
         self.process_postemphasis(&mut context);
 
-        ProcessResult { tail: None }
+        const TAIL: Option<NonZeroU32> = NonZeroU32::new(1);
+        ProcessResult { tail: TAIL }
     }
 }
 
@@ -131,13 +125,14 @@ impl Dsp {
     const HIGH_SHELF_PRE_GAIN: f32 = 5.7;
     const HIGH_SHELF_POST_GAIN: f32 = Self::HIGH_SHELF_PRE_GAIN.recip();
     fn process_events(&mut self, context: &ProcessContext<Dsp>) {
+        self.bbd_context.events_in.clear();
         for event in context.events_in.slice() {
             let UnifiedEvent::Parameter(params, value) = event.data else {
                 continue;
             };
             match params {
                 Params::Clock(param) => {
-                    self.clock_context
+                    self.bbd_context
                         .events_in
                         .push(event.timestamp, UnifiedEvent::Parameter(param, value));
                 }
@@ -172,32 +167,15 @@ impl Dsp {
     }
 
     fn process_snh(&mut self, context: &mut ProcessContext<Dsp>) {
-        for (range, events) in self
-            .clock_context
-            .events_out
-            .chunk_events(context.stream_context.block_size)
-        {
-            for event in events {
-                match event.data {
-                    UnifiedEvent::Parameter(mood::clock::ParamsOut::Tick, _) => {
-                        self.current_sample = std::array::from_fn(|i| Stereo::from_usize(i)).map(|ch| {
-                            let x = self.scratch_buffer1[ch][event.timestamp];
-                            (x / 2.0).tanh() * 2.0
-                        });
-                    }
-                    _ => {}
-                }
-            }
-
-            for ch in enum_iter::<Stereo>() {
-                self.scratch_buffer2[ch][range.clone()].fill(self.current_sample[ch.to_usize()]);
-            }
-        }
+        self.bbd_context.audio_in.copy_from_input(&self.scratch_buffer1);
+        self.bbd_context
+            .process_with(context.stream_context, |ctx| self.bbd.process(ctx));
+        self.scratch_buffer2.copy_from_input(&self.bbd_context.audio_out);
     }
 }
 
 impl PluginDsp for Dsp {
-    type Plugin = super::MoodSnh;
+    type Plugin = super::MoodBBD;
 
     fn create(context: PluginCreateContext<Self>, _: &<Self::Plugin as Plugin>::SharedData) -> Self {
         let samplerate = Samplerate::new(context.audio_config.sample_rate);
@@ -210,9 +188,10 @@ impl PluginDsp for Dsp {
             }
         };
         Self {
-            clock_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
-            clock: Clock::new(
+            bbd_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
+            bbd: BucketBrigade::new(
                 context.audio_config.sample_rate as _,
+                context.audio_config.max_frames_count as _,
                 context.params[Params::Clock(mood::clock::Params::Frequency)],
                 context.params[Params::Clock(mood::clock::Params::Jitter)],
             ),
@@ -220,7 +199,6 @@ impl PluginDsp for Dsp {
             post_emphasis: EnumMapArray::new(create_emphasis(Self::HIGH_SHELF_POST_GAIN)),
             scratch_buffer1: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
             scratch_buffer2: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
-            current_sample: [0.0; 2],
         }
     }
 }

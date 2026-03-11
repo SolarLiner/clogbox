@@ -61,7 +61,7 @@ impl Module for Clock {
                     self.set_next_frequency();
                     context
                         .events_out
-                        .push(i, UnifiedEvent::Parameter(ParamsOut::Tick, 0.0));
+                        .push(i, UnifiedEvent::Parameter(ParamsOut::Tick, rollovers as _));
                 }
             }
         }

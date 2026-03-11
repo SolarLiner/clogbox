@@ -65,7 +65,7 @@ impl ParamId for Params {
     fn mapping(&self) -> DynMapping {
         use mood::clock::Params::*;
         match self {
-            Self::Clock(Frequency) => frequency(20.0, 40000.0).into_dyn(),
+            Self::Clock(Frequency) => frequency(2e3, 200e3).into_dyn(),
             Self::Clock(Jitter) => linear(0.0, 1.0).into_dyn(),
             Self::Emphasis => linear(0.0, 1.0).into_dyn(),
         }
@@ -80,9 +80,11 @@ impl ParamId for Params {
     }
 }
 
+type Chip = BucketBrigade<f32, Stereo, 1024>;
+
 pub struct Dsp {
-    bbd_context: OwnedProcessContext<BucketBrigade<f32, Stereo>>,
-    bbd: BucketBrigade<f32, Stereo>,
+    chip_context: OwnedProcessContext<Chip>,
+    bbd: Chip,
     pre_emphasis: EnumMapArray<Stereo, HighShelf>,
     post_emphasis: EnumMapArray<Stereo, HighShelf>,
     scratch_buffer1: AudioStorage<Stereo, f32>,
@@ -99,7 +101,7 @@ impl Module for Dsp {
     type NoteOut = Empty;
 
     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
-        self.bbd_context.resize_audio_buffers(block_size);
+        self.chip_context.resize_audio_buffers(block_size);
         self.bbd.prepare(sample_rate, block_size);
         for ch in enum_iter::<Stereo>() {
             self.pre_emphasis[ch].prepare(sample_rate);
@@ -125,14 +127,14 @@ impl Dsp {
     const HIGH_SHELF_PRE_GAIN: f32 = 5.7;
     const HIGH_SHELF_POST_GAIN: f32 = Self::HIGH_SHELF_PRE_GAIN.recip();
     fn process_events(&mut self, context: &ProcessContext<Dsp>) {
-        self.bbd_context.events_in.clear();
+        self.chip_context.events_in.clear();
         for event in context.events_in.slice() {
             let UnifiedEvent::Parameter(params, value) = event.data else {
                 continue;
             };
             match params {
                 Params::Clock(param) => {
-                    self.bbd_context
+                    self.chip_context
                         .events_in
                         .push(event.timestamp, UnifiedEvent::Parameter(param, value));
                 }
@@ -167,10 +169,10 @@ impl Dsp {
     }
 
     fn process_snh(&mut self, context: &mut ProcessContext<Dsp>) {
-        self.bbd_context.audio_in.copy_from_input(&self.scratch_buffer1);
-        self.bbd_context
+        self.chip_context.audio_in.copy_from_input(&self.scratch_buffer1);
+        self.chip_context
             .process_with(context.stream_context, |ctx| self.bbd.process(ctx));
-        self.scratch_buffer2.copy_from_input(&self.bbd_context.audio_out);
+        self.scratch_buffer2.copy_from_input(&self.chip_context.audio_out);
     }
 }
 
@@ -188,7 +190,7 @@ impl PluginDsp for Dsp {
             }
         };
         Self {
-            bbd_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
+            chip_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
             bbd: BucketBrigade::new(
                 context.audio_config.sample_rate as _,
                 context.audio_config.max_frames_count as _,

@@ -62,17 +62,19 @@ impl<T: Float, Channels: Enum, const SIZE: usize> Module for BucketBrigade<T, Ch
             .chunk_events(context.stream_context.block_size)
         {
             for event in events {
-                let UnifiedEvent::Parameter(clock::ParamsOut::Tick, _) = event.data else {
+                let UnifiedEvent::Parameter(clock::ParamsOut::Tick, value) = event.data else {
                     continue;
                 };
-                if self.delay.is_full() {
-                    self.current = self.delay.pop().unwrap_or_else(|| EnumMapArray::new(|_| T::zero()));
+                for _ in 0..value as usize {
+                    if self.delay.is_full() {
+                        self.current = self.delay.pop().unwrap_or_else(|| EnumMapArray::new(|_| T::zero()));
+                    }
+                    self.current.values_mut().for_each(|s| *s = (*s / 2.0).tanh() * 2.0);
+                    debug_assert!(self
+                        .delay
+                        .push(EnumMapArray::new(|ch| context.audio_in[ch][event.timestamp]))
+                        .is_ok());
                 }
-                self.current.values_mut().for_each(|s| *s = (*s / 2.0).tanh() * 2.0);
-                debug_assert!(self
-                    .delay
-                    .push(EnumMapArray::new(|ch| context.audio_in[ch][event.timestamp]))
-                    .is_ok());
             }
 
             for i in range {

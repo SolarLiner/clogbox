@@ -2,7 +2,7 @@ use clogbox_clap::params::{frequency, linear, DynMapping, MappingExt, ParamId};
 use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
-use clogbox_filters::saturators::{tanh, Driven, SimpleSaturator};
+use clogbox_filters::saturators::SimpleSaturator;
 use clogbox_filters::Multimode;
 use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
@@ -190,9 +190,11 @@ impl Dsp {
     }
 
     fn process_preemphasis(&mut self, context: &mut ProcessContext<Dsp>) {
+        const INPUT_GAIN: f32 = 0.5;
         for ch in enum_iter::<Stereo>() {
             for i in 0..context.stream_context.block_size {
-                let out = self.pre_aa[ch].next_sample(sat_bjt(context.audio_in[ch][i]));
+                let inp = sat_bjt(INPUT_GAIN * context.audio_in[ch][i]);
+                let out = self.pre_aa[ch].next_sample(inp);
                 let out = self.pre_emphasis[ch].process_sample(out);
                 self.scratch_buffer1[ch][i] = out;
             }
@@ -238,7 +240,7 @@ impl PluginDsp for Dsp {
                 context.params[Params::Clock(mood::clock::Params::Frequency)],
                 context.params[Params::Clock(mood::clock::Params::Jitter)],
             )
-            .with_saturator(tanh()),
+            .with_saturator(SimpleSaturator::new(sat_bbd)),
             pre_aa: EnumMapArray::new(|_| AntialiasFilter::new(samplerate.value() as _)),
             post_aa: EnumMapArray::new(|_| AntialiasFilter::new(samplerate.value() as _)),
             pre_emphasis: EnumMapArray::new(create_emphasis(Self::HIGH_SHELF_PRE_GAIN)),
@@ -255,8 +257,18 @@ fn lerp(range: std::ops::RangeInclusive<f32>, value: f32) -> f32 {
     start + range * value
 }
 
+fn sat_bbd(x: f32) -> f32 {
+    const BIAS: f32 = -4.5;
+    const SCALE: f32 = 15.0;
+    let inp = (x - BIAS) / SCALE;
+    let out = inp.tanh() + (BIAS / SCALE).tanh();
+    out * SCALE
+}
+
 fn sat_bjt(x: f32) -> f32 {
     const BIAS: f32 = 0.707;
     const SCALE: f32 = 4.5;
-    ((x - BIAS) / SCALE).tanh() * SCALE + BIAS
+    let inp = (x - BIAS) / SCALE;
+    let out = inp.tanh() + (BIAS / SCALE).tanh();
+    out * SCALE
 }

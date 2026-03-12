@@ -26,6 +26,7 @@ pub use clack_plugin::clack_export_entry;
 pub use clack_plugin::entry::SinglePluginEntry;
 use clack_plugin::host::HostMainThreadHandle;
 pub use clack_plugin::host::HostSharedHandle;
+pub use clack_plugin;
 pub use clack_plugin::plugin;
 pub use clack_plugin::plugin::features;
 use clack_plugin::prelude::*;
@@ -70,6 +71,12 @@ pub trait PluginMeta {
 /// handling the plugin lifecycle, audio processing, and parameter management.
 /// It uses the provided plugin type `P` to implement the actual functionality.
 pub struct PluginEntry<P: main_thread::Plugin>(PhantomData<P>);
+
+impl<P: main_thread::Plugin> Default for PluginEntry<P> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
 
 impl<P: main_thread::Plugin<Dsp: processor::PluginDsp<Plugin = P>>> ClapPlugin for PluginEntry<P> {
     type AudioProcessor<'a> = Processor<'a, P::Dsp>;

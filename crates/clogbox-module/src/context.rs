@@ -261,6 +261,11 @@ impl<E: Enum, T> ops::IndexMut<E> for AudioStorage<E, T> {
     }
 }
 
+impl<T> AudioStorage<Empty, T> {
+    /// Empty buffer containing no elements.
+    pub const EMPTY: Self = Self { storage: EnumMapArray::CONST_DEFAULT };
+}
+
 /// Storage for events associated with enum channels.
 #[derive(Debug)]
 pub struct EventStorage<E: Enum, T> {

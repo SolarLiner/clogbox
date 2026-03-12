@@ -2,6 +2,7 @@ use crate::clock;
 use crate::clock::Clock;
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum};
+use clogbox_filters::saturators::SimpleSaturator;
 use clogbox_module::context::{OwnedProcessContext, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::{TimestampedCollection, TimestampedCollectionMut};
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
@@ -9,12 +10,14 @@ use fixed_ringbuf::RingBufferStatic;
 use num_traits::{Float, Zero};
 use numeric_literals::replace_float_literals;
 use std::num::NonZeroU32;
+use clogbox_filters::Saturator;
 
 pub struct BucketBrigade<T, Channels: Enum, const SIZE: usize = 512> {
     clock_context: OwnedProcessContext<Clock>,
     clock: Clock,
     delay: RingBufferStatic<EnumMapArray<Channels, T>, SIZE>,
     current: EnumMapArray<Channels, T>,
+    saturators: SimpleSaturator<T>,
 }
 
 impl<T: Zero, Channels: Enum, const SIZE: usize> BucketBrigade<T, Channels, SIZE> {
@@ -24,11 +27,17 @@ impl<T: Zero, Channels: Enum, const SIZE: usize> BucketBrigade<T, Channels, SIZE
             clock: Clock::new(sample_rate, frequency, jitter),
             delay: RingBufferStatic::new(),
             current: EnumMapArray::new(|_| T::zero()),
+            saturators: SimpleSaturator::new(|x| x),
         }
+    }
+
+    pub fn with_saturator(mut self, saturator: SimpleSaturator<T>) -> Self {
+        self.saturators = saturator;
+        self
     }
 }
 
-impl<T: Float, Channels: Enum, const SIZE: usize> Module for BucketBrigade<T, Channels, SIZE> {
+impl<T: Send + Float, Channels: Enum, const SIZE: usize> Module for BucketBrigade<T, Channels, SIZE> {
     type Sample = T;
     type AudioIn = Channels;
     type AudioOut = Channels;
@@ -68,8 +77,8 @@ impl<T: Float, Channels: Enum, const SIZE: usize> Module for BucketBrigade<T, Ch
                 for _ in 0..value as usize {
                     if self.delay.is_full() {
                         self.current = self.delay.pop().unwrap_or_else(|| EnumMapArray::new(|_| T::zero()));
+                        self.current.values_mut().for_each(|s| *s = self.saturators.saturate(*s));
                     }
-                    self.current.values_mut().for_each(|s| *s = (*s / 2.0).tanh() * 2.0);
                     debug_assert!(self
                         .delay
                         .push(EnumMapArray::new(|ch| context.audio_in[ch][event.timestamp]))

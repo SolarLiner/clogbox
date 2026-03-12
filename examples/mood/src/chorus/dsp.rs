@@ -2,6 +2,7 @@ use clogbox_clap::params::{frequency, linear, DynMapping, MappingExt, ParamId};
 use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
+use clogbox_filters::saturators::{tanh, Driven, SimpleSaturator};
 use clogbox_filters::Multimode;
 use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
@@ -39,6 +40,42 @@ impl HighShelf {
         let hp = input - lp;
         let gain = self.gain.next_value();
         input + hp * (gain - 1.0)
+    }
+}
+
+struct AntialiasFilter {
+    filters: [Multimode<f32>; 4],
+    hp4: f32,
+}
+
+impl AntialiasFilter {
+    const DAMPING_RATIO: f32 = 0.5;
+    const HP_FC: f32 = 48.2;
+    const FC1: f32 = 6591.0;
+    const FC2: f32 = 6934.0;
+
+    fn new(sample_rate: f32) -> Self {
+        Self {
+            filters: [
+                Multimode::new(sample_rate, Self::HP_FC),
+                Multimode::new(sample_rate, Self::FC1),
+                Multimode::new(sample_rate, Self::FC2),
+                Multimode::new(sample_rate, Self::FC2),
+            ],
+            hp4: 0.0,
+        }
+    }
+
+    fn next_sample(&mut self, input: f32) -> f32 {
+        let lp1 = self.filters[0].next_sample(input);
+        let hp1 = input - lp1;
+        let lp2 = self.filters[1].next_sample(hp1);
+
+        let in3 = lp2 + self.hp4 * Self::DAMPING_RATIO;
+        let lp3 = self.filters[2].next_sample(in3);
+        let lp4 = self.filters[3].next_sample(sat_bjt(lp3));
+        self.hp4 = lp3 - lp4;
+        lp4
     }
 }
 
@@ -85,6 +122,8 @@ type Chip = BucketBrigade<f32, Stereo, 1024>;
 pub struct Dsp {
     chip_context: OwnedProcessContext<Chip>,
     bbd: Chip,
+    pre_aa: EnumMapArray<Stereo, AntialiasFilter>,
+    post_aa: EnumMapArray<Stereo, AntialiasFilter>,
     pre_emphasis: EnumMapArray<Stereo, HighShelf>,
     post_emphasis: EnumMapArray<Stereo, HighShelf>,
     scratch_buffer1: AudioStorage<Stereo, f32>,
@@ -153,7 +192,8 @@ impl Dsp {
     fn process_preemphasis(&mut self, context: &mut ProcessContext<Dsp>) {
         for ch in enum_iter::<Stereo>() {
             for i in 0..context.stream_context.block_size {
-                let out = self.pre_emphasis[ch].process_sample(context.audio_in[ch][i]);
+                let out = self.pre_aa[ch].next_sample(sat_bjt(context.audio_in[ch][i]));
+                let out = self.pre_emphasis[ch].process_sample(out);
                 self.scratch_buffer1[ch][i] = out;
             }
         }
@@ -163,6 +203,7 @@ impl Dsp {
         for ch in enum_iter::<Stereo>() {
             for i in 0..context.stream_context.block_size {
                 let out = self.post_emphasis[ch].process_sample(self.scratch_buffer2[ch][i]);
+                let out = self.post_aa[ch].next_sample(out);
                 context.audio_out[ch][i] = out;
             }
         }
@@ -196,7 +237,10 @@ impl PluginDsp for Dsp {
                 context.audio_config.max_frames_count as _,
                 context.params[Params::Clock(mood::clock::Params::Frequency)],
                 context.params[Params::Clock(mood::clock::Params::Jitter)],
-            ),
+            )
+            .with_saturator(tanh()),
+            pre_aa: EnumMapArray::new(|_| AntialiasFilter::new(samplerate.value() as _)),
+            post_aa: EnumMapArray::new(|_| AntialiasFilter::new(samplerate.value() as _)),
             pre_emphasis: EnumMapArray::new(create_emphasis(Self::HIGH_SHELF_PRE_GAIN)),
             post_emphasis: EnumMapArray::new(create_emphasis(Self::HIGH_SHELF_POST_GAIN)),
             scratch_buffer1: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
@@ -209,4 +253,10 @@ fn lerp(range: std::ops::RangeInclusive<f32>, value: f32) -> f32 {
     let (start, end) = range.into_inner();
     let range = end - start;
     start + range * value
+}
+
+fn sat_bjt(x: f32) -> f32 {
+    const BIAS: f32 = 0.707;
+    const SCALE: f32 = 4.5;
+    ((x - BIAS) / SCALE).tanh() * SCALE + BIAS
 }

@@ -4,13 +4,17 @@ use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
 use clogbox_filters::saturators::SimpleSaturator;
 use clogbox_filters::Multimode;
-use clogbox_module::context::{AudioStorage, OwnedProcessContext, ProcessContext, UnifiedEvent};
+use clogbox_module::context::{
+    AudioStorage, OwnedProcessContext, ProcessContext, UnifiedEvent,
+};
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
+use clogbox_oscillators::Phasor;
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use mood::bucket_brigade::BucketBrigade;
 use std::fmt::Write;
 use std::num::NonZeroU32;
+use mood::clock::Params::{Frequency, Jitter};
 
 struct HighShelf {
     filter: Multimode<f32>,
@@ -80,9 +84,9 @@ impl AntialiasFilter {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-pub enum Params {
-    Clock(mood::clock::Params),
-    Emphasis,
+enum Params {
+    Rate,
+    Amount,
 }
 
 impl ParamId for Params {
@@ -91,37 +95,97 @@ impl ParamId for Params {
     }
 
     fn default_value(&self) -> f32 {
-        use mood::clock::Params::*;
         match self {
-            Self::Clock(Frequency) => 8000.0,
-            Self::Clock(Jitter) => 0.0,
-            Self::Emphasis => 1.0,
+            Self::Rate => 1.0,
+            Self::Amount => 0.5,
         }
     }
 
     fn mapping(&self) -> DynMapping {
-        use mood::clock::Params::*;
         match self {
-            Self::Clock(Frequency) => frequency(2e3, 200e3).into_dyn(),
-            Self::Clock(Jitter) => linear(0.0, 1.0).into_dyn(),
-            Self::Emphasis => linear(0.0, 1.0).into_dyn(),
+            Self::Rate => linear(0.3, 3.57).into_dyn(),
+            Self::Amount => linear(0.0, 1.0).into_dyn(),
         }
     }
 
     fn value_to_text(&self, f: &mut dyn Write, denormalized: f32) -> std::fmt::Result {
-        use mood::clock::Params::*;
         match self {
-            Self::Clock(Frequency) => write!(f, "{denormalized:3.2} Hz"),
-            Self::Clock(Jitter) | Self::Emphasis => write!(f, "{:3.2} %", denormalized * 100.0),
+            Self::Rate => write!(f, "{denormalized:1.1} Hz"),
+            Self::Amount => write!(f, "{:>3.2}%", denormalized),
         }
+    }
+}
+
+struct Lfo {
+    phasor: Phasor<f32>,
+    mod_amount: ExpSmoother<f32>,
+    out_smoother: ExpSmoother<f32>,
+}
+
+impl Lfo {
+    fn new(sample_rate: Samplerate) -> Self {
+        Self {
+            phasor: Phasor::new(sample_rate.value() as _, 1.0),
+            mod_amount: ExpSmoother::new(sample_rate.value() as _, 5e-3, 0.0, 0.0),
+            out_smoother: ExpSmoother::new(sample_rate.value() as _, 13.8e-3, 0.0, 0.0),
+        }
+    }
+}
+
+impl Module for Lfo {
+    type Sample = f32;
+    type AudioIn = Empty;
+    type AudioOut = mood::clock::AudioRateIn;
+    type ParamsIn = Params;
+    type ParamsOut = Empty;
+    type NoteIn = Empty;
+    type NoteOut = Empty;
+
+    fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
+        self.phasor.prepare(sample_rate, block_size);
+        PrepareResult { latency: 0.0 }
+    }
+
+    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                match event.data {
+                    UnifiedEvent::Parameter(param, value) => match param {
+                        Params::Rate => {
+                            self.phasor.set_frequency(value);
+                        }
+                        Params::Amount => {
+                            self.mod_amount.set_target(value);
+                        }
+                    },
+                    UnifiedEvent::Note(..) => {}
+                }
+            }
+
+            for i in range {
+                let mod_amount = self.mod_amount.next_value();
+                let (t, _) = self.phasor.process_sample();
+                self.out_smoother
+                    .set_target(lerp(0.5..=0.5 * triangle(t) + 0.5, mod_amount));
+                context.audio_out[mood::clock::AudioRateIn::Frequency][i] =
+                    lerp(25.3e3..=200e3, self.out_smoother.next_value());
+            }
+        }
+        ProcessResult { tail: None }
     }
 }
 
 type Chip = BucketBrigade<f32, Stereo, 1024>;
 
 pub struct Dsp {
+    lfo_context: OwnedProcessContext<Lfo>,
+    lfo: Lfo,
     chip_context: OwnedProcessContext<Chip>,
-    bbd: Chip,
+    chip: Chip,
     pre_aa: EnumMapArray<Stereo, AntialiasFilter>,
     post_aa: EnumMapArray<Stereo, AntialiasFilter>,
     pre_emphasis: EnumMapArray<Stereo, HighShelf>,
@@ -140,8 +204,10 @@ impl Module for Dsp {
     type NoteOut = Empty;
 
     fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
+        self.lfo_context.resize_audio_buffers(block_size);
+        self.lfo.prepare(sample_rate, block_size);
         self.chip_context.resize_audio_buffers(block_size);
-        self.bbd.prepare(sample_rate, block_size);
+        self.chip.prepare(sample_rate, block_size);
         for ch in enum_iter::<Stereo>() {
             self.pre_emphasis[ch].prepare(sample_rate);
             self.post_emphasis[ch].prepare(sample_rate);
@@ -153,6 +219,7 @@ impl Module for Dsp {
 
     fn process(&mut self, mut context: ProcessContext<Self>) -> ProcessResult {
         self.process_events(&context);
+        self.process_lfo(&context);
         self.process_preemphasis(&mut context);
         self.process_snh(&mut context);
         self.process_postemphasis(&mut context);
@@ -214,8 +281,12 @@ impl Dsp {
     fn process_snh(&mut self, context: &mut ProcessContext<Dsp>) {
         self.chip_context.audio_in.copy_from_input(&self.scratch_buffer1);
         self.chip_context
-            .process_with(context.stream_context, |ctx| self.bbd.process(ctx));
+            .process_with(context.stream_context, |ctx| self.chip.process(ctx));
         self.scratch_buffer2.copy_from_input(&self.chip_context.audio_out);
+    }
+    
+    fn process_lfo(&mut self, context: &ProcessContext<Self>) {
+        self.lfo_context.process_with(context.stream_context, |ctx| self.lfo.process(ctx));
     }
 }
 
@@ -234,7 +305,7 @@ impl PluginDsp for Dsp {
         };
         Self {
             chip_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
-            bbd: BucketBrigade::new(
+            chip: BucketBrigade::new(
                 context.audio_config.sample_rate as _,
                 context.audio_config.max_frames_count as _,
                 context.params[Params::Clock(mood::clock::Params::Frequency)],
@@ -249,6 +320,10 @@ impl PluginDsp for Dsp {
             scratch_buffer2: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
         }
     }
+}
+
+fn triangle(x: f32) -> f32 {
+    (x * 2.0).abs() - 1.0
 }
 
 fn lerp(range: std::ops::RangeInclusive<f32>, value: f32) -> f32 {

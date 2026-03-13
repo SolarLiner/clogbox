@@ -1,20 +1,18 @@
-use clogbox_clap::params::{frequency, linear, DynMapping, MappingExt, ParamId};
+use clogbox_clap::params::{linear, DynMapping, MappingExt, ParamId};
 use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
 use clogbox_filters::saturators::SimpleSaturator;
 use clogbox_filters::Multimode;
-use clogbox_module::context::{
-    AudioStorage, OwnedProcessContext, ProcessContext, UnifiedEvent,
-};
+use clogbox_module::context::{AudioStorage, EventBuffer, OwnedProcessContext, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_oscillators::Phasor;
 use clogbox_params::smoothers::{ExpSmoother, Smoother};
 use mood::bucket_brigade::BucketBrigade;
 use std::fmt::Write;
+use std::marker::PhantomData;
 use std::num::NonZeroU32;
-use mood::clock::Params::{Frequency, Jitter};
 
 struct HighShelf {
     filter: Multimode<f32>,
@@ -84,7 +82,7 @@ impl AntialiasFilter {
 }
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
-enum Params {
+pub enum Params {
     Rate,
     Amount,
 }
@@ -123,6 +121,10 @@ struct Lfo {
 }
 
 impl Lfo {
+    pub const MIN_FREQUENCY: f32 = 25.3e3;
+    pub const MAX_FREQUENCY: f32 = 200e3;
+    pub const MID_FREQUENCY: f32 = Self::MIN_FREQUENCY + (Self::MAX_FREQUENCY - Self::MIN_FREQUENCY) / 2.0;
+
     fn new(sample_rate: Samplerate) -> Self {
         Self {
             phasor: Phasor::new(sample_rate.value() as _, 1.0),
@@ -135,7 +137,7 @@ impl Lfo {
 impl Module for Lfo {
     type Sample = f32;
     type AudioIn = Empty;
-    type AudioOut = mood::clock::AudioRateIn;
+    type AudioOut = mood::clock::AudioIn;
     type ParamsIn = Params;
     type ParamsOut = Empty;
     type NoteIn = Empty;
@@ -171,8 +173,8 @@ impl Module for Lfo {
                 let (t, _) = self.phasor.process_sample();
                 self.out_smoother
                     .set_target(lerp(0.5..=0.5 * triangle(t) + 0.5, mod_amount));
-                context.audio_out[mood::clock::AudioRateIn::Frequency][i] =
-                    lerp(25.3e3..=200e3, self.out_smoother.next_value());
+                context.audio_out[mood::clock::AudioIn::Frequency][i] =
+                    lerp(Self::MIN_FREQUENCY..=Self::MAX_FREQUENCY, self.out_smoother.next_value());
             }
         }
         ProcessResult { tail: None }
@@ -192,6 +194,9 @@ pub struct Dsp {
     post_emphasis: EnumMapArray<Stereo, HighShelf>,
     scratch_buffer1: AudioStorage<Stereo, f32>,
     scratch_buffer2: AudioStorage<Stereo, f32>,
+    lfo_buffer: AudioStorage<mood::clock::AudioIn, f32>,
+    dummy_buffer: AudioStorage<Empty, f32>,
+    dummy_events: EventBuffer<Empty, Empty>,
 }
 
 impl Module for Dsp {
@@ -239,21 +244,25 @@ impl Dsp {
                 continue;
             };
             match params {
-                Params::Clock(param) => {
-                    self.chip_context
-                        .events_in
-                        .push(event.timestamp, UnifiedEvent::Parameter(param, value));
+                Params::Rate => {
+                    self.lfo.phasor.set_frequency(value);
                 }
-                Params::Emphasis => {
-                    self.pre_emphasis
-                        .values_mut()
-                        .for_each(|filter| filter.set_gain(lerp(1.0..=Self::HIGH_SHELF_PRE_GAIN, value)));
-                    self.post_emphasis
-                        .values_mut()
-                        .for_each(|filter| filter.set_gain(lerp(1.0..=Self::HIGH_SHELF_POST_GAIN, value)));
+                Params::Amount => {
+                    self.lfo.mod_amount.set_target(value);
                 }
             }
         }
+    }
+
+    fn process_lfo(&mut self, context: &ProcessContext<Dsp>) {
+        self.lfo.process(ProcessContext {
+            stream_context: context.stream_context,
+            audio_in: &self.dummy_buffer,
+            audio_out: &mut self.lfo_buffer,
+            events_in: context.events_in,
+            events_out: &mut self.dummy_events,
+            __phantom: PhantomData,
+        });
     }
 
     fn process_preemphasis(&mut self, context: &mut ProcessContext<Dsp>) {
@@ -279,14 +288,13 @@ impl Dsp {
     }
 
     fn process_snh(&mut self, context: &mut ProcessContext<Dsp>) {
-        self.chip_context.audio_in.copy_from_input(&self.scratch_buffer1);
+        for ch in enum_iter::<Stereo>() {
+            self.chip_context.audio_in[mood::bucket_brigade::AudioIn::Audio(ch)].copy_from_slice(&context.audio_in[ch]);
+        }
+        self.chip_context.audio_in[mood::bucket_brigade::AudioIn::Frequency].copy_from_slice(&self.lfo_buffer[mood::clock::AudioIn::Frequency]);
         self.chip_context
             .process_with(context.stream_context, |ctx| self.chip.process(ctx));
         self.scratch_buffer2.copy_from_input(&self.chip_context.audio_out);
-    }
-    
-    fn process_lfo(&mut self, context: &ProcessContext<Self>) {
-        self.lfo_context.process_with(context.stream_context, |ctx| self.lfo.process(ctx));
     }
 }
 
@@ -295,21 +303,20 @@ impl PluginDsp for Dsp {
 
     fn create(context: PluginCreateContext<Self>, _: &<Self::Plugin as Plugin>::SharedData) -> Self {
         let samplerate = Samplerate::new(context.audio_config.sample_rate);
-        let emphasis_amt = context.params[Params::Emphasis];
         let create_emphasis = |gain| {
             move |_| {
-                let mut filter = HighShelf::new(samplerate, 1.0);
-                filter.set_gain(lerp(1.0..=gain, emphasis_amt));
-                filter
+                HighShelf::new(samplerate, gain)
             }
         };
         Self {
+            lfo_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
+            lfo: Lfo::new(samplerate),
             chip_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
             chip: BucketBrigade::new(
                 context.audio_config.sample_rate as _,
                 context.audio_config.max_frames_count as _,
-                context.params[Params::Clock(mood::clock::Params::Frequency)],
-                context.params[Params::Clock(mood::clock::Params::Jitter)],
+                Lfo::MID_FREQUENCY,
+                0.01,
             )
             .with_saturator(SimpleSaturator::new(sat_bbd)),
             pre_aa: EnumMapArray::new(|_| AntialiasFilter::new(samplerate.value() as _)),
@@ -318,6 +325,9 @@ impl PluginDsp for Dsp {
             post_emphasis: EnumMapArray::new(create_emphasis(Self::HIGH_SHELF_POST_GAIN)),
             scratch_buffer1: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
             scratch_buffer2: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
+            lfo_buffer: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
+            dummy_buffer: AudioStorage::zeroed(0),
+            dummy_events: EventBuffer::new(0),
         }
     }
 }

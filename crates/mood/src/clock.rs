@@ -5,8 +5,12 @@ use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
 use clogbox_oscillators::Phasor;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Enum)]
-pub enum Params {
+pub enum AudioIn {
     Frequency,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Enum)]
+pub enum Params {
     Jitter,
 }
 
@@ -25,7 +29,7 @@ pub struct Clock {
 
 impl Module for Clock {
     type Sample = f32;
-    type AudioIn = Empty;
+    type AudioIn = AudioIn;
     type AudioOut = Empty;
     type ParamsIn = Params;
     type ParamsOut = ParamsOut;
@@ -44,20 +48,13 @@ impl Module for Clock {
             .chunk_events(context.stream_context.block_size)
         {
             for event in events {
-                match event.data {
-                    UnifiedEvent::Parameter(Params::Frequency, value) => {
-                        self.base_frequency = value;
-                        self.set_next_frequency();
-                    }
-                    UnifiedEvent::Parameter(Params::Jitter, value) => {
-                        self.jitter = value;
-                    }
-                    _ => {}
-                }
+                let UnifiedEvent::Parameter(Params::Jitter, value) = event.data else { continue; };
+                self.jitter = value;
             }
             for i in range {
                 let rollovers = self.phasor.advance(1);
                 if rollovers > 0 {
+                    self.base_frequency = context.audio_in[AudioIn::Frequency][i];
                     self.set_next_frequency();
                     context
                         .events_out

@@ -59,6 +59,7 @@ impl Module for Lfo {
                         Params::Amount => {
                             self.mod_amount.set_target(value);
                         }
+                        _ => {}
                     },
                     UnifiedEvent::Note(..) => {}
                 }

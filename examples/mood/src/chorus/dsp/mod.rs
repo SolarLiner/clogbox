@@ -1,13 +1,12 @@
 use aa::AntialiasFilter;
-use clogbox_clap::params::{linear, DynMapping, MappingExt, ParamId};
+use clogbox_clap::params::{linear, Bool, DynMapping, Linear, MappingExt, ParamId};
 use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
 use clogbox_filters::saturators::SimpleSaturator;
 use clogbox_module::context::{AudioStorage, EventBuffer, OwnedProcessContext, ProcessContext, UnifiedEvent};
-use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
-use clogbox_params::smoothers::Smoother;
+use clogbox_params::smoothers::{LinearSmoother, Smoother};
 use highshelf::HighShelf;
 use lfo::Lfo;
 use mood::bucket_brigade::BucketBrigade;
@@ -23,6 +22,9 @@ mod lfo;
 pub enum Params {
     Rate,
     Amount,
+    Wide,
+    #[display("Dry/Wet")]
+    DryWet,
 }
 
 impl ParamId for Params {
@@ -34,20 +36,30 @@ impl ParamId for Params {
         match self {
             Self::Rate => 1.0,
             Self::Amount => 0.5,
+            Self::Wide => 0.0,
+            Self::DryWet => 0.5,
         }
     }
 
     fn mapping(&self) -> DynMapping {
         match self {
             Self::Rate => linear(0.3, 3.57).into_dyn(),
-            Self::Amount => linear(0.0, 1.0).into_dyn(),
+            Self::Amount | Self::DryWet => Linear.into_dyn(),
+            Self::Wide => Bool.into_dyn(),
         }
     }
 
     fn value_to_text(&self, f: &mut dyn Write, denormalized: f32) -> std::fmt::Result {
         match self {
             Self::Rate => write!(f, "{denormalized:1.1} Hz"),
-            Self::Amount => write!(f, "{:>3.2}%", 100.0 * denormalized),
+            Self::Amount | Self::DryWet => write!(f, "{:>3.2}%", 100.0 * denormalized),
+            Self::Wide => {
+                if denormalized > 0.5 {
+                    write!(f, "On")
+                } else {
+                    write!(f, "Off")
+                }
+            }
         }
     }
 }
@@ -68,6 +80,8 @@ pub struct Dsp {
     lfo_buffer: AudioStorage<mood::clock::AudioIn, f32>,
     dummy_buffer: AudioStorage<Empty, f32>,
     dummy_events: EventBuffer<Empty, Empty>,
+    wide: LinearSmoother<f32>,
+    drywet: LinearSmoother<f32>,
 }
 
 impl Module for Dsp {
@@ -94,11 +108,11 @@ impl Module for Dsp {
     }
 
     fn process(&mut self, mut context: ProcessContext<Self>) -> ProcessResult {
-        self.process_events(&context);
         self.process_lfo(&context);
         self.process_preemphasis(&mut context);
         self.process_snh(&mut context);
         self.process_postemphasis(&mut context);
+        self.process_output_routing(&mut context);
 
         const TAIL: Option<NonZeroU32> = NonZeroU32::new(1);
         ProcessResult { tail: TAIL }
@@ -108,23 +122,6 @@ impl Module for Dsp {
 impl Dsp {
     const HIGH_SHELF_PRE_GAIN: f32 = 5.7;
     const HIGH_SHELF_POST_GAIN: f32 = Self::HIGH_SHELF_PRE_GAIN.recip();
-    fn process_events(&mut self, context: &ProcessContext<Dsp>) {
-        self.chip_context.events_in.clear();
-        for event in context.events_in.slice() {
-            let UnifiedEvent::Parameter(params, value) = event.data else {
-                continue;
-            };
-            match params {
-                Params::Rate => {
-                    self.lfo.phasor.set_frequency(value);
-                }
-                Params::Amount => {
-                    self.lfo.mod_amount.set_target(value);
-                }
-            }
-        }
-    }
-
     fn process_lfo(&mut self, context: &ProcessContext<Dsp>) {
         self.lfo.process(ProcessContext {
             stream_context: context.stream_context,
@@ -168,6 +165,36 @@ impl Dsp {
             .process_with(context.stream_context, |ctx| self.chip.process(ctx));
         self.scratch_buffer2.copy_from_input(&self.chip_context.audio_out);
     }
+
+    fn process_output_routing(&mut self, context: &mut ProcessContext<Dsp>) {
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
+            for event in events {
+                match event.data {
+                    UnifiedEvent::Parameter(Params::Wide, value) => {
+                        let value = value.round().clamp(0.0, 1.0);
+                        self.wide.set_target(-2.0 * value + 1.0);
+                    }
+                    UnifiedEvent::Parameter(Params::DryWet, value) => {
+                        self.drywet.set_target(value);
+                    }
+                    _ => {}
+                }
+            }
+
+            for i in range {
+                context.audio_out[Stereo::Right][i] *= self.wide.next_value();
+                let drywet = self.drywet.next_value();
+                for ch in enum_iter::<Stereo>() {
+                    context.audio_out[ch][i] *= drywet;
+                    context.audio_out[ch][i] += context.audio_in[ch][i] * (1.0 - drywet);
+                }
+            }
+        }
+    }
 }
 
 impl PluginDsp for Dsp {
@@ -196,6 +223,20 @@ impl PluginDsp for Dsp {
             lfo_buffer: AudioStorage::zeroed(context.audio_config.max_frames_count as _),
             dummy_buffer: AudioStorage::zeroed(0),
             dummy_events: EventBuffer::new(0),
+            wide: LinearSmoother::new(
+                clogbox_math::interpolation::Linear,
+                samplerate.value() as _,
+                1e-3,
+                context.params[Params::Wide],
+                context.params[Params::Wide],
+            ),
+            drywet: LinearSmoother::new(
+                clogbox_math::interpolation::Linear,
+                samplerate.value() as _,
+                1e-3,
+                context.params[Params::DryWet],
+                context.params[Params::DryWet],
+            ),
         }
     }
 }

@@ -1,3 +1,4 @@
+use clogbox_clap::clack_plugin::entry::prelude::PluginFactoryWrapper;
 use clogbox_clap::clack_plugin::entry::{DefaultPluginFactory, Entry, EntryFactories, EntryLoadError};
 use clogbox_clap::clack_plugin::factory::plugin::PluginFactoryImpl;
 use clogbox_clap::clack_plugin::host::HostInfo;
@@ -5,7 +6,6 @@ use clogbox_clap::plugin::{PluginDescriptor, PluginInstance};
 use clogbox_clap::{clack_export_entry, Plugin};
 use clogbox_clap::{PluginEntry, PluginMeta};
 use std::ffi::CStr;
-use clogbox_clap::clack_plugin::entry::prelude::PluginFactoryWrapper;
 
 mod chorus;
 mod snh;

@@ -48,7 +48,9 @@ impl Module for Clock {
             .chunk_events(context.stream_context.block_size)
         {
             for event in events {
-                let UnifiedEvent::Parameter(Params::Jitter, value) = event.data else { continue; };
+                let UnifiedEvent::Parameter(Params::Jitter, value) = event.data else {
+                    continue;
+                };
                 self.jitter = value;
             }
             for i in range {

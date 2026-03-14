@@ -81,8 +81,12 @@ impl Dsp {
     const HIGH_SHELF_POST_GAIN: f32 = Self::HIGH_SHELF_PRE_GAIN.recip();
     fn process_events(&mut self, context: &ProcessContext<Dsp>) {
         self.bbd_events_in.clear();
-        
-        for (range, events) in context.events_in.slice().chunk_events(context.stream_context.block_size) {
+
+        for (range, events) in context
+            .events_in
+            .slice()
+            .chunk_events(context.stream_context.block_size)
+        {
             for event in events {
                 let UnifiedEvent::Parameter(params, value) = event.data else {
                     continue;
@@ -92,7 +96,10 @@ impl Dsp {
                         self.bbd_freq = value;
                     }
                     Params::Jitter => {
-                        self.bbd_events_in.push(event.timestamp, UnifiedEvent::Parameter(mood::clock::Params::Jitter, value));
+                        self.bbd_events_in.push(
+                            event.timestamp,
+                            UnifiedEvent::Parameter(mood::clock::Params::Jitter, value),
+                        );
                     }
                 }
             }

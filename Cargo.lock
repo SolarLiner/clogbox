@@ -1748,6 +1748,7 @@ dependencies = [
  "clogbox-oscillators",
  "clogbox-params",
  "clogbox-utils",
+ "insta",
  "log",
  "mood",
  "num-traits",

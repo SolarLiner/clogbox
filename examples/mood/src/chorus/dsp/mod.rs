@@ -1,85 +1,23 @@
+use aa::AntialiasFilter;
 use clogbox_clap::params::{linear, DynMapping, MappingExt, ParamId};
 use clogbox_clap::{Plugin, PluginCreateContext, PluginDsp};
 use clogbox_enum::enum_map::EnumMapArray;
 use clogbox_enum::{enum_iter, Empty, Enum, Stereo};
 use clogbox_filters::saturators::SimpleSaturator;
-use clogbox_filters::Multimode;
 use clogbox_module::context::{AudioStorage, EventBuffer, OwnedProcessContext, ProcessContext, UnifiedEvent};
 use clogbox_module::eventbuffer::TimestampedCollectionMut;
 use clogbox_module::{Module, PrepareResult, ProcessResult, Samplerate};
-use clogbox_oscillators::Phasor;
-use clogbox_params::smoothers::{ExpSmoother, Smoother};
+use clogbox_params::smoothers::Smoother;
+use highshelf::HighShelf;
+use lfo::Lfo;
 use mood::bucket_brigade::BucketBrigade;
 use std::fmt::Write;
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 
-struct HighShelf {
-    filter: Multimode<f32>,
-    gain: ExpSmoother<f32>,
-}
-
-impl HighShelf {
-    const CUTOFF: f32 = 410.0;
-    fn new(sample_rate: Samplerate, gain: f32) -> Self {
-        Self {
-            filter: Multimode::new(sample_rate.value() as _, Self::CUTOFF),
-            gain: ExpSmoother::new(sample_rate.value() as _, 1e-3, gain, gain),
-        }
-    }
-
-    fn prepare(&mut self, samplerate: Samplerate) {
-        self.filter.set_samplerate(samplerate.value() as _);
-        self.gain.set_samplerate(samplerate.value() as _);
-    }
-
-    fn set_gain(&mut self, gain: f32) {
-        self.gain.set_target(gain);
-    }
-
-    fn process_sample(&mut self, input: f32) -> f32 {
-        let lp = self.filter.next_sample(input);
-        let hp = input - lp;
-        let gain = self.gain.next_value();
-        input + hp * (gain - 1.0)
-    }
-}
-
-struct AntialiasFilter {
-    filters: [Multimode<f32>; 4],
-    hp4: f32,
-}
-
-impl AntialiasFilter {
-    const DAMPING_RATIO: f32 = 0.5;
-    const HP_FC: f32 = 48.2;
-    const FC1: f32 = 6591.0;
-    const FC2: f32 = 6934.0;
-
-    fn new(sample_rate: f32) -> Self {
-        Self {
-            filters: [
-                Multimode::new(sample_rate, Self::HP_FC),
-                Multimode::new(sample_rate, Self::FC1),
-                Multimode::new(sample_rate, Self::FC2),
-                Multimode::new(sample_rate, Self::FC2),
-            ],
-            hp4: 0.0,
-        }
-    }
-
-    fn next_sample(&mut self, input: f32) -> f32 {
-        let lp1 = self.filters[0].next_sample(input);
-        let hp1 = input - lp1;
-        let lp2 = self.filters[1].next_sample(hp1);
-
-        let in3 = lp2 + self.hp4 * Self::DAMPING_RATIO;
-        let lp3 = self.filters[2].next_sample(in3);
-        let lp4 = self.filters[3].next_sample(sat_bjt(lp3));
-        self.hp4 = lp3 - lp4;
-        lp4
-    }
-}
+mod aa;
+mod highshelf;
+mod lfo;
 
 #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
 pub enum Params {
@@ -109,75 +47,8 @@ impl ParamId for Params {
     fn value_to_text(&self, f: &mut dyn Write, denormalized: f32) -> std::fmt::Result {
         match self {
             Self::Rate => write!(f, "{denormalized:1.1} Hz"),
-            Self::Amount => write!(f, "{:>3.2}%", denormalized),
+            Self::Amount => write!(f, "{:>3.2}%", 100.0 * denormalized),
         }
-    }
-}
-
-struct Lfo {
-    phasor: Phasor<f32>,
-    mod_amount: ExpSmoother<f32>,
-    out_smoother: ExpSmoother<f32>,
-}
-
-impl Lfo {
-    pub const MIN_FREQUENCY: f32 = 25.3e3;
-    pub const MAX_FREQUENCY: f32 = 200e3;
-    pub const MID_FREQUENCY: f32 = Self::MIN_FREQUENCY + (Self::MAX_FREQUENCY - Self::MIN_FREQUENCY) / 2.0;
-
-    fn new(sample_rate: Samplerate) -> Self {
-        Self {
-            phasor: Phasor::new(sample_rate.value() as _, 1.0),
-            mod_amount: ExpSmoother::new(sample_rate.value() as _, 5e-3, 0.0, 0.0),
-            out_smoother: ExpSmoother::new(sample_rate.value() as _, 13.8e-3, 0.0, 0.0),
-        }
-    }
-}
-
-impl Module for Lfo {
-    type Sample = f32;
-    type AudioIn = Empty;
-    type AudioOut = mood::clock::AudioIn;
-    type ParamsIn = Params;
-    type ParamsOut = Empty;
-    type NoteIn = Empty;
-    type NoteOut = Empty;
-
-    fn prepare(&mut self, sample_rate: Samplerate, block_size: usize) -> PrepareResult {
-        self.phasor.prepare(sample_rate, block_size);
-        PrepareResult { latency: 0.0 }
-    }
-
-    fn process(&mut self, context: ProcessContext<Self>) -> ProcessResult {
-        for (range, events) in context
-            .events_in
-            .slice()
-            .chunk_events(context.stream_context.block_size)
-        {
-            for event in events {
-                match event.data {
-                    UnifiedEvent::Parameter(param, value) => match param {
-                        Params::Rate => {
-                            self.phasor.set_frequency(value);
-                        }
-                        Params::Amount => {
-                            self.mod_amount.set_target(value);
-                        }
-                    },
-                    UnifiedEvent::Note(..) => {}
-                }
-            }
-
-            for i in range {
-                let mod_amount = self.mod_amount.next_value();
-                let (t, _) = self.phasor.process_sample();
-                self.out_smoother
-                    .set_target(lerp(0.5..=0.5 * triangle(t) + 0.5, mod_amount));
-                context.audio_out[mood::clock::AudioIn::Frequency][i] =
-                    lerp(Self::MIN_FREQUENCY..=Self::MAX_FREQUENCY, self.out_smoother.next_value());
-            }
-        }
-        ProcessResult { tail: None }
     }
 }
 
@@ -291,7 +162,8 @@ impl Dsp {
         for ch in enum_iter::<Stereo>() {
             self.chip_context.audio_in[mood::bucket_brigade::AudioIn::Audio(ch)].copy_from_slice(&context.audio_in[ch]);
         }
-        self.chip_context.audio_in[mood::bucket_brigade::AudioIn::Frequency].copy_from_slice(&self.lfo_buffer[mood::clock::AudioIn::Frequency]);
+        self.chip_context.audio_in[mood::bucket_brigade::AudioIn::Frequency]
+            .copy_from_slice(&self.lfo_buffer[mood::clock::AudioIn::Frequency]);
         self.chip_context
             .process_with(context.stream_context, |ctx| self.chip.process(ctx));
         self.scratch_buffer2.copy_from_input(&self.chip_context.audio_out);
@@ -303,11 +175,7 @@ impl PluginDsp for Dsp {
 
     fn create(context: PluginCreateContext<Self>, _: &<Self::Plugin as Plugin>::SharedData) -> Self {
         let samplerate = Samplerate::new(context.audio_config.sample_rate);
-        let create_emphasis = |gain| {
-            move |_| {
-                HighShelf::new(samplerate, gain)
-            }
-        };
+        let create_emphasis = |gain| move |_| HighShelf::new(samplerate, gain);
         Self {
             lfo_context: OwnedProcessContext::new(context.audio_config.max_frames_count as _, 512),
             lfo: Lfo::new(samplerate),
@@ -330,10 +198,6 @@ impl PluginDsp for Dsp {
             dummy_events: EventBuffer::new(0),
         }
     }
-}
-
-fn triangle(x: f32) -> f32 {
-    (x * 2.0).abs() - 1.0
 }
 
 fn lerp(range: std::ops::RangeInclusive<f32>, value: f32) -> f32 {

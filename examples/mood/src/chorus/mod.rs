@@ -14,11 +14,7 @@ impl PluginMeta for MoodChorus {
     const ID: &'static str = "dev.solarliner.clogbox.mood-chorus";
     const NAME: &'static str = "M0od Chorus";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-    const FEATURES: &'static [&'static CStr] = &[
-        features::STEREO,
-        features::AUDIO_EFFECT,
-        features::CHORUS,
-    ];
+    const FEATURES: &'static [&'static CStr] = &[features::STEREO, features::AUDIO_EFFECT, features::CHORUS];
 }
 
 impl Plugin for MoodChorus {

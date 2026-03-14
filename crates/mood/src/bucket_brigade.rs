@@ -91,7 +91,9 @@ where
                     }
                     debug_assert!(self
                         .delay
-                        .push(EnumMapArray::new(|ch| context.audio_in[AudioIn::Audio(ch)][event.timestamp]))
+                        .push(EnumMapArray::new(
+                            |ch| context.audio_in[AudioIn::Audio(ch)][event.timestamp]
+                        ))
                         .is_ok());
                 }
             }

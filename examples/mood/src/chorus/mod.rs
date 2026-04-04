@@ -1,5 +1,5 @@
-// use clogbox_clap::gui::clap_gui::GuiSize;
-// use clogbox_clap::gui::PluginView;
+use clogbox_clap::gui::clap_gui::GuiSize;
+use clogbox_clap::gui::PluginView;
 use clogbox_clap::plugin::PluginError;
 use clogbox_clap::HostSharedHandle;
 use clogbox_clap::{features, Layout, Plugin, PluginConfiguration, PluginMeta};
@@ -34,12 +34,12 @@ impl Plugin for MoodChorus {
         Ok(())
     }
 
-    // fn view(
-    //     &mut self,
-    // ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
-    //     clogbox_clap_egui::generic_ui(GuiSize {
-    //         width: 400,
-    //         height: 300,
-    //     })
-    // }
+    fn view(
+        &mut self,
+    ) -> Result<Box<dyn PluginView<Params = Self::Params, SharedData = Self::SharedData>>, PluginError> {
+        clogbox_clap_egui::generic_ui(GuiSize {
+            width: 400,
+            height: 300,
+        })
+    }
 }

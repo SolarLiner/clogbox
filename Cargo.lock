@@ -1741,6 +1741,7 @@ version = "0.1.0"
 dependencies = [
  "az",
  "clogbox-clap",
+ "clogbox-clap-egui",
  "clogbox-enum",
  "clogbox-filters",
  "clogbox-math",

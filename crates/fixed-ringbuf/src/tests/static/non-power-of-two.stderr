@@ -1,0 +1,22 @@
+error[E0080]: evaluation panicked: N must be a power of 2
+ --> $RUST/core/src/panic.rs
+  |
+  |         $crate::panicking::panic_fmt($crate::const_format_args!($($t)+));
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `fixed_ringbuf::rb::RingBufferImpl::<[std::cell::UnsafeCell<std::mem::MaybeUninit<i32>>; 3]>::_CHECKS` failed here
+  |
+ ::: src/rb.rs
+  |
+  |         assert!(N.is_power_of_two(), "N must be a power of 2");
+  |         ------------------------------------------------------ in this macro invocation
+
+note: erroneous constant encountered
+ --> src/rb.rs
+  |
+  |         let _ = Self::_CHECKS;
+  |                 ^^^^^^^^^^^^^
+
+note: the above error was encountered while instantiating `fn fixed_ringbuf::rb::RingBufferImpl::<[UnsafeCell<MaybeUninit<i32>>; 3]>::new`
+ --> src/tests/static/non-power-of-two.rs:2:15
+  |
+2 |     let _rb = fixed_ringbuf::RingBufferStatic::<i32, 3>::new();
+  |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

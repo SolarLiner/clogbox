@@ -5,7 +5,7 @@ mod params;
 
 use clogbox_clap::gui::PluginView;
 use clogbox_clap::{
-    export_plugin, features, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginError, PluginMeta,
+    export_plugin, features, plugin::PluginError, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginMeta,
 };
 use clogbox_module::Module;
 use std::ffi::CStr;

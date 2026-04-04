@@ -1,15 +1,18 @@
 //! CLAP-specific traits and implementation for working with parameters
-use clogbox_enum::enum_map::EnumMapArray;
-use clogbox_enum::{count, Empty, Enum};
-use std::fmt::{Formatter, Write};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
-use std::{fmt, ops};
-
 pub use clack_extensions::params::ParamInfoFlags;
+use clogbox_enum::enum_map::{EnumMap, EnumMapArray};
+use clogbox_enum::{count, Empty, Enum};
 use clogbox_math::{db_to_linear, linear_to_db};
 #[cfg(feature = "gui")]
 use ringbuf::traits::{Consumer, Producer, Split};
+use serde::de::{Error, SeqAccess};
+use serde::ser::SerializeSeq;
+use serde::{Deserializer, Serializer};
+use std::fmt::{Formatter, Write};
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::{fmt, ops};
 
 /// Mapping from and to a normalized range.
 pub trait Mapping: Send + Sync {
@@ -54,6 +57,24 @@ impl Mapping for Linear {
     #[inline]
     fn denormalize(&self, value: f32) -> f32 {
         value
+    }
+
+    fn range(&self) -> ops::Range<f32> {
+        0.0..1.0
+    }
+}
+
+/// Boolean mapping, which maps `0.0` to `false` and `1.0` to `true`.
+#[derive(Debug, Copy, Clone)]
+pub struct Bool;
+
+impl Mapping for Bool {
+    fn normalize(&self, value: f32) -> f32 {
+        value.round().clamp(0.0, 1.0)
+    }
+
+    fn denormalize(&self, value: f32) -> f32 {
+        value.round().clamp(0.0, 1.0)
     }
 
     fn range(&self) -> ops::Range<f32> {
@@ -576,6 +597,31 @@ pub fn create_notifier_listener<E: Enum>(capacity: usize) -> (ParamNotifier<E>, 
 #[derive(Debug, Clone)]
 pub struct ParamStorage<E: Enum>(Arc<EnumMapArray<E, ParamValue>>);
 
+impl<E: Enum> serde::Serialize for ParamStorage<E> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_seq(Some(count::<E>()))?;
+        for value in self.0.values() {
+            map.serialize_element(&value.get())?;
+        }
+        map.end()
+    }
+}
+
+impl<'de, E: ParamId> serde::Deserialize<'de> for ParamStorage<E> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let map = <Vec<f32>>::deserialize(deserializer)?;
+        Ok(Self(Arc::new(EnumMapArray::new(|p: E| {
+            ParamValue::new_dyn(p.mapping(), map[p.to_usize()])
+        }))))
+    }
+}
+
 impl<E: ParamId> Default for ParamStorage<E> {
     fn default() -> Self {
         Self(Arc::new(EnumMapArray::new(|p: E| {
@@ -663,5 +709,49 @@ impl ParamId for Empty {
 
     fn value_to_text(&self, _f: &mut dyn Write, _denormalized: f32) -> fmt::Result {
         unreachable!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::params::{linear, DynMapping, MappingExt, ParamId, ParamStorage, ParamValue};
+    use clogbox_enum::enum_map::EnumMapArray;
+    use clogbox_enum::Enum;
+    use std::fmt::Write;
+    use std::sync::Arc;
+
+    #[derive(Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Enum)]
+    enum Params {
+        A,
+        B,
+        C,
+    }
+
+    impl ParamId for Params {
+        fn text_to_value(&self, text: &str) -> Option<f32> {
+            text.parse().ok()
+        }
+
+        fn default_value(&self) -> f32 {
+            0.0
+        }
+
+        fn mapping(&self) -> DynMapping {
+            linear(0.0, 1.0).into_dyn()
+        }
+
+        fn value_to_text(&self, f: &mut dyn Write, denormalized: f32) -> std::fmt::Result {
+            write!(f, "{denormalized:.2}")
+        }
+    }
+
+    #[test]
+    fn test_serialize_round_trip() {
+        let input = ParamStorage(Arc::new(EnumMapArray::new(|p: Params| {
+            ParamValue::new_dyn(p.mapping(), 0.0)
+        })));
+        let value = serde_json::to_value(input.clone()).unwrap();
+        let actual = serde_json::from_value::<ParamStorage<Params>>(value).unwrap();
+        assert_eq!(format!("{input:?}"), format!("{actual:?}"));
     }
 }

@@ -12,7 +12,7 @@ keywords = ["thread-safe", "ring-buffer", "circular-buffer"]
 [dependencies]
 crossbeam-utils = "0.8.21"
 thread_local = "1.1"
-zerocopy.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+trybuild = "1.0.116"

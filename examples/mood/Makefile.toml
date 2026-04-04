@@ -1,0 +1,5 @@
+extend = "../../Makefile.plugins.toml"
+
+[tasks.default]
+clear = true
+alias = "install"

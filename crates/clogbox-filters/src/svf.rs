@@ -37,7 +37,7 @@ impl<T: Float + az::CastFrom<f64>> SvfImpl<T> for Linear<T> {
         let [s1, s2] = svf.s;
 
         let bpp = s1;
-        let bpl = (svf.q - 1.) * s1;
+        let bpl = -svf.q * s1;
         let bp1 = 2. * (bpp + bpl);
         let hp = (input - bp1 - s2) * svf.d;
 

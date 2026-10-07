@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+pub use rb::{RingBuffer, RingBufferStatic};
+
 mod rb;
 #[cfg(test)]
 mod tests;

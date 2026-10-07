@@ -64,6 +64,24 @@ impl Mapping for Linear {
     }
 }
 
+/// Boolean mapping, which maps `0.0` to `false` and `1.0` to `true`.
+#[derive(Debug, Copy, Clone)]
+pub struct Bool;
+
+impl Mapping for Bool {
+    fn normalize(&self, value: f32) -> f32 {
+        value.round().clamp(0.0, 1.0)
+    }
+
+    fn denormalize(&self, value: f32) -> f32 {
+        value.round().clamp(0.0, 1.0)
+    }
+
+    fn range(&self) -> ops::Range<f32> {
+        0.0..1.0
+    }
+}
+
 /// Ranged mapping, which takes the inner mapping and maps it to this new range.
 #[derive(Debug, Copy, Clone)]
 pub struct Range<M> {

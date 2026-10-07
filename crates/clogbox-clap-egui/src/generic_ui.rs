@@ -3,7 +3,7 @@ use crate::{EguiPluginView, GetContextExtra};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
 use clogbox_clap::params::{ParamChangeEvent, ParamChangeKind, ParamId};
-use clogbox_clap::PluginError;
+use clogbox_clap::plugin::PluginError;
 use clogbox_enum::enum_iter;
 use egui::{emath, Align, ComboBox, Layout, Ui};
 use std::marker::PhantomData;

@@ -1,0 +1,22 @@
+[package]
+name = "mood"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+keywords.workspace = true
+
+[dependencies]
+clogbox-enum.workspace = true
+clogbox-module.workspace = true
+clogbox-filters.workspace = true
+clogbox-oscillators.workspace = true
+fixed-ringbuf.workspace = true
+num-traits.workspace = true
+numeric_literals.workspace = true
+
+az.workspace = true
+generic-array.workspace = true

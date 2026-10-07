@@ -12,7 +12,7 @@ use baseview::{PhySize, Size, WindowHandle, WindowScalePolicy};
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::{GuiContext, GuiEvent, HasRawWindowHandle, PluginView, PluginViewHandle};
 use clogbox_clap::params::ParamId;
-use clogbox_clap::{HostSharedHandle, PluginError};
+use clogbox_clap::{plugin::PluginError, HostSharedHandle};
 use egui::Id;
 use std::marker::PhantomData;
 use std::sync::atomic::AtomicU32;

@@ -1,6 +1,8 @@
 mod miri_tests;
 mod proptest_tests;
+
 use super::*;
+use std::path::Path;
 
 #[test]
 fn test_producer_push() {
@@ -75,4 +77,11 @@ fn test_producer_consumer_interaction() {
     let mut result = vec![0; 3];
     assert_eq!(consumer.pop_slice(&mut result), 3);
     assert_eq!(result[0..3], vec![2, 3, 4]);
+}
+
+#[test]
+fn test_static_compilation() {
+    let t = trybuild::TestCases::new();
+    t.compile_fail("src/tests/static/non-power-of-two.rs");
+    t.pass("src/tests/static/yes-power-of-two.rs");
 }

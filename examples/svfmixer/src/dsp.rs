@@ -44,7 +44,7 @@ impl SvfImpl<f32> for OtaTanh {
 
 pub struct DspPerSample {
     smoothers: EnumMapArray<params::Param, LinearSmoother<f32>>,
-    dsp: EnumMapArray<Stereo, Svf<f32, OtaTanh>>,
+    dsp: EnumMapArray<Stereo, Svf<f32>>,
     mixer: EnumMapArray<Stereo, SvfMixer<f32>>,
     buffer: EnumMapArray<Stereo, f32>,
 }

@@ -1,6 +1,6 @@
 use clogbox_clap::gui::clap_gui::GuiSize;
 use clogbox_clap::gui::PluginView;
-use clogbox_clap::{features, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginError, PluginMeta};
+use clogbox_clap::{features, plugin::PluginError, HostSharedHandle, Layout, Plugin, PluginConfiguration, PluginMeta};
 use clogbox_enum::{seq, Empty};
 use clogbox_module::Module;
 use std::ffi::CStr;
